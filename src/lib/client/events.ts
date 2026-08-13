@@ -21,6 +21,7 @@ export interface CalEvent {
   tagNames: string[];
   finance: { direction: "expense" | "income"; amount: number; is_settled: boolean }[];
   noteCount: number;
+  noteAuthorIds: string[];
 }
 
 /** 行程原始列（events 表 Row） */
@@ -51,7 +52,7 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
       .from("finance_records")
       .select("event_id, direction, amount, is_settled")
       .in("event_id", ids),
-    supabase.from("event_notes").select("event_id").in("event_id", ids),
+    supabase.from("event_notes").select("event_id, author_id").in("event_id", ids),
   ]);
 
   const contactIds = [...new Set((ecRes.data ?? []).map((r) => r.contact_id))];
@@ -95,8 +96,13 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
     });
   }
   const noteCount = new Map<string, number>();
-  for (const r of noteRes.data ?? [])
+  const noteAuthors = new Map<string, Set<string>>();
+  for (const r of noteRes.data ?? []) {
     noteCount.set(r.event_id, (noteCount.get(r.event_id) ?? 0) + 1);
+    const set = noteAuthors.get(r.event_id) ?? new Set<string>();
+    set.add(r.author_id);
+    noteAuthors.set(r.event_id, set);
+  }
 
   return rows.map((e) => ({
     id: e.id,
@@ -114,6 +120,7 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
     tagNames: tagsByEvent.get(e.id) ?? [],
     finance: finByEvent.get(e.id) ?? [],
     noteCount: noteCount.get(e.id) ?? 0,
+    noteAuthorIds: [...(noteAuthors.get(e.id) ?? [])],
   }));
 }
 

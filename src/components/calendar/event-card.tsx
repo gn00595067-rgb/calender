@@ -4,7 +4,18 @@ import { Star, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { D, twd } from "@/lib/date";
 import { eventStyle, chipStyle } from "./event-visuals";
+import { useAppData } from "@/components/app/app-data";
+import { can } from "@/lib/permissions";
 import type { CalEvent } from "@/lib/client/events";
+
+/** 是否對此行程顯示「未讀回饋」紅點：有他人回饋且我具編輯權（owner/editor 審閱用） */
+function useUnreadDot(event: CalEvent): boolean {
+  const { me, calendarById } = useAppData();
+  const role = calendarById.get(event.calendar_id)?.effectiveRole ?? "viewer";
+  return (
+    can.editEvents(role) && event.noteAuthorIds.some((a) => a !== me.id)
+  );
+}
 
 /** 組出卡片第二行：地點 · 人物 · 金額 */
 export function secondLine(event: CalEvent): string {
@@ -44,6 +55,7 @@ export function EventTwoLineCard({
 }) {
   const line2 = secondLine(event);
   const big = emphasize || event.is_important;
+  const unread = useUnreadDot(event);
   return (
     <button
       type="button"
@@ -61,6 +73,13 @@ export function EventTwoLineCard({
         <div className={cn("flex items-baseline gap-2", big ? "text-[15px]" : "text-sm")}>
           <span className="font-bold tabular-nums">{timeLabel(event)}</span>
           <span className="truncate font-medium">{event.title}</span>
+          {unread && (
+            <span
+              className="size-2 shrink-0 rounded-full bg-red-600"
+              aria-label="有新回饋"
+              title="有新回饋"
+            />
+          )}
           {event.noteCount > 0 && (
             <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
               <MessageSquare className="size-3" />
@@ -88,6 +107,7 @@ export function MonthChip({
   conflict?: boolean;
   onClick?: () => void;
 }) {
+  const unread = useUnreadDot(event);
   return (
     <button
       type="button"
@@ -103,6 +123,7 @@ export function MonthChip({
         <span className="shrink-0 font-semibold tabular-nums">{D.time(event.starts_at)}</span>
       )}
       <span className="truncate">{event.title}</span>
+      {unread && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-red-600" />}
     </button>
   );
 }
