@@ -172,10 +172,12 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
         amount: d.finance!.amount,
         category_label: d.finance!.categoryLabel ?? null,
         contact_id: d.contactIds[0] ?? null,
-        occurred_on: e.starts_at.slice(0, 10),
+        // occurred_on 取台北曆日（非 UTC 直接切片，避免凌晨行程日期偏移）
+        occurred_on: new Date(e.starts_at)
+          .toLocaleString("sv-SE", { timeZone: TIME_ZONE })
+          .slice(0, 10),
         is_settled: d.finance!.isSettled,
       }));
-      // occurred_on 需為台北日期；由 starts_at(UTC) 轉台北較精確，但同日多以 date 呈現即可
       const { error: finErr } = await supabase.from("finance_records").insert(finRows);
       if (finErr) return fail(finErr.message);
     }
