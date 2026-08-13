@@ -23,25 +23,25 @@ export interface CalEvent {
   noteCount: number;
 }
 
-export async function fetchEventsInRange(
-  startIso: string,
-  endIso: string,
-  calendarIds: string[],
-): Promise<CalEvent[]> {
-  if (calendarIds.length === 0) return [];
-  const supabase = createClient();
+/** 行程原始列（events 表 Row） */
+type EventRowLite = {
+  id: string;
+  calendar_id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  starts_at: string;
+  ends_at: string;
+  all_day: boolean;
+  is_important: boolean;
+  recurrence_rule: string | null;
+  recurrence_group_id: string | null;
+};
 
-  const { data: events, error } = await supabase
-    .from("events")
-    .select("*")
-    .in("calendar_id", calendarIds)
-    .lt("starts_at", endIso)
-    .gt("ends_at", startIso)
-    .order("starts_at", { ascending: true });
-  if (error) throw new Error(error.message);
-  const rows = events ?? [];
+/** 將行程原始列補上人物／標籤／財務／回饋數等關聯 */
+export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
   if (rows.length === 0) return [];
-
+  const supabase = createClient();
   const ids = rows.map((e) => e.id);
 
   const [ecRes, etRes, finRes, noteRes] = await Promise.all([
@@ -115,6 +115,25 @@ export async function fetchEventsInRange(
     finance: finByEvent.get(e.id) ?? [],
     noteCount: noteCount.get(e.id) ?? 0,
   }));
+}
+
+export async function fetchEventsInRange(
+  startIso: string,
+  endIso: string,
+  calendarIds: string[],
+): Promise<CalEvent[]> {
+  if (calendarIds.length === 0) return [];
+  const supabase = createClient();
+
+  const { data: events, error } = await supabase
+    .from("events")
+    .select("*")
+    .in("calendar_id", calendarIds)
+    .lt("starts_at", endIso)
+    .gt("ends_at", startIso)
+    .order("starts_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return enrichEvents(events ?? []);
 }
 
 /** 讀取指定 UTC 區間內、目前顯示中分類的行程 */
