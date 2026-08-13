@@ -82,6 +82,7 @@ export interface Database {
           is_important: boolean;
           recurrence_rule: string | null;
           recurrence_group_id: string | null;
+          source_uid: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -98,6 +99,7 @@ export interface Database {
           is_important?: boolean;
           recurrence_rule?: string | null;
           recurrence_group_id?: string | null;
+          source_uid?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -114,6 +116,7 @@ export interface Database {
           is_important?: boolean;
           recurrence_rule?: string | null;
           recurrence_group_id?: string | null;
+          source_uid?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -127,6 +130,7 @@ export interface Database {
           role_label: string | null;
           phone: string | null;
           note: string | null;
+          email: string | null;
         };
         Insert: {
           id?: string;
@@ -135,6 +139,7 @@ export interface Database {
           role_label?: string | null;
           phone?: string | null;
           note?: string | null;
+          email?: string | null;
         };
         Update: {
           id?: string;
@@ -143,6 +148,7 @@ export interface Database {
           role_label?: string | null;
           phone?: string | null;
           note?: string | null;
+          email?: string | null;
         };
         Relationships: [];
       };

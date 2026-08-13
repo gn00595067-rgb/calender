@@ -48,6 +48,14 @@
 - **進度統整**：以「該月的行程」為基準抓取其回饋，依行事曆分組成時間軸（呼應教學進度統整情境）。
 - **CSV**：以 `﻿` BOM + UTF-8 輸出，Excel 開啟中文不亂碼；欄位含結清狀態。
 
+## 追加功能：匯入 Google 行事曆（.ics）
+
+- **走 .ics 而非 OAuth**：原 spec 把 Google OAuth 同步列為 v2（設定重）。改以 `.ics` 檔上傳或「私人 iCal 網址」匯入，免 OAuth／免 API 金鑰，最適合快速灌真實資料。OAuth 一鍵連線仍留待 v2。
+- **解析引擎 ical.js**：正確處理 VTIMEZONE、RRULE 展開、all-day、ATTENDEE。時區換算以 VTIMEZONE 為準，floating 時間視為台北。
+- **人事物轉換**：ATTENDEE/ORGANIZER→contacts（以 email 優先、姓名次之去重合併，新增 `contacts.email` 欄）；ICS CATEGORIES + 關鍵字規則→tags；重複行程在選定區間內展開為實體列並共用 `recurrence_group_id`。
+- **去重**：新增 `events.source_uid`，以 `(calendar_id, source_uid, starts_at)` 判定重複匯入時略過。
+- **兩段式**：先 `previewIcsImportAction`（不寫入，回傳將匯入清單與新人物數）再 `commitIcsImportAction`（zod 驗證後寫入）；單次上限 1500 筆。
+
 ## 待 v2 的擴充接縫
 
 - 拖曳調整行程時間（week/day 視圖已具座標基礎）。
