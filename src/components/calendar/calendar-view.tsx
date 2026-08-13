@@ -1,0 +1,200 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { addDays, addMonths, addWeeks, format } from "date-fns";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { PageHeader } from "@/components/app/page-header";
+import { Button } from "@/components/ui/button";
+import { ErrorState, ListSkeleton } from "@/components/app/states";
+import { useAppData } from "@/components/app/app-data";
+import { can } from "@/lib/permissions";
+import { useCalendarEvents } from "@/lib/client/events";
+import {
+  monthGrid,
+  weekDays,
+  dayRange,
+  conflictIds,
+  zoned,
+  zonedToIso,
+} from "@/lib/calendar-utils";
+import { D } from "@/lib/date";
+import { CONFLICT_COLOR } from "@/lib/constants";
+import { MonthView } from "./month-view";
+import { TimeGridView } from "./time-grid-view";
+import { EventModal } from "./event-modal";
+import { EventDetailDialog } from "./event-detail-dialog";
+import type { CalEvent } from "@/lib/client/events";
+
+type ViewMode = "month" | "week" | "day";
+
+export function CalendarView() {
+  const { calendars, calendarById } = useAppData();
+  const canCreate = calendars.some((c) => can.editEvents(c.effectiveRole));
+
+  const [view, setView] = useState<ViewMode>("month");
+  const [anchor, setAnchor] = useState<Date>(() => new Date());
+
+  const [detail, setDetail] = useState<CalEvent | null>(null);
+  const [editing, setEditing] = useState<CalEvent | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createStart, setCreateStart] = useState<string | undefined>(undefined);
+
+  const { days, range, monthStart } = useMemo(() => {
+    if (view === "month") {
+      const g = monthGrid(anchor);
+      return { days: g.days, range: g.range, monthStart: g.monthStart };
+    }
+    if (view === "week") {
+      const w = weekDays(anchor);
+      return { days: w.days, range: w.range, monthStart: anchor };
+    }
+    const d = dayRange(anchor);
+    return { days: [d.day], range: d.range, monthStart: anchor };
+  }, [view, anchor]);
+
+  const { data: events = [], isLoading, isError, error, refetch } = useCalendarEvents(
+    range.startIso,
+    range.endIso,
+  );
+
+  const conflicts = useMemo(() => conflictIds(events), [events]);
+  const colorOf = (calendarId: string) =>
+    calendarById.get(calendarId)?.color ?? "#64748B";
+
+  const navigate = (dir: -1 | 0 | 1) => {
+    if (dir === 0) return setAnchor(new Date());
+    const z = zoned(anchor);
+    const nz =
+      view === "month" ? addMonths(z, dir) : view === "week" ? addWeeks(z, dir) : addDays(z, dir);
+    setAnchor(new Date(zonedToIso(nz)));
+  };
+
+  const title = useMemo(() => {
+    if (view === "month") return D.monthYear(anchor);
+    if (view === "week") {
+      const wd = weekDays(anchor).days;
+      return `${format(wd[0], "M/d")} – ${format(wd[6], "M/d")}`;
+    }
+    return D.full(anchor).slice(0, 14); // yyyy/MM/dd(EEE)
+  }, [view, anchor]);
+
+  const openCreate = (dateStr: string, hour = 9) => {
+    if (!canCreate) return;
+    setCreateStart(`${dateStr}T${String(hour).padStart(2, "0")}:00`);
+    setCreateOpen(true);
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="行事曆"
+        actions={
+          canCreate ? (
+            <Button onClick={() => openCreate(format(zoned(new Date()), "yyyy-MM-dd"))}>
+              <Plus className="size-4" />
+              新增行程
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="icon" onClick={() => navigate(-1)} aria-label="上一頁">
+            <ChevronLeft className="size-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate(0)}>
+            今天
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => navigate(1)} aria-label="下一頁">
+            <ChevronRight className="size-4" />
+          </Button>
+          <h2 className="ml-2 text-lg font-semibold">{title}</h2>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {conflicts.size > 0 && (
+            <span
+              className="rounded-full px-2 py-1 text-xs font-medium text-white"
+              style={{ backgroundColor: CONFLICT_COLOR }}
+            >
+              {conflicts.size} 筆衝突
+            </span>
+          )}
+          <div className="inline-flex rounded-lg border p-0.5">
+            {(["month", "week", "day"] as ViewMode[]).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={
+                  "rounded-md px-3 py-1 text-sm font-medium transition " +
+                  (view === v
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground")
+                }
+              >
+                {v === "month" ? "月" : v === "week" ? "週" : "日"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {isError ? (
+        <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
+      ) : isLoading ? (
+        <ListSkeleton rows={6} />
+      ) : view === "month" ? (
+        <MonthView
+          days={days}
+          monthStart={monthStart}
+          events={events}
+          colorOf={colorOf}
+          conflicts={conflicts}
+          onSelectEvent={setDetail}
+          onCreateAt={(ds) => openCreate(ds)}
+        />
+      ) : (
+        <TimeGridView
+          days={days}
+          events={events}
+          colorOf={colorOf}
+          conflicts={conflicts}
+          onSelectEvent={setDetail}
+          onCreateAt={openCreate}
+        />
+      )}
+
+      {/* 詳情 */}
+      <EventDetailDialog
+        open={!!detail}
+        onOpenChange={(o) => !o && setDetail(null)}
+        event={detail}
+        onEdit={() => {
+          setEditing(detail);
+          setDetail(null);
+        }}
+        onChanged={() => refetch()}
+      />
+
+      {/* 新增 */}
+      <EventModal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        mode="create"
+        defaultStartWall={createStart}
+        onSaved={() => refetch()}
+      />
+
+      {/* 編輯 */}
+      <EventModal
+        open={!!editing}
+        onOpenChange={(o) => !o && setEditing(null)}
+        mode="edit"
+        event={editing ?? undefined}
+        onSaved={() => refetch()}
+      />
+    </div>
+  );
+}
