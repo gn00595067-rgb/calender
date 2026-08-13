@@ -96,11 +96,13 @@ async function main() {
     { id: tutorId, email: TUTOR_EMAIL, display_name: "陳老師" },
   ]);
 
-  console.log("→ 清除老闆既有資料（幂等）…");
+  console.log("→ 清除既有資料（幂等）…");
   await db.from("calendars").delete().eq("owner_id", bossId); // 級聯 events / notes / shares
   await db.from("contacts").delete().eq("owner_id", bossId);
   await db.from("tags").delete().eq("owner_id", bossId);
   await db.from("finance_records").delete().eq("owner_id", bossId);
+  // 家教是純協作者：移除其自身的預設分類，讓登入後只看到被分享的「小明（兒子）」
+  await db.from("calendars").delete().eq("owner_id", tutorId);
 
   console.log("→ 建立分類…");
   const calendarsSpec = [
