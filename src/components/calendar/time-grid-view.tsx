@@ -129,7 +129,7 @@ export function TimeGridView({
                     style={{ height: HOUR_HEIGHT }}
                   />
                 ))}
-                {positioned.map(({ event, col, cols }) => {
+                {positioned.map(({ event, col, cols, span }) => {
                   const start = zoned(event.starts_at);
                   const end = zoned(event.ends_at);
                   const startMin = minutesOfDay(start);
@@ -154,7 +154,7 @@ export function TimeGridView({
                         top,
                         height,
                         left: `calc(${col * widthPct}% + 2px)`,
-                        width: `calc(${widthPct}% - 4px)`,
+                        width: `calc(${span * widthPct}% - 4px)`,
                       }}
                       className="overflow-hidden rounded-md px-1.5 py-0.5 text-left hover:brightness-95 touch:min-h-8"
                     >
@@ -166,7 +166,7 @@ export function TimeGridView({
                       </div>
                       <div
                         className={cn(
-                          "truncate text-xs font-medium leading-tight",
+                          "line-clamp-2 text-xs font-medium leading-tight",
                           isSingle && "text-sm",
                         )}
                       >

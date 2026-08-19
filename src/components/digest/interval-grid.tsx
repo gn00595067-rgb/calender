@@ -158,7 +158,7 @@ export function IntervalGrid({
                 {Array.from({ length: windowHours }).map((_, i) => (
                   <div key={i} className="border-b" style={{ height: pxPerHour }} />
                 ))}
-                {positioned.map(({ event, col, cols }) => {
+                {positioned.map(({ event, col, cols, span }) => {
                   const seg = eventSegmentOnDay(event, ds)!;
                   const s = Math.max(seg.start, w.start);
                   const en = Math.min(seg.end, w.end);
@@ -183,7 +183,7 @@ export function IntervalGrid({
                         top,
                         height,
                         left: `calc(${col * widthPct}% + 1px)`,
-                        width: `calc(${widthPct}% - 2px)`,
+                        width: `calc(${span * widthPct}% - 2px)`,
                       }}
                       className="overflow-hidden rounded px-1 text-left leading-tight hover:brightness-95"
                     >

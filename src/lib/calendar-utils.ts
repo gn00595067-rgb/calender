@@ -107,11 +107,13 @@ export interface PositionedEvent<T extends TimeSpan> {
   event: T;
   col: number;
   cols: number;
+  /** 向右延展的欄數（吃掉右側沒被其他行程佔用的空欄，讓標題更好讀） */
+  span: number;
 }
 
 /**
  * 時間軸並排佈局：將同一天內重疊的行程分配欄位。
- * 回傳每筆的欄位索引 col 與該群組總欄數 cols。
+ * 回傳每筆的欄位索引 col、該群組總欄數 cols，與可向右延展的 span。
  */
 export function layoutDay<T extends TimeSpan>(events: T[]): PositionedEvent<T>[] {
   const sorted = [...events].sort(
@@ -146,7 +148,17 @@ export function layoutDay<T extends TimeSpan>(events: T[]): PositionedEvent<T>[]
     }
     const cols = colEnds.length;
     for (const ev of cluster) {
-      result.push({ event: ev, col: assign.get(ev.id) ?? 0, cols });
+      const col = assign.get(ev.id) ?? 0;
+      // 向右延展：吃掉右側每一欄中「與本行程時間不重疊」的空間，直到碰到會撞到的行程
+      let span = 1;
+      for (let c = col + 1; c < cols; c++) {
+        const blocked = cluster.some(
+          (o) => assign.get(o.id) === c && overlaps(o, ev),
+        );
+        if (blocked) break;
+        span++;
+      }
+      result.push({ event: ev, col, cols, span });
     }
     cluster = [];
   };
