@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -11,6 +11,7 @@ import {
   SlidersHorizontal,
   CalendarClock,
   Plus,
+  ArrowLeft,
 } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState, ListSkeleton, ErrorState } from "@/components/app/states";
@@ -50,6 +51,7 @@ function useDebounced<T>(value: T, ms: number): T {
 
 function SearchInner() {
   const params = useSearchParams();
+  const router = useRouter();
   const { calendars, calendarById, visibleIds } = useAppData();
   const canCreate = calendars.some((c) => can.editEvents(c.effectiveRole));
   const { data: contacts = [] } = useContacts();
@@ -165,18 +167,37 @@ function SearchInner() {
   const hasCriteria =
     debouncedQ.trim() || activeFilterCount > 0;
 
+  // Esc：有輸入時先清空關鍵字，否則直接回行事曆——隨時輕鬆離開
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // 有開啟中的對話框（新增/編輯/詳情/命令面板）時，交給它自己關閉
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return;
+      if (q) setQ("");
+      else router.push("/calendar");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [q, router]);
+
   return (
     <div className={cn("mx-auto", hasRange ? "max-w-5xl" : "max-w-3xl")}>
       <PageHeader
         title="搜尋"
         description="跨行程、人物、標籤、回饋全文搜尋。"
         actions={
-          canCreate ? (
-            <Button onClick={() => openCreate(taipeiTodayStr())}>
-              <Plus className="size-4" />
-              新增行程
+          <>
+            <Button variant="outline" onClick={() => router.push("/calendar")}>
+              <ArrowLeft className="size-4" />
+              返回行事曆
             </Button>
-          ) : undefined
+            {canCreate && (
+              <Button onClick={() => openCreate(taipeiTodayStr())}>
+                <Plus className="size-4" />
+                新增行程
+              </Button>
+            )}
+          </>
         }
       />
 
