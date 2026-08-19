@@ -2,21 +2,42 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Search as SearchIcon, Star, X, SlidersHorizontal } from "lucide-react";
+import {
+  Search as SearchIcon,
+  Star,
+  X,
+  SlidersHorizontal,
+  CalendarClock,
+  Plus,
+} from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState, ListSkeleton, ErrorState } from "@/components/app/states";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { EventTwoLineCard } from "@/components/calendar/event-card";
 import { EventDetailDialog } from "@/components/calendar/event-detail-dialog";
+import { EventModal } from "@/components/calendar/event-modal";
+import { IntervalAvailabilityPanel } from "@/components/digest/availability";
+import { presetInterval } from "@/components/digest/interval-picker";
 import { useAppData } from "@/components/app/app-data";
+import { can } from "@/lib/permissions";
 import { useContacts, useTags } from "@/lib/client/lookups";
 import { useSearch } from "@/lib/client/search";
-import { zoned } from "@/lib/calendar-utils";
-import { D } from "@/lib/date";
+import { zoned, conflictIds } from "@/lib/calendar-utils";
+import {
+  D,
+  taipeiDateStartUtcISO,
+  taipeiDateEndExclusiveUtcISO,
+  taipeiTodayStr,
+} from "@/lib/date";
 import { cn } from "@/lib/utils";
-import type { CalEvent } from "@/lib/client/events";
+import {
+  fetchEventsInRange,
+  type CalEvent,
+} from "@/lib/client/events";
+import type { WindowKey, MinGapKey } from "@/lib/availability";
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -29,7 +50,8 @@ function useDebounced<T>(value: T, ms: number): T {
 
 function SearchInner() {
   const params = useSearchParams();
-  const { calendars, calendarById } = useAppData();
+  const { calendars, calendarById, visibleIds } = useAppData();
+  const canCreate = calendars.some((c) => can.editEvents(c.effectiveRole));
   const { data: contacts = [] } = useContacts();
   const { data: tags = [] } = useTags();
 
@@ -37,14 +59,18 @@ function SearchInner() {
   const debouncedQ = useDebounced(q, 300);
 
   const [calFilter, setCalFilter] = useState<Set<string>>(new Set());
-  const [contactId, setContactId] = useState<string | null>(null);
-  const [tagId, setTagId] = useState<string | null>(null);
+  const [contactIds, setContactIds] = useState<Set<string>>(new Set());
+  const [tagIds, setTagIds] = useState<Set<string>>(new Set());
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [importantOnly, setImportantOnly] = useState(false);
   const [hasFinance, setHasFinance] = useState(false);
+  const [hasNotes, setHasNotes] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [detail, setDetail] = useState<CalEvent | null>(null);
+  const [editing, setEditing] = useState<CalEvent | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createStart, setCreateStart] = useState<string | undefined>(undefined);
 
   // 搜尋範圍：若未指定分類過濾，就是全部可存取的分類
   const scopeIds =
@@ -53,12 +79,13 @@ function SearchInner() {
   const { data: results = [], isLoading, isError, error, refetch } = useSearch({
     q: debouncedQ,
     calendarIds: scopeIds,
-    contactId,
-    tagId,
+    contactIds: [...contactIds],
+    tagIds: [...tagIds],
     startDate: startDate || null,
     endDate: endDate || null,
     importantOnly,
     hasFinance,
+    hasNotes,
   });
 
   const grouped = useMemo(() => {
@@ -72,40 +99,86 @@ function SearchInner() {
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [results]);
 
+  // —— 這段期間的空檔：輸入起訖日即顯示（以所有顯示中分類的行程計算）——
+  const [availWindowKey, setAvailWindowKey] = useState<WindowKey>("full");
+  const [availMinGapKey, setAvailMinGapKey] = useState<MinGapKey>("60");
+  const hasRange = Boolean(startDate && endDate && startDate <= endDate);
+  const availStart = hasRange ? taipeiDateStartUtcISO(startDate) : "";
+  const availEnd = hasRange ? taipeiDateEndExclusiveUtcISO(endDate) : "";
+  const availIds = useMemo(() => [...visibleIds].sort(), [visibleIds]);
+  const {
+    data: availEvents = [],
+    isLoading: availLoading,
+    refetch: availRefetch,
+  } = useQuery({
+    queryKey: ["events", availStart, availEnd, availIds],
+    queryFn: () => fetchEventsInRange(availStart, availEnd, availIds),
+    enabled: hasRange,
+  });
+  const availConflicts = useMemo(() => conflictIds(availEvents), [availEvents]);
+
+  const openCreate = (dateStr: string, hour = 9) => {
+    if (!canCreate) return;
+    setCreateStart(`${dateStr}T${String(hour).padStart(2, "0")}:00`);
+    setCreateOpen(true);
+  };
+  const onSaved = () => {
+    availRefetch();
+    refetch();
+  };
+
   const activeFilterCount =
     calFilter.size +
-    (contactId ? 1 : 0) +
-    (tagId ? 1 : 0) +
+    contactIds.size +
+    tagIds.size +
     (startDate ? 1 : 0) +
     (endDate ? 1 : 0) +
     (importantOnly ? 1 : 0) +
-    (hasFinance ? 1 : 0);
+    (hasFinance ? 1 : 0) +
+    (hasNotes ? 1 : 0);
 
   const clearFilters = () => {
     setCalFilter(new Set());
-    setContactId(null);
-    setTagId(null);
+    setContactIds(new Set());
+    setTagIds(new Set());
     setStartDate("");
     setEndDate("");
     setImportantOnly(false);
     setHasFinance(false);
+    setHasNotes(false);
   };
 
-  const toggleCal = (id: string) => {
-    setCalFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  const toggleIn =
+    (setter: React.Dispatch<React.SetStateAction<Set<string>>>) =>
+    (id: string) => {
+      setter((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    };
+  const toggleCal = toggleIn(setCalFilter);
+  const toggleContact = toggleIn(setContactIds);
+  const toggleTag = toggleIn(setTagIds);
 
   const hasCriteria =
     debouncedQ.trim() || activeFilterCount > 0;
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <PageHeader title="搜尋" description="跨行程、人物、標籤、回饋全文搜尋。" />
+    <div className={cn("mx-auto", hasRange ? "max-w-5xl" : "max-w-3xl")}>
+      <PageHeader
+        title="搜尋"
+        description="跨行程、人物、標籤、回饋全文搜尋。"
+        actions={
+          canCreate ? (
+            <Button onClick={() => openCreate(taipeiTodayStr())}>
+              <Plus className="size-4" />
+              新增行程
+            </Button>
+          ) : undefined
+        }
+      />
 
       <div className="space-y-3">
         <div className="relative">
@@ -125,6 +198,49 @@ function SearchInner() {
               aria-label="清除"
             >
               <X className="size-4" />
+            </button>
+          )}
+        </div>
+
+        {/* 快速區間：一鍵開出可直接操作的行事曆格 */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">區間</span>
+          {(
+            [
+              { key: "today", label: "今天" },
+              { key: "week", label: "本週" },
+              { key: "next7", label: "未來 7 天" },
+            ] as const
+          ).map((p) => {
+            const iv = presetInterval(p.key);
+            const active = startDate === iv.startDate && endDate === iv.endDate;
+            return (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => {
+                  setStartDate(iv.startDate);
+                  setEndDate(iv.endDate);
+                }}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-sm transition",
+                  active ? "border-primary bg-primary/10" : "hover:bg-accent",
+                )}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+          {(startDate || endDate) && (
+            <button
+              type="button"
+              onClick={() => {
+                setStartDate("");
+                setEndDate("");
+              }}
+              className="rounded-full px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              清除區間
             </button>
           )}
         </div>
@@ -174,38 +290,62 @@ function SearchInner() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {contacts.length > 0 && (
               <div>
-                <div className="mb-1.5 text-xs font-medium text-muted-foreground">人物</div>
-                <select
-                  value={contactId ?? ""}
-                  onChange={(e) => setContactId(e.target.value || null)}
-                  className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                >
-                  <option value="">全部</option>
+                <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                  人物{contactIds.size > 0 && `（需全部符合 · 已選 ${contactIds.size}）`}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
                   {contacts.map((c) => (
-                    <option key={c.id} value={c.id}>
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => toggleContact(c.id)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm",
+                        contactIds.has(c.id)
+                          ? "border-primary bg-primary/10"
+                          : "hover:bg-accent",
+                      )}
+                    >
                       {c.name}
-                      {c.role_label ? `（${c.role_label}）` : ""}
-                    </option>
+                      {c.role_label ? (
+                        <span className="text-xs text-muted-foreground">
+                          {c.role_label}
+                        </span>
+                      ) : null}
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
+            )}
+
+            {tags.length > 0 && (
               <div>
-                <div className="mb-1.5 text-xs font-medium text-muted-foreground">標籤</div>
-                <select
-                  value={tagId ?? ""}
-                  onChange={(e) => setTagId(e.target.value || null)}
-                  className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                >
-                  <option value="">全部</option>
+                <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                  標籤{tagIds.size > 0 && `（需全部符合 · 已選 ${tagIds.size}）`}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
                   {tags.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => toggleTag(t.id)}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm",
+                        tagIds.has(t.id)
+                          ? "border-primary bg-primary/10"
+                          : "hover:bg-accent",
+                      )}
+                    >
+                      #{t.name}
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <div className="mb-1.5 text-xs font-medium text-muted-foreground">起始日</div>
                 <Input
@@ -248,7 +388,53 @@ function SearchInner() {
               >
                 含財務紀錄
               </button>
+              <button
+                type="button"
+                onClick={() => setHasNotes((v) => !v)}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm",
+                  hasNotes ? "border-primary bg-primary/10" : "hover:bg-accent",
+                )}
+              >
+                含回饋
+              </button>
             </div>
+          </div>
+        )}
+
+        {/* 這段期間的空檔（設定起訖日即顯示） */}
+        {hasRange && (
+          <div className="rounded-xl border bg-card p-3">
+            <div className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
+              <CalendarClock className="size-4 text-emerald-600" />
+              這段期間的行事曆與空檔
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              {startDate} – {endDate}
+              {canCreate ? "：點空白時段可直接新增、點行程可編輯；" : "："}
+              綠色即可安排的空檔（點最長空檔可放大該日）。
+            </p>
+            {availLoading ? (
+              <ListSkeleton rows={3} />
+            ) : (
+              <IntervalAvailabilityPanel
+                startDate={startDate}
+                endDate={endDate}
+                events={availEvents}
+                conflicts={availConflicts}
+                colorOf={(id) => calendarById.get(id)?.color ?? "#64748B"}
+                onSelect={setDetail}
+                windowKey={availWindowKey}
+                onWindowKeyChange={setAvailWindowKey}
+                minGapKey={availMinGapKey}
+                onMinGapKeyChange={setAvailMinGapKey}
+                onFocusDay={(ds) => {
+                  setStartDate(ds);
+                  setEndDate(ds);
+                }}
+                onCreateAt={canCreate ? openCreate : undefined}
+              />
+            )}
           </div>
         )}
 
@@ -287,6 +473,18 @@ function SearchInner() {
                           color={calendarById.get(e.calendar_id)?.color ?? "#64748B"}
                           onClick={() => setDetail(e)}
                         />
+                        {e.tagNames.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1 pl-2.5">
+                            {e.tagNames.map((t) => (
+                              <span
+                                key={t}
+                                className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                              >
+                                #{t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -301,8 +499,29 @@ function SearchInner() {
         open={!!detail}
         onOpenChange={(o) => !o && setDetail(null)}
         event={detail}
-        onEdit={() => setDetail(null)}
-        onChanged={() => refetch()}
+        onEdit={() => {
+          setEditing(detail);
+          setDetail(null);
+        }}
+        onChanged={onSaved}
+      />
+
+      {/* 新增 */}
+      <EventModal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        mode="create"
+        defaultStartWall={createStart}
+        onSaved={onSaved}
+      />
+
+      {/* 編輯 */}
+      <EventModal
+        open={!!editing}
+        onOpenChange={(o) => !o && setEditing(null)}
+        mode="edit"
+        event={editing ?? undefined}
+        onSaved={onSaved}
       />
     </div>
   );

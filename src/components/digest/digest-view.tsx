@@ -1,12 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format, differenceInCalendarDays } from "date-fns";
-import { AlertTriangle, CalendarClock, Star } from "lucide-react";
+import { AlertTriangle, CalendarClock, Star, Plus } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
+import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, ListSkeleton } from "@/components/app/states";
 import { EventTwoLineCard } from "@/components/calendar/event-card";
 import { EventDetailDialog } from "@/components/calendar/event-detail-dialog";
+import { EventModal } from "@/components/calendar/event-modal";
 import { useAppData } from "@/components/app/app-data";
 import { can } from "@/lib/permissions";
 import { useCalendarEvents, type CalEvent } from "@/lib/client/events";
@@ -15,6 +17,7 @@ import { conflictIds, zoned } from "@/lib/calendar-utils";
 import {
   taipeiDateStartUtcISO,
   taipeiDateEndExclusiveUtcISO,
+  taipeiTodayStr,
   twd,
   D,
 } from "@/lib/date";
@@ -25,23 +28,69 @@ import {
   presetInterval,
   type Interval,
 } from "./interval-picker";
+import { AvailabilityControls, AvailabilitySummary } from "./availability";
+import { IntervalGrid } from "./interval-grid";
+import {
+  windowFromKey,
+  minutesFromGapKey,
+  intervalAvailability,
+  freeOnDay,
+  roughHours,
+  WINDOW_PRESETS,
+  MIN_GAP_PRESETS,
+  type WorkWindow,
+  type WindowKey,
+  type MinGapKey,
+} from "@/lib/availability";
 
 function startDayStr(e: CalEvent): string {
   return format(zoned(e.starts_at), "yyyy-MM-dd");
 }
 
-function eventMinutes(e: CalEvent): number {
-  if (e.all_day) return 0;
-  return Math.max(
-    0,
-    (new Date(e.ends_at).getTime() - new Date(e.starts_at).getTime()) / 60000,
-  );
-}
-
 export function DigestView() {
   const { calendars, calendarById, visibleIds } = useAppData();
-  const [interval, setInterval] = useState<Interval>(() => presetInterval("month"));
+  const canCreate = calendars.some((c) => can.editEvents(c.effectiveRole));
+  const [interval, setInterval] = useState<Interval>(() => presetInterval("week"));
   const [detail, setDetail] = useState<CalEvent | null>(null);
+  const [editing, setEditing] = useState<CalEvent | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createStart, setCreateStart] = useState<string | undefined>(undefined);
+
+  // 找空檔設定（時間帶 + 最小空檔），永遠顯示、不需開關
+  const [windowKey, setWindowKey] = useState<WindowKey>("full");
+  const [minGapKey, setMinGapKey] = useState<MinGapKey>("60");
+  const w = useMemo(() => windowFromKey(windowKey), [windowKey]);
+  const minGap = minutesFromGapKey(minGapKey);
+  const focusDay = (ds: string) => setInterval({ startDate: ds, endDate: ds });
+  const todayStr = taipeiTodayStr();
+
+  const openCreate = (dateStr: string, hour = 9) => {
+    if (!canCreate) return;
+    setCreateStart(`${dateStr}T${String(hour).padStart(2, "0")}:00`);
+    setCreateOpen(true);
+  };
+
+  // 記住上次設定；以 effect 讀取避免 SSR 水合不一致
+  useEffect(() => {
+    try {
+      const wk = localStorage.getItem("execcal:find-window");
+      const gk = localStorage.getItem("execcal:find-gap");
+      /* eslint-disable react-hooks/set-state-in-effect -- 掛載時自 localStorage 同步一次 */
+      if (wk && WINDOW_PRESETS.some((p) => p.key === wk)) setWindowKey(wk as WindowKey);
+      if (gk && MIN_GAP_PRESETS.some((p) => p.key === gk)) setMinGapKey(gk as MinGapKey);
+      /* eslint-enable react-hooks/set-state-in-effect */
+    } catch {
+      /* localStorage 不可用時忽略 */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("execcal:find-window", windowKey);
+      localStorage.setItem("execcal:find-gap", minGapKey);
+    } catch {
+      /* 忽略 */
+    }
+  }, [windowKey, minGapKey]);
 
   const startIso = taipeiDateStartUtcISO(interval.startDate);
   const endIso = taipeiDateEndExclusiveUtcISO(interval.endDate);
@@ -67,6 +116,12 @@ export function DigestView() {
   const conflicts = useMemo(() => conflictIds(events), [events]);
   const financeSummary = useMemo(() => summarize(finance), [finance]);
   const colorOf = (id: string) => calendarById.get(id)?.color ?? "#64748B";
+
+  const days = useMemo(() => enumerateDays(interval), [interval]);
+  const avail = useMemo(
+    () => intervalAvailability(days, () => events, w, minGap),
+    [days, events, w, minGap],
+  );
 
   // 各分類計數
   const perCalendar = useMemo(() => {
@@ -95,24 +150,18 @@ export function DigestView() {
           description="換個區間，或到行事曆新增行程。"
         />
       );
-    if (spanDays <= 1)
-      return (
-        <DayTimeline
-          date={interval.startDate}
-          events={events}
-          colorOf={colorOf}
-          conflicts={conflicts}
-          onSelect={setDetail}
-        />
-      );
     if (spanDays <= 7)
       return (
-        <Agenda
-          interval={interval}
+        <IntervalGrid
+          days={days}
           events={events}
+          w={w}
           colorOf={colorOf}
           conflicts={conflicts}
+          minGap={minGap}
           onSelect={setDetail}
+          onCreateAt={canCreate ? openCreate : undefined}
+          todayStr={todayStr}
         />
       );
     if (spanDays <= 31)
@@ -133,6 +182,9 @@ export function DigestView() {
         calendarNameOf={(id) => calendarById.get(id)?.name ?? "分類"}
         onSelect={setDetail}
         financeVisible={anyFinanceVisible}
+        days={days}
+        w={w}
+        minGap={minGap}
       />
     );
   };
@@ -141,11 +193,26 @@ export function DigestView() {
     <div>
       <PageHeader
         title="區間總覽"
-        description="一個螢幕，看清這段期間所有重要的事。"
+        description="一個螢幕，看清這段期間所有重要的事與空檔。"
+        actions={
+          canCreate ? (
+            <Button onClick={() => openCreate(todayStr)}>
+              <Plus className="size-4" />
+              新增行程
+            </Button>
+          ) : undefined
+        }
       />
 
       <div className="space-y-4">
         <IntervalPicker value={interval} onChange={setInterval} />
+
+        <AvailabilityControls
+          windowKey={windowKey}
+          onWindowKeyChange={setWindowKey}
+          minGapKey={minGapKey}
+          onMinGapKeyChange={setMinGapKey}
+        />
 
         {/* 摘要列 */}
         <div className="flex flex-wrap items-center gap-2">
@@ -187,6 +254,16 @@ export function DigestView() {
           )}
         </div>
 
+        {spanDays > 1 && events.length > 0 && (
+          <AvailabilitySummary
+            totalFreeMin={avail.totalFreeMin}
+            freeDayCount={avail.freeDayCount}
+            blocks={avail.blocks}
+            dayCount={days.length}
+            onFocusDay={focusDay}
+          />
+        )}
+
         {isError ? (
           <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
         ) : isLoading ? (
@@ -200,8 +277,29 @@ export function DigestView() {
         open={!!detail}
         onOpenChange={(o) => !o && setDetail(null)}
         event={detail}
-        onEdit={() => setDetail(null)}
+        onEdit={() => {
+          setEditing(detail);
+          setDetail(null);
+        }}
         onChanged={() => refetch()}
+      />
+
+      {/* 新增 */}
+      <EventModal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        mode="create"
+        defaultStartWall={createStart}
+        onSaved={() => refetch()}
+      />
+
+      {/* 編輯 */}
+      <EventModal
+        open={!!editing}
+        onOpenChange={(o) => !o && setEditing(null)}
+        mode="edit"
+        event={editing ?? undefined}
+        onSaved={() => refetch()}
       />
     </div>
   );
@@ -223,172 +321,6 @@ function Pill({
     >
       {children}
     </span>
-  );
-}
-
-/** 負荷條 */
-function LoadBar({ minutes }: { minutes: number }) {
-  const level = minutes > 360 ? "滿" : minutes >= 180 ? "中" : minutes > 0 ? "輕" : "空";
-  const color =
-    minutes > 360 ? "#DC2626" : minutes >= 180 ? "#EA580C" : minutes > 0 ? "#16A34A" : "#CBD5E1";
-  const pct = Math.min(100, (minutes / 480) * 100);
-  return (
-    <div className="flex items-center gap-2">
-      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
-      </div>
-      <span className="text-[10px] text-muted-foreground">{level}</span>
-    </div>
-  );
-}
-
-// ------- ≤1 天：時間軸 + 空檔 -------
-function DayTimeline({
-  date,
-  events,
-  colorOf,
-  conflicts,
-  onSelect,
-}: {
-  date: string;
-  events: CalEvent[];
-  colorOf: (id: string) => string;
-  conflicts: Set<string>;
-  onSelect: (e: CalEvent) => void;
-}) {
-  const allDay = events.filter((e) => e.all_day);
-  const timed = events
-    .filter((e) => !e.all_day)
-    .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at));
-
-  // 空檔（08:00–22:00）
-  const items: React.ReactNode[] = [];
-  const WINDOW_START = 8 * 60;
-  const WINDOW_END = 22 * 60;
-  let cursor = WINDOW_START;
-  const minOf = (iso: string) => {
-    const z = zoned(iso);
-    return z.getHours() * 60 + z.getMinutes();
-  };
-
-  timed.forEach((e, i) => {
-    const s = Math.max(WINDOW_START, minOf(e.starts_at));
-    if (s - cursor >= 30 && cursor >= WINDOW_START) {
-      const gap = s - cursor;
-      items.push(
-        <div
-          key={`gap-${i}`}
-          className="flex items-center gap-2 py-1.5 pl-16 text-xs text-emerald-600"
-        >
-          <span className="rounded-full bg-emerald-50 px-2 py-0.5">
-            空檔 {Math.floor(gap / 60) > 0 ? `${Math.floor(gap / 60)} 小時` : ""}
-            {gap % 60 ? `${gap % 60} 分` : ""}
-          </span>
-        </div>,
-      );
-    }
-    items.push(
-      <div key={e.id} className="flex gap-3">
-        <div className="w-14 shrink-0 pt-1.5 text-right text-xs font-semibold tabular-nums text-muted-foreground">
-          {D.time(e.starts_at)}
-        </div>
-        <div className="flex-1 pb-1.5">
-          <EventTwoLineCard
-            event={e}
-            color={colorOf(e.calendar_id)}
-            conflict={conflicts.has(e.id)}
-            onClick={() => onSelect(e)}
-          />
-        </div>
-      </div>,
-    );
-    cursor = Math.max(cursor, minOf(e.ends_at));
-  });
-
-  if (cursor < WINDOW_END && timed.length > 0 && WINDOW_END - cursor >= 30) {
-    items.push(
-      <div key="gap-end" className="flex items-center gap-2 py-1.5 pl-16 text-xs text-emerald-600">
-        <span className="rounded-full bg-emerald-50 px-2 py-0.5">
-          之後至 22:00 有空
-        </span>
-      </div>,
-    );
-  }
-
-  return (
-    <div className="rounded-xl border bg-card p-4">
-      <div className="mb-3 text-sm font-semibold">{D.full(dayStartIso(date)).slice(0, 14)}</div>
-      {allDay.length > 0 && (
-        <div className="mb-3 space-y-1">
-          {allDay.map((e) => (
-            <EventTwoLineCard
-              key={e.id}
-              event={e}
-              color={colorOf(e.calendar_id)}
-              onClick={() => onSelect(e)}
-            />
-          ))}
-        </div>
-      )}
-      <div className="space-y-0.5">{items}</div>
-    </div>
-  );
-}
-
-// ------- 2–7 天：agenda 直欄 -------
-function Agenda({
-  interval,
-  events,
-  colorOf,
-  conflicts,
-  onSelect,
-}: {
-  interval: Interval;
-  events: CalEvent[];
-  colorOf: (id: string) => string;
-  conflicts: Set<string>;
-  onSelect: (e: CalEvent) => void;
-}) {
-  const days = enumerateDays(interval);
-  const byDay = groupByStartDay(events);
-
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {days.map((ds) => {
-        const list = (byDay.get(ds) ?? []).sort(
-          (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at),
-        );
-        const load = list.reduce((s, e) => s + eventMinutes(e), 0);
-        return (
-          <div key={ds} className="rounded-xl border bg-card p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="text-sm font-semibold">
-                {D.monthDay(dayStartIso(ds))}
-                <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                  週{"日一二三四五六"[dow(ds)]}
-                </span>
-              </div>
-              <LoadBar minutes={load} />
-            </div>
-            {list.length === 0 ? (
-              <p className="py-2 text-center text-xs text-muted-foreground">無行程</p>
-            ) : (
-              <div className="space-y-1">
-                {list.map((e) => (
-                  <EventTwoLineCard
-                    key={e.id}
-                    event={e}
-                    color={colorOf(e.calendar_id)}
-                    conflict={conflicts.has(e.id)}
-                    onClick={() => onSelect(e)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -430,8 +362,8 @@ function WeekHeatmap({
     <div className="space-y-4">
       <div className="rounded-xl border bg-card p-4">
         <div className="mb-2 grid grid-cols-7 text-center text-[10px] text-muted-foreground">
-          {"日一二三四五六".split("").map((w) => (
-            <div key={w}>{w}</div>
+          {"日一二三四五六".split("").map((wd) => (
+            <div key={wd}>{wd}</div>
           ))}
         </div>
         <div className="grid grid-cols-7 gap-1">
@@ -534,6 +466,9 @@ function MonthlySummary({
   calendarNameOf,
   onSelect,
   financeVisible,
+  days,
+  w,
+  minGap,
 }: {
   events: CalEvent[];
   finance: { occurred_on: string; direction: "expense" | "income"; amount: number }[];
@@ -541,7 +476,20 @@ function MonthlySummary({
   calendarNameOf: (id: string) => string;
   onSelect: (e: CalEvent) => void;
   financeVisible: boolean;
+  days: string[];
+  w: WorkWindow;
+  minGap: number;
 }) {
+  const freeByMonth = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const ds of days) {
+      const free = freeOnDay(events, ds, w, minGap);
+      const total = free.reduce((s, f) => s + (f.end - f.start), 0);
+      if (total > 0) m.set(ds.slice(0, 7), (m.get(ds.slice(0, 7)) ?? 0) + total);
+    }
+    return m;
+  }, [days, events, w, minGap]);
+
   const months = useMemo(() => {
     const map = new Map<string, CalEvent[]>();
     for (const e of events) {
@@ -595,6 +543,11 @@ function MonthlySummary({
               <div className="mb-3 text-sm">
                 {fin.expense > 0 && <span className="mr-3">支出 {twd(fin.expense)}</span>}
                 {fin.income > 0 && <span>收入 {twd(fin.income)}</span>}
+              </div>
+            )}
+            {(freeByMonth.get(key) ?? 0) > 0 && (
+              <div className="mb-3 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                可用空檔 約 {roughHours(freeByMonth.get(key) ?? 0)} 小時
               </div>
             )}
             {important.length > 0 && (

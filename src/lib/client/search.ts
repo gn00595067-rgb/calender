@@ -8,12 +8,15 @@ import { taipeiDateStartUtcISO, taipeiDateEndExclusiveUtcISO } from "@/lib/date"
 export interface SearchParams {
   q: string;
   calendarIds: string[];
-  contactId?: string | null;
-  tagId?: string | null;
+  /** 需同時包含全部所選人物（AND） */
+  contactIds?: string[];
+  /** 需同時包含全部所選標籤（AND） */
+  tagIds?: string[];
   startDate?: string | null;
   endDate?: string | null;
   importantOnly?: boolean;
   hasFinance?: boolean;
+  hasNotes?: boolean;
 }
 
 /** 清掉會破壞 PostgREST or 過濾字串的字元 */
@@ -24,12 +27,13 @@ function sanitize(q: string): string {
 function hasAnyCriteria(p: SearchParams): boolean {
   return Boolean(
     p.q.trim() ||
-      p.contactId ||
-      p.tagId ||
+      (p.contactIds && p.contactIds.length > 0) ||
+      (p.tagIds && p.tagIds.length > 0) ||
       p.startDate ||
       p.endDate ||
       p.importantOnly ||
-      p.hasFinance,
+      p.hasFinance ||
+      p.hasNotes,
   );
 }
 
@@ -92,23 +96,36 @@ export async function searchEvents(p: SearchParams): Promise<CalEvent[]> {
 
   // 疊加 人物 / 標籤 / 含財務 過濾
   const baseIds = base.map((e) => e.id);
-  if (p.contactId) {
+  if (p.contactIds && p.contactIds.length > 0) {
     const { data } = await supabase
       .from("event_contacts")
-      .select("event_id")
-      .eq("contact_id", p.contactId)
+      .select("event_id, contact_id")
+      .in("contact_id", p.contactIds)
       .in("event_id", baseIds);
-    const keep = new Set((data ?? []).map((r) => r.event_id));
-    base = base.filter((e) => keep.has(e.id));
+    // 需同時含全部所選人物（AND）
+    const byEvent = new Map<string, Set<string>>();
+    for (const r of data ?? []) {
+      const set = byEvent.get(r.event_id) ?? new Set<string>();
+      set.add(r.contact_id);
+      byEvent.set(r.event_id, set);
+    }
+    const need = p.contactIds.length;
+    base = base.filter((e) => (byEvent.get(e.id)?.size ?? 0) === need);
   }
-  if (p.tagId) {
+  if (p.tagIds && p.tagIds.length > 0) {
     const { data } = await supabase
       .from("event_tags")
-      .select("event_id")
-      .eq("tag_id", p.tagId)
+      .select("event_id, tag_id")
+      .in("tag_id", p.tagIds)
       .in("event_id", baseIds);
-    const keep = new Set((data ?? []).map((r) => r.event_id));
-    base = base.filter((e) => keep.has(e.id));
+    const byEvent = new Map<string, Set<string>>();
+    for (const r of data ?? []) {
+      const set = byEvent.get(r.event_id) ?? new Set<string>();
+      set.add(r.tag_id);
+      byEvent.set(r.event_id, set);
+    }
+    const need = p.tagIds.length;
+    base = base.filter((e) => (byEvent.get(e.id)?.size ?? 0) === need);
   }
   if (p.hasFinance) {
     const { data } = await supabase
@@ -116,6 +133,14 @@ export async function searchEvents(p: SearchParams): Promise<CalEvent[]> {
       .select("event_id")
       .in("event_id", baseIds);
     const keep = new Set((data ?? []).map((r) => r.event_id).filter(Boolean));
+    base = base.filter((e) => keep.has(e.id));
+  }
+  if (p.hasNotes) {
+    const { data } = await supabase
+      .from("event_notes")
+      .select("event_id")
+      .in("event_id", baseIds);
+    const keep = new Set((data ?? []).map((r) => r.event_id));
     base = base.filter((e) => keep.has(e.id));
   }
 
