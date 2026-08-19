@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Menu, Search } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -10,20 +11,34 @@ import { CommandPaletteProvider, useCommandPalette } from "./command-palette";
 import { AppDataProvider, type Me } from "./app-data";
 import type { AccessibleCalendar } from "@/types/domain";
 
+/**
+ * 頂部搜尋框：點擊直接前往「完整搜尋頁」（關鍵字＋所有篩選＋空檔）。
+ * 鍵盤 Ctrl/⌘+K（或 /）仍開輕量命令面板供快速跳頁；hover 時提示。
+ */
 function SearchTrigger() {
+  const router = useRouter();
   const { open } = useCommandPalette();
   return (
     <Button
       variant="outline"
-      onClick={open}
-      className="h-9 gap-2 text-muted-foreground sm:w-64 sm:justify-between"
+      onClick={() => router.push("/search")}
+      className="group h-9 gap-2 text-muted-foreground sm:w-64 sm:justify-between"
       aria-label="開啟搜尋"
     >
       <span className="flex items-center gap-2">
         <Search className="size-4" />
         <span className="hidden sm:inline">搜尋…</span>
       </span>
-      <kbd className="hidden rounded border bg-muted px-1.5 font-mono text-[10px] sm:inline">
+      <kbd
+        role="button"
+        tabIndex={-1}
+        onClick={(e) => {
+          e.stopPropagation();
+          open();
+        }}
+        className="hidden rounded border bg-muted px-1.5 font-mono text-[10px] transition group-hover:bg-background sm:inline"
+        title="快速命令面板"
+      >
         Ctrl K
       </kbd>
     </Button>
