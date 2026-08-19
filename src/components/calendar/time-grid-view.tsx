@@ -144,6 +144,9 @@ export function TimeGridView({
                     <button
                       key={event.id}
                       type="button"
+                      title={`${D.time(event.starts_at)}–${D.time(event.ends_at)} ${event.title}${
+                        event.location ? ` @ ${event.location}` : ""
+                      }${conflicts.has(event.id) ? "（衝突）" : ""}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         onSelectEvent(event);
@@ -224,6 +227,7 @@ function AllDayRow({
               <button
                 key={ev.id}
                 type="button"
+                title={`整日 ${ev.title}${ev.location ? ` @ ${ev.location}` : ""}`}
                 onClick={() => onSelectEvent(ev)}
                 style={eventStyle(colorOf(ev.calendar_id))}
                 className="block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] hover:brightness-95 touch:py-2 touch:text-xs"
