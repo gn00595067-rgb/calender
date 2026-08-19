@@ -62,7 +62,7 @@ export function EventTwoLineCard({
       onClick={onClick}
       style={eventStyle(color, conflict)}
       className={cn(
-        "flex w-full items-start gap-2 rounded-md px-2.5 py-1.5 text-left transition hover:brightness-95",
+        "flex w-full items-start gap-2 rounded-md px-2.5 py-1.5 text-left transition hover:brightness-95 touch:py-2.5",
         big && "py-2",
       )}
     >
@@ -116,7 +116,7 @@ export function MonthChip({
         onClick?.();
       }}
       style={chipStyle(color, conflict)}
-      className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[11px] leading-tight hover:brightness-95"
+      className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[11px] leading-tight hover:brightness-95 touch:gap-1.5 touch:px-1.5 touch:py-2 touch:text-xs"
     >
       {event.is_important && <Star className="size-2.5 shrink-0 fill-amber-400 text-amber-500" />}
       {!event.all_day && (

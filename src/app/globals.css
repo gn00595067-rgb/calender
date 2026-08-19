@@ -4,6 +4,9 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* 觸控裝置（iPad／手機）專用變體：只在無精準指標時放大點擊目標，桌機不受影響 */
+@custom-variant touch (@media (pointer: coarse));
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

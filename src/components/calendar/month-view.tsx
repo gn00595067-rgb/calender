@@ -114,7 +114,7 @@ export function MonthView({
                       <button
                         type="button"
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full rounded px-1 py-0.5 text-left text-[11px] text-muted-foreground hover:bg-accent"
+                        className="w-full rounded px-1 py-0.5 text-left text-[11px] text-muted-foreground hover:bg-accent touch:py-2 touch:text-xs"
                       >
                         +{extra} 筆
                       </button>

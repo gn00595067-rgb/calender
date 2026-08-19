@@ -156,7 +156,7 @@ export function TimeGridView({
                         left: `calc(${col * widthPct}% + 2px)`,
                         width: `calc(${widthPct}% - 4px)`,
                       }}
-                      className="overflow-hidden rounded-md px-1.5 py-0.5 text-left hover:brightness-95"
+                      className="overflow-hidden rounded-md px-1.5 py-0.5 text-left hover:brightness-95 touch:min-h-8"
                     >
                       <div className="flex items-center gap-1 text-[11px] font-semibold leading-tight">
                         {event.is_important && (
@@ -226,7 +226,7 @@ function AllDayRow({
                 type="button"
                 onClick={() => onSelectEvent(ev)}
                 style={eventStyle(colorOf(ev.calendar_id))}
-                className="block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] hover:brightness-95"
+                className="block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] hover:brightness-95 touch:py-2 touch:text-xs"
               >
                 {ev.title}
               </button>

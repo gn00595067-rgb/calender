@@ -51,7 +51,7 @@ function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
       <Button
         variant="ghost"
         size="icon"
-        className="lg:hidden"
+        className="lg:hidden touch:size-11"
         onClick={onOpenNav}
         aria-label="開啟選單"
       >

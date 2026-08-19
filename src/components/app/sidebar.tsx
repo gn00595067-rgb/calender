@@ -22,7 +22,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           href={item.href}
           onClick={onNavigate}
           className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors touch:py-2.5",
             active
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -63,7 +63,7 @@ function CalendarToggle({
   return (
     <label
       htmlFor={`cal-${id}`}
-      className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+      className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent touch:py-2.5"
     >
       <Checkbox
         id={`cal-${id}`}
@@ -114,7 +114,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 px-1.5 text-[11px]"
+              className="h-6 px-1.5 text-[11px] touch:h-9 touch:px-3 touch:text-xs"
               onClick={() => setAllVisible(true)}
             >
               全顯
@@ -122,7 +122,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 px-1.5 text-[11px]"
+              className="h-6 px-1.5 text-[11px] touch:h-9 touch:px-3 touch:text-xs"
               onClick={() => setAllVisible(false)}
             >
               全隱

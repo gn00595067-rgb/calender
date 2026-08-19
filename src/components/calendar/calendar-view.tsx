@@ -90,7 +90,10 @@ export function CalendarView() {
         title="行事曆"
         actions={
           canCreate ? (
-            <Button onClick={() => openCreate(format(zoned(new Date()), "yyyy-MM-dd"))}>
+            <Button
+              className="touch:h-11 touch:px-5"
+              onClick={() => openCreate(format(zoned(new Date()), "yyyy-MM-dd"))}
+            >
               <Plus className="size-4" />
               新增行程
             </Button>
@@ -100,13 +103,13 @@ export function CalendarView() {
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
-          <Button variant="outline" size="icon" onClick={() => navigate(-1)} aria-label="上一頁">
+          <Button variant="outline" size="icon" className="touch:size-11" onClick={() => navigate(-1)} aria-label="上一頁">
             <ChevronLeft className="size-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate(0)}>
+          <Button variant="outline" size="sm" className="touch:h-11 touch:px-4" onClick={() => navigate(0)}>
             今天
           </Button>
-          <Button variant="outline" size="icon" onClick={() => navigate(1)} aria-label="下一頁">
+          <Button variant="outline" size="icon" className="touch:size-11" onClick={() => navigate(1)} aria-label="下一頁">
             <ChevronRight className="size-4" />
           </Button>
           <h2 className="ml-2 text-lg font-semibold">{title}</h2>
@@ -128,7 +131,7 @@ export function CalendarView() {
                 type="button"
                 onClick={() => setView(v)}
                 className={
-                  "rounded-md px-3 py-1 text-sm font-medium transition " +
+                  "rounded-md px-3 py-1 text-sm font-medium transition touch:px-4 touch:py-2 touch:text-base " +
                   (view === v
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground")
