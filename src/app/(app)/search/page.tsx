@@ -129,12 +129,11 @@ function SearchInner() {
     refetch();
   };
 
+  // 時間區間為外層獨立控制（有自己的「清除區間」），不計入「篩選」
   const activeFilterCount =
     calFilter.size +
     contactIds.size +
     tagIds.size +
-    (startDate ? 1 : 0) +
-    (endDate ? 1 : 0) +
     (importantOnly ? 1 : 0) +
     (hasFinance ? 1 : 0) +
     (hasNotes ? 1 : 0);
@@ -143,8 +142,6 @@ function SearchInner() {
     setCalFilter(new Set());
     setContactIds(new Set());
     setTagIds(new Set());
-    setStartDate("");
-    setEndDate("");
     setImportantOnly(false);
     setHasFinance(false);
     setHasNotes(false);
@@ -223,47 +220,71 @@ function SearchInner() {
           )}
         </div>
 
-        {/* 快速區間：一鍵開出可直接操作的行事曆格 */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">區間</span>
-          {(
-            [
-              { key: "today", label: "今天" },
-              { key: "week", label: "本週" },
-              { key: "next7", label: "未來 7 天" },
-            ] as const
-          ).map((p) => {
-            const iv = presetInterval(p.key);
-            const active = startDate === iv.startDate && endDate === iv.endDate;
-            return (
+        {/* 時間區間：外層直接可選——快速鍵＋自訂起訖日，設了就顯示該期間的空檔 */}
+        <div className="space-y-2 rounded-xl border bg-card p-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 inline-flex items-center gap-1 text-sm font-medium">
+              <CalendarClock className="size-4 text-muted-foreground" />
+              時間區間
+            </span>
+            {(
+              [
+                { key: "today", label: "今天" },
+                { key: "week", label: "本週" },
+                { key: "next7", label: "未來 7 天" },
+              ] as const
+            ).map((p) => {
+              const iv = presetInterval(p.key);
+              const active = startDate === iv.startDate && endDate === iv.endDate;
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => {
+                    setStartDate(iv.startDate);
+                    setEndDate(iv.endDate);
+                  }}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-sm transition",
+                    active ? "border-primary bg-primary/10" : "hover:bg-accent",
+                  )}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+            {(startDate || endDate) && (
               <button
-                key={p.key}
                 type="button"
                 onClick={() => {
-                  setStartDate(iv.startDate);
-                  setEndDate(iv.endDate);
+                  setStartDate("");
+                  setEndDate("");
                 }}
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-sm transition",
-                  active ? "border-primary bg-primary/10" : "hover:bg-accent",
-                )}
+                className="ml-auto rounded-full px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
               >
-                {p.label}
+                清除區間
               </button>
-            );
-          })}
-          {(startDate || endDate) && (
-            <button
-              type="button"
-              onClick={() => {
-                setStartDate("");
-                setEndDate("");
-              }}
-              className="rounded-full px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              清除區間
-            </button>
-          )}
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              type="date"
+              value={startDate}
+              max={endDate || undefined}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="h-9 w-40"
+              aria-label="起始日"
+            />
+            <span className="text-muted-foreground">–</span>
+            <Input
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="h-9 w-40"
+              aria-label="結束日"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -365,27 +386,6 @@ function SearchInner() {
                 </div>
               </div>
             )}
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <div className="mb-1.5 text-xs font-medium text-muted-foreground">起始日</div>
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="h-9"
-                />
-              </div>
-              <div>
-                <div className="mb-1.5 text-xs font-medium text-muted-foreground">結束日</div>
-                <Input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="h-9"
-                />
-              </div>
-            </div>
 
             <div className="flex flex-wrap gap-2">
               <button
