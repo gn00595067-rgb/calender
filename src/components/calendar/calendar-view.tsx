@@ -78,9 +78,11 @@ export function CalendarView() {
     return D.full(anchor).slice(0, 14); // yyyy/MM/dd(EEE)
   }, [view, anchor]);
 
-  const openCreate = (dateStr: string, hour = 9) => {
+  const openCreate = (dateStr: string, hour = 9, minute = 0) => {
     if (!canCreate) return;
-    setCreateStart(`${dateStr}T${String(hour).padStart(2, "0")}:00`);
+    const hh = String(hour).padStart(2, "0");
+    const mm = String(minute).padStart(2, "0");
+    setCreateStart(`${dateStr}T${hh}:${mm}`);
     setCreateOpen(true);
   };
 
@@ -163,7 +165,7 @@ export function CalendarView() {
           conflicts={conflicts}
           canCreate={canCreate}
           onSelectEvent={setDetail}
-          onCreateAt={(ds) => openCreate(ds)}
+          onCreateAt={openCreate}
           onOpenDay={openDay}
         />
       ) : (
@@ -172,6 +174,7 @@ export function CalendarView() {
           events={events}
           colorOf={colorOf}
           conflicts={conflicts}
+          canCreate={canCreate}
           onSelectEvent={setDetail}
           onCreateAt={openCreate}
         />

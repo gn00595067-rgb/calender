@@ -75,7 +75,7 @@ export function MonthView({
   conflicts: Set<string>;
   canCreate: boolean;
   onSelectEvent: (event: CalEvent) => void;
-  onCreateAt: (dateStr: string) => void;
+  onCreateAt: (dateStr: string, hour?: number, minute?: number) => void;
   onOpenDay: (dateStr: string) => void;
 }) {
   // 點某天 → 從底部滑出當天面板（不切走視圖，關掉即回月曆）。
@@ -269,9 +269,26 @@ export function MonthView({
                     {gap >= MIN_GAP_MINUTES && (
                       <div className="flex items-center gap-2 px-1 py-0.5 text-xs text-muted-foreground">
                         <span className="h-px flex-1 bg-border" />
-                        <span className="shrink-0 tabular-nums">
-                          空檔 {fmtDur(gap)}
-                        </span>
+                        {canCreate ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const end = zoned(prev!.ends_at);
+                              const ds = peekDay;
+                              setPeekDay(null);
+                              if (ds)
+                                onCreateAt(ds, end.getHours(), end.getMinutes());
+                            }}
+                            title="在這個空檔新增行程"
+                            className="inline-flex shrink-0 items-center gap-0.5 rounded-full border px-2 py-0.5 tabular-nums transition hover:border-primary hover:bg-accent hover:text-foreground touch:py-1"
+                          >
+                            <Plus className="size-3" />空檔 {fmtDur(gap)}
+                          </button>
+                        ) : (
+                          <span className="shrink-0 tabular-nums">
+                            空檔 {fmtDur(gap)}
+                          </span>
+                        )}
                         <span className="h-px flex-1 bg-border" />
                       </div>
                     )}

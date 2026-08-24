@@ -6,7 +6,7 @@ import { zoned, layoutDay } from "@/lib/calendar-utils";
 import { cn } from "@/lib/utils";
 import { D } from "@/lib/date";
 import { eventStyle } from "./event-visuals";
-import { Star } from "lucide-react";
+import { Plus, Star } from "lucide-react";
 import type { CalEvent } from "@/lib/client/events";
 
 const HOUR_HEIGHT = 48;
@@ -60,6 +60,7 @@ export function TimeGridView({
   events,
   colorOf,
   conflicts,
+  canCreate,
   onSelectEvent,
   onCreateAt,
 }: {
@@ -67,8 +68,9 @@ export function TimeGridView({
   events: CalEvent[];
   colorOf: (calendarId: string) => string;
   conflicts: Set<string>;
+  canCreate: boolean;
   onSelectEvent: (event: CalEvent) => void;
-  onCreateAt: (dateStr: string, hour: number) => void;
+  onCreateAt: (dateStr: string, hour: number, minute?: number) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -228,7 +230,7 @@ export function TimeGridView({
                   );
                 })}
 
-                {/* 空檔標籤：相鄰忙碌區間之間的空白，標在中央 */}
+                {/* 空檔標籤：相鄰忙碌區間之間的空白，標在中央；可點擊在此空檔新增 */}
                 {busy.slice(0, -1).map(([, end], i) => {
                   const nextStart = busy[i + 1][0];
                   const gap = nextStart - end;
@@ -238,11 +240,25 @@ export function TimeGridView({
                     <div
                       key={`gap-${i}`}
                       className="pointer-events-none absolute inset-x-0 z-10 flex justify-center"
-                      style={{ top: mid - 9 }}
+                      style={{ top: mid - 11 }}
                     >
-                      <span className="rounded-full border bg-card/90 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
-                        空 {fmtDurShort(gap)}
-                      </span>
+                      {canCreate ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCreateAt(ds, Math.floor(end / 60), end % 60);
+                          }}
+                          title={`在 ${hhmm(end)}–${hhmm(nextStart)} 空檔新增行程`}
+                          className="pointer-events-auto inline-flex items-center gap-0.5 rounded-full border bg-card/95 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm transition hover:border-primary hover:bg-accent hover:text-foreground touch:px-2 touch:py-1"
+                        >
+                          <Plus className="size-2.5" />空 {fmtDurShort(gap)}
+                        </button>
+                      ) : (
+                        <span className="rounded-full border bg-card/90 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
+                          空 {fmtDurShort(gap)}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
