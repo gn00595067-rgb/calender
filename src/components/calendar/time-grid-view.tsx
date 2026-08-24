@@ -16,6 +16,45 @@ function minutesOfDay(d: Date): number {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+/** 時間軸標籤用的精簡時長：1h30／45m */
+function fmtDurShort(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h && m) return `${h}h${m}`;
+  if (h) return `${h}h`;
+  return `${m}m`;
+}
+
+/** 分鐘 → HH:MM（1440 以上視為跨日） */
+function hhmm(min: number): string {
+  if (min >= 24 * 60) return "跨日";
+  return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+}
+
+/** 空檔門檻（分鐘）：時間軸較密，門檻拉高以免雜訊 */
+const GRID_MIN_GAP = 30;
+
+/** 合併當天所有時段行程成忙碌區間（分鐘），用於算空檔與最後結束 */
+function busyIntervals(dayEvents: CalEvent[], ds: string): [number, number][] {
+  const spans = dayEvents
+    .map((e): [number, number] => {
+      const s = zoned(e.starts_at);
+      const en = zoned(e.ends_at);
+      const startMin = minutesOfDay(s);
+      const endMin =
+        format(en, "yyyy-MM-dd") === ds ? minutesOfDay(en) : 24 * 60;
+      return [startMin, Math.max(endMin, startMin)];
+    })
+    .sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const [s, e] of spans) {
+    const last = merged[merged.length - 1];
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e);
+    else merged.push([s, e]);
+  }
+  return merged;
+}
+
 export function TimeGridView({
   days,
   events,
@@ -110,6 +149,8 @@ export function TimeGridView({
               (e) => !e.all_day && format(zoned(e.starts_at), "yyyy-MM-dd") === ds,
             );
             const positioned = layoutDay(dayEvents);
+            const busy = busyIntervals(dayEvents, ds);
+            const lastEndMin = busy.length > 0 ? busy[busy.length - 1][1] : null;
             return (
               <div
                 key={ds}
@@ -186,6 +227,38 @@ export function TimeGridView({
                     </button>
                   );
                 })}
+
+                {/* 空檔標籤：相鄰忙碌區間之間的空白，標在中央 */}
+                {busy.slice(0, -1).map(([, end], i) => {
+                  const nextStart = busy[i + 1][0];
+                  const gap = nextStart - end;
+                  if (gap < GRID_MIN_GAP) return null;
+                  const mid = ((end + nextStart) / 2 / 60) * HOUR_HEIGHT;
+                  return (
+                    <div
+                      key={`gap-${i}`}
+                      className="pointer-events-none absolute inset-x-0 z-10 flex justify-center"
+                      style={{ top: mid - 9 }}
+                    >
+                      <span className="rounded-full border bg-card/90 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
+                        空 {fmtDurShort(gap)}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {/* 最後結束時間：畫一條線 + 標籤 */}
+                {lastEndMin !== null && lastEndMin < 24 * 60 && (
+                  <div
+                    className="pointer-events-none absolute inset-x-0 z-10 flex items-center gap-1 px-1"
+                    style={{ top: (lastEndMin / 60) * HOUR_HEIGHT }}
+                  >
+                    <span className="h-px flex-1 bg-primary/40" />
+                    <span className="rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold text-primary tabular-nums">
+                      結束 {hhmm(lastEndMin)}
+                    </span>
+                  </div>
+                )}
               </div>
             );
           })}
