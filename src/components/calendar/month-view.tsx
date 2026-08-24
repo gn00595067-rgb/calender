@@ -85,6 +85,7 @@ export function MonthView({
               className={cn(
                 "min-h-24 cursor-pointer border-b border-r p-1 last:border-r-0 [&:nth-child(7n)]:border-r-0",
                 !inMonth && "bg-muted/30 text-muted-foreground",
+                today && "bg-primary/10 ring-2 ring-inset ring-primary",
               )}
             >
               <div className="mb-1 flex justify-end">

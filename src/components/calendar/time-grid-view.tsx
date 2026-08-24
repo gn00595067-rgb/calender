@@ -113,7 +113,10 @@ export function TimeGridView({
             return (
               <div
                 key={ds}
-                className="relative border-r last:border-r-0"
+                className={cn(
+                  "relative border-r last:border-r-0",
+                  isToday(day) && "bg-primary/5",
+                )}
                 style={{ height: 24 * HOUR_HEIGHT }}
                 onClick={(e) => {
                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
