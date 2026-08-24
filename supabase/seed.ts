@@ -35,20 +35,25 @@ const PASSWORD = "test1234";
 const BOSS_EMAIL = "boss@example.com";
 const TUTOR_EMAIL = "tutor@example.com";
 
-/** 模擬的月份（台北曆）。今天＝2026-08-19，故 1–18 為過去、19+ 為未來 */
+/** 模擬月份（台北曆）：涵蓋 2026 年 8＋9 月。今天＝2026-08-24，8/1–23 為過去。 */
 const YEAR = 2026;
-const MONTH = 8;
-const DAYS_IN_MONTH = 31;
+const MONTHS: { month: number; days: number }[] = [
+  { month: 8, days: 31 },
+  { month: 9, days: 30 },
+];
 
-/** 8 月第 d 天 → yyyy-MM-dd */
-function A(d: number): string {
-  return `${YEAR}-${String(MONTH).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+const pad = (n: number) => String(n).padStart(2, "0");
+/** 某月第 d 天 → yyyy-MM-dd */
+function ymd(month: number, d: number): string {
+  return `${YEAR}-${pad(month)}-${pad(d)}`;
 }
-
-/** 8 月第 d 天的星期（0=日..6=六，台北） */
-function dow(d: number): number {
-  return new Date(`${A(d)}T12:00:00Z`).getUTCDay();
+/** 某月第 d 天的星期（0=日..6=六，台北） */
+function dowOf(month: number, d: number): number {
+  return new Date(`${ymd(month, d)}T12:00:00Z`).getUTCDay();
 }
+/** 8 月／9 月便捷寫法 */
+const A = (d: number) => ymd(8, d);
+const S = (d: number) => ymd(9, d);
 
 /** 將台北牆上時間（yyyy-MM-ddTHH:mm）轉 UTC ISO */
 function tp(wall: string): string {
@@ -138,6 +143,12 @@ async function main() {
     { key: "son", name: "小明（兒子）", kind: "child", color: "#16A34A", position: 2 },
     { key: "daughter", name: "小美（女兒）", kind: "child", color: "#DB2777", position: 3 },
     { key: "private", name: "私事", kind: "private", color: "#EA580C", position: 4 },
+    // 新增類別（各自顏色，kind 取相近者）
+    { key: "meeting", name: "會議", kind: "work", color: "#4F46E5", position: 5 }, // 靛藍
+    { key: "client", name: "拜訪客戶", kind: "work", color: "#0EA5E9", position: 6 }, // 天藍
+    { key: "dining", name: "餐敘", kind: "private", color: "#F59E0B", position: 7 }, // 琥珀
+    { key: "food", name: "美食", kind: "private", color: "#E11D48", position: 8 }, // 玫紅
+    { key: "study", name: "自我進修", kind: "self", color: "#14B8A6", position: 9 }, // 青綠
   ];
   const { data: calRows, error: calErr } = await db
     .from("calendars")
@@ -183,6 +194,7 @@ async function main() {
   const tagNames = [
     "數學", "英文", "音樂", "舞蹈", "健身", "健康",
     "投資", "董事會", "客戶", "法務", "家庭", "旅行", "才藝", "慈善",
+    "會議", "進修", "美食",
   ];
   const { data: tagRows, error: tErr } = await db
     .from("tags")
@@ -232,48 +244,58 @@ async function main() {
     // 小美：英文家教、芭蕾
     { calKey: "daughter", weekday: 3, title: "英文家教課", start: "17:00", end: "18:00", location: "書房", contact: "白老師", tags: ["英文", "才藝"], fee: 1400, feeCategory: "家教費" },
     { calKey: "daughter", weekday: 4, title: "芭蕾課", start: "18:30", end: "19:30", location: "蕾蒙舞蹈教室", contact: "郭老師", tags: ["舞蹈", "才藝"], fee: 900, feeCategory: "才藝費" },
+    // 新類別：自我進修（週六 EMBA）、部門週會（週三）
+    { calKey: "study", weekday: 6, title: "EMBA 週末課程", start: "09:00", end: "12:00", location: "政大公企中心", contact: "", tags: ["進修"], fee: 0, feeCategory: "進修費" },
+    { calKey: "meeting", weekday: 3, title: "部門週會", start: "14:00", end: "15:00", location: "總部 18F", contact: "特助 Amber", tags: ["會議"], fee: 0, feeCategory: "" },
   ];
   const courseKey = (c: Course) => `${c.calKey}|${c.title}|${c.start}|${c.weekday}`;
   const courseGroup: Record<string, string> = {};
   for (const c of courses) courseGroup[courseKey(c)] = crypto.randomUUID();
 
-  for (let d = 1; d <= DAYS_IN_MONTH; d++) {
-    const wd = dow(d);
-    for (const c of courses) {
-      if (c.weekday !== wd) continue;
-      const startWall = `${A(d)}T${c.start}`;
-      push({
-        calKey: c.calKey,
-        title: c.title,
-        startWall,
-        endWall: `${A(d)}T${c.end}`,
-        location: c.location,
-        contacts: [c.contact],
-        tags: c.tags,
-        recurrenceGroup: courseGroup[courseKey(c)],
-        recurrenceRule: "weekly",
-        finance: { direction: "expense", amount: c.fee, category: c.feeCategory, contactName: c.contact },
-        noteKind: c.noteKind,
-      });
+  for (const { month, days } of MONTHS) {
+    for (let d = 1; d <= days; d++) {
+      const wd = dowOf(month, d);
+      for (const c of courses) {
+        if (c.weekday !== wd) continue;
+        const startWall = `${ymd(month, d)}T${c.start}`;
+        push({
+          calKey: c.calKey,
+          title: c.title,
+          startWall,
+          endWall: `${ymd(month, d)}T${c.end}`,
+          location: c.location,
+          contacts: c.contact ? [c.contact] : undefined,
+          tags: c.tags,
+          recurrenceGroup: courseGroup[courseKey(c)],
+          recurrenceRule: "weekly",
+          finance:
+            c.fee > 0
+              ? { direction: "expense", amount: c.fee, category: c.feeCategory, contactName: c.contact }
+              : undefined,
+          noteKind: c.noteKind,
+        });
+      }
     }
   }
 
   /* --- 2) 每週固定公務例會（無費用） ----------------------------- */
   const meetingGroup = crypto.randomUUID();
-  for (let d = 1; d <= DAYS_IN_MONTH; d++) {
-    if (dow(d) !== 1) continue; // 每週一
-    // 8/3 有董事會，晨會照排 → 形成一組真實的「雙排程」衝突
-    push({
-      calKey: "work",
-      title: "主管晨會",
-      startWall: `${A(d)}T09:30`,
-      endWall: `${A(d)}T10:30`,
-      location: "總部 18F 會議室",
-      description: "各部門週報與本週重點",
-      tags: ["客戶"],
-      recurrenceGroup: meetingGroup,
-      recurrenceRule: "weekly",
-    });
+  for (const { month, days } of MONTHS) {
+    for (let d = 1; d <= days; d++) {
+      if (dowOf(month, d) !== 1) continue; // 每週一
+      // 8/3 有董事會，晨會照排 → 形成一組真實的「雙排程」衝突
+      push({
+        calKey: "work",
+        title: "主管晨會",
+        startWall: `${ymd(month, d)}T09:30`,
+        endWall: `${ymd(month, d)}T10:30`,
+        location: "總部 18F 會議室",
+        description: "各部門週報與本週重點",
+        tags: ["客戶"],
+        recurrenceGroup: meetingGroup,
+        recurrenceRule: "weekly",
+      });
+    }
   }
 
   /* --- 3) 一次性公務邀約 ---------------------------------------- */
@@ -333,6 +355,42 @@ async function main() {
   push({ calKey: "private", title: "慈善晚宴", startWall: `${A(26)}T18:30`, endWall: `${A(26)}T21:00`, location: "文華東方酒店", important: true, tags: ["慈善"], finance: { direction: "expense", amount: 100000, category: "公益捐款", note: "兒少教育基金會" } });
   push({ calKey: "private", title: "全家遊樂園", startWall: `${A(29)}T10:00`, endWall: `${A(29)}T17:00`, location: "六福村", tags: ["家庭"], finance: { direction: "expense", amount: 6400, category: "家庭出遊", note: "門票＋餐食" } });
   push({ calKey: "private", title: "週日家庭日", startWall: `${A(30)}T11:00`, endWall: `${A(30)}T13:00`, location: "家中", tags: ["家庭"] });
+
+  /* --- 7) 新類別 + 9 月一次性行程 ------------------------------- */
+  const extra: EvSpec[] = [
+    // 8 月下旬：新類別鋪陳
+    { calKey: "meeting", title: "產品藍圖會議", startWall: `${A(26)}T10:00`, endWall: `${A(26)}T11:30`, location: "總部 18F", tags: ["會議", "投資"] },
+    { calKey: "client", title: "拜訪客戶－全國通路商", startWall: `${A(26)}T15:00`, endWall: `${A(26)}T16:30`, location: "台中", important: true, contacts: ["王執行長"], tags: ["客戶"] },
+    { calKey: "dining", title: "策略夥伴餐敘", startWall: `${A(27)}T18:30`, endWall: `${A(27)}T20:30`, location: "請客樓", contacts: ["黃總"], tags: ["會議", "投資"], finance: { direction: "expense", amount: 16000, category: "餐敘招待", contactName: "黃總" } },
+    { calKey: "study", title: "商業英文一對一", startWall: `${A(28)}T12:30`, endWall: `${A(28)}T13:30`, location: "線上", tags: ["進修"], finance: { direction: "expense", amount: 1500, category: "進修費" } },
+    { calKey: "food", title: "無菜單料理嚐鮮", startWall: `${A(31)}T19:00`, endWall: `${A(31)}T21:00`, location: "RAW", tags: ["美食", "家庭"], finance: { direction: "expense", amount: 9800, category: "美食" } },
+
+    // 9 月：公務 / 會議 / 客戶
+    { calKey: "meeting", title: "9 月營運月會", startWall: `${S(1)}T10:00`, endWall: `${S(1)}T12:00`, location: "總部 18F", important: true, contacts: ["特助 Amber"], tags: ["會議", "投資"] },
+    { calKey: "client", title: "拜訪客戶－日本商社", startWall: `${S(2)}T14:00`, endWall: `${S(2)}T16:00`, location: "總部 20F 貴賓室", important: true, contacts: ["王執行長"], tags: ["客戶"] },
+    { calKey: "meeting", title: "第四季預算審查", startWall: `${S(4)}T14:00`, endWall: `${S(4)}T16:00`, location: "總部 18F", contacts: ["吳會計師"], tags: ["會議", "投資"] },
+    { calKey: "work", title: "秋季法說會", startWall: `${S(9)}T10:00`, endWall: `${S(9)}T12:00`, location: "君悅飯店", important: true, tags: ["投資"], description: "第三季營運展望對外說明" },
+    { calKey: "client", title: "拜訪客戶－歐洲代理商", startWall: `${S(10)}T15:00`, endWall: `${S(10)}T16:30`, location: "線上", contacts: ["林經理"], tags: ["客戶"] },
+    { calKey: "dining", title: "投資人晚宴", startWall: `${S(11)}T18:30`, endWall: `${S(11)}T21:00`, location: "頤宮", important: true, contacts: ["黃總"], tags: ["會議", "投資"], finance: { direction: "expense", amount: 22000, category: "餐敘招待", contactName: "黃總" } },
+    { calKey: "meeting", title: "董事會（第四季預備）", startWall: `${S(15)}T09:00`, endWall: `${S(15)}T11:30`, location: "總部 20F 董事會議室", important: true, contacts: ["李律師", "黃總"], tags: ["董事會", "會議"] },
+    { calKey: "client", title: "客戶拜訪－半導體大廠", startWall: `${S(17)}T10:00`, endWall: `${S(17)}T12:00`, location: "新竹科學園區", important: true, contacts: ["王執行長"], tags: ["客戶"] },
+    { calKey: "work", title: "出差－東京拓點", startWall: `${S(21)}T08:00`, endWall: `${S(22)}T20:00`, location: "東京", important: true, tags: ["旅行", "投資"], finance: { direction: "expense", amount: 68000, category: "差旅費", note: "機票＋住宿＋接待" } },
+    { calKey: "meeting", title: "月底財務結算會議", startWall: `${S(29)}T15:00`, endWall: `${S(29)}T16:30`, location: "總部 18F", contacts: ["吳會計師"], tags: ["會議", "投資"] },
+
+    // 9 月：美食 / 進修 / 健康
+    { calKey: "food", title: "米其林三星饗宴", startWall: `${S(5)}T18:30`, endWall: `${S(5)}T21:00`, location: "頤宮", important: true, tags: ["美食", "家庭"], finance: { direction: "expense", amount: 15800, category: "美食", note: "結婚週年補請" } },
+    { calKey: "study", title: "AI 策略工作坊", startWall: `${S(12)}T13:30`, endWall: `${S(12)}T17:00`, location: "台北文創", tags: ["進修"], finance: { direction: "expense", amount: 6800, category: "進修費" } },
+    { calKey: "food", title: "老饕私廚聚會", startWall: `${S(19)}T19:00`, endWall: `${S(19)}T21:00`, location: "山海樓", tags: ["美食"], finance: { direction: "expense", amount: 7200, category: "美食" } },
+    { calKey: "self", title: "年度心血管複檢", startWall: `${S(14)}T08:30`, endWall: `${S(14)}T10:00`, location: "國泰健檢中心", contacts: ["張醫師"], tags: ["健康"] },
+    { calKey: "study", title: "讀書會：領導力", startWall: `${S(24)}T20:00`, endWall: `${S(24)}T21:30`, location: "線上", tags: ["進修"] },
+
+    // 9 月：家庭 / 小孩
+    { calKey: "private", title: "教師節家庭聚餐", startWall: `${S(28)}T18:00`, endWall: `${S(28)}T20:00`, location: "欣葉台菜", tags: ["家庭"], finance: { direction: "expense", amount: 5200, category: "家庭聚餐" } },
+    { calKey: "daughter", title: "小美芭蕾成果驗收", startWall: `${S(6)}T15:00`, endWall: `${S(6)}T16:30`, location: "蕾蒙舞蹈教室", contacts: ["郭老師"], tags: ["舞蹈", "才藝"] },
+    { calKey: "son", title: "小明科學展", startWall: `${S(13)}T09:00`, endWall: `${S(13)}T12:00`, location: "明德中學", important: true, tags: ["數學"] },
+    { calKey: "private", title: "全家爬山", startWall: `${S(20)}T07:00`, endWall: `${S(20)}T12:00`, location: "陽明山", tags: ["家庭", "旅行"] },
+  ];
+  extra.forEach(push);
 
   // ---------------------------------------------------------
   // 寫入 events
@@ -422,8 +480,8 @@ async function main() {
   const expense = financeRows.filter((f) => f.direction === "expense").reduce((s, f) => s + f.amount, 0);
   const income = financeRows.filter((f) => f.direction === "income").reduce((s, f) => s + f.amount, 0);
   const unsettled = financeRows.filter((f) => !f.is_settled).length;
-  console.log(`\n✓ 種子資料完成！（2026 年 8 月）`);
-  console.log(`  行程：${eventRows.length} 筆（含每週課程、公務邀約、家庭活動、2 組時間衝突）`);
+  console.log(`\n✓ 種子資料完成！（2026 年 8–9 月）`);
+  console.log(`  行程：${eventRows.length} 筆（含每週課程、會議/拜訪客戶/餐敘/美食/自我進修等類別、公務邀約、家庭活動、時間衝突）`);
   console.log(`  財務：${financeRows.length} 筆　支出 $${expense.toLocaleString()}／收入 $${income.toLocaleString()}／未結清 ${unsettled} 筆`);
   console.log(`  回饋：${noteRows.length} 筆`);
   console.log(`\n  登入帳號：`);
