@@ -55,7 +55,7 @@ export function TimeGridView({
               key={format(day, "yyyy-MM-dd")}
               className={cn(
                 "border-r py-2 text-center last:border-r-0",
-                today && "bg-primary/5",
+                today && "bg-amber-50/60 dark:bg-amber-950/20",
               )}
             >
               <div className="text-xs text-muted-foreground">
@@ -115,7 +115,7 @@ export function TimeGridView({
                 key={ds}
                 className={cn(
                   "relative border-r last:border-r-0",
-                  isToday(day) && "bg-primary/5",
+                  isToday(day) && "bg-amber-50/60 dark:bg-amber-950/20",
                 )}
                 style={{ height: 24 * HOUR_HEIGHT }}
                 onClick={(e) => {
