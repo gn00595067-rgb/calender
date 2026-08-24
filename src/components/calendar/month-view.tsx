@@ -1,7 +1,9 @@
 "use client";
 
+import { Fragment } from "react";
 import { format, isSameMonth, isToday } from "date-fns";
 import { zoned } from "@/lib/calendar-utils";
+import { D } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import { MonthChip } from "./event-card";
 import {
@@ -12,6 +14,25 @@ import {
 import type { CalEvent } from "@/lib/client/events";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+
+/** 分鐘數 → 「X時Y分」/「X小時」/「Y分」 */
+function fmtDur(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h && m) return `${h}時${m}分`;
+  if (h) return `${h}小時`;
+  return `${m}分`;
+}
+
+/** 兩筆行程之間的空檔（分鐘）＝後者開始 − 前者結束 */
+function gapMinutes(prev: CalEvent, next: CalEvent): number {
+  return Math.round(
+    (+new Date(next.starts_at) - +new Date(prev.ends_at)) / 60000,
+  );
+}
+
+/** 低於此門檻的空檔不顯示，避免細碎雜訊 */
+const MIN_GAP_MINUTES = 15;
 
 /** 取得事件在台北曆涵蓋的日期字串（含跨日） */
 function eventDays(event: CalEvent): string[] {
@@ -78,6 +99,17 @@ export function MonthView({
           const shown = dayEvents.slice(0, 3);
           const extra = dayEvents.length - shown.length;
 
+          // 當天有時段（非整日）行程時，取最晚結束時間，做為「尾巴結束」提示。
+          const timed = dayEvents.filter((e) => !e.all_day);
+          const lastEndIso =
+            timed.length > 0
+              ? timed.reduce(
+                  (acc, e) =>
+                    new Date(e.ends_at) > new Date(acc) ? e.ends_at : acc,
+                  timed[0].ends_at,
+                )
+              : null;
+
           return (
             <div
               key={ds}
@@ -101,15 +133,32 @@ export function MonthView({
                 </span>
               </div>
               <div className="space-y-0.5">
-                {shown.map((ev) => (
-                  <MonthChip
-                    key={ev.id + ds}
-                    event={ev}
-                    color={colorOf(ev.calendar_id)}
-                    conflict={conflicts.has(ev.id)}
-                    onClick={() => onSelectEvent(ev)}
-                  />
-                ))}
+                {shown.map((ev, i) => {
+                  const prev = i > 0 ? shown[i - 1] : null;
+                  const gap =
+                    prev && !prev.all_day && !ev.all_day
+                      ? gapMinutes(prev, ev)
+                      : 0;
+                  return (
+                    <Fragment key={ev.id + ds}>
+                      {gap >= MIN_GAP_MINUTES && (
+                        <div className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-muted-foreground/70">
+                          <span className="h-px flex-1 bg-border" />
+                          <span className="shrink-0 tabular-nums">
+                            空 {fmtDur(gap)}
+                          </span>
+                          <span className="h-px flex-1 bg-border" />
+                        </div>
+                      )}
+                      <MonthChip
+                        event={ev}
+                        color={colorOf(ev.calendar_id)}
+                        conflict={conflicts.has(ev.id)}
+                        onClick={() => onSelectEvent(ev)}
+                      />
+                    </Fragment>
+                  );
+                })}
                 {extra > 0 && (
                   <Popover>
                     <PopoverTrigger asChild>
@@ -140,6 +189,11 @@ export function MonthView({
                       ))}
                     </PopoverContent>
                   </Popover>
+                )}
+                {lastEndIso && (
+                  <div className="pt-0.5 text-right text-[10px] font-medium leading-none text-muted-foreground/80 tabular-nums">
+                    結束 {D.time(lastEndIso)}
+                  </div>
                 )}
               </div>
             </div>
