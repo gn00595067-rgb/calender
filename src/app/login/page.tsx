@@ -1,13 +1,29 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { CalendarClock } from "lucide-react";
 import { signInAction, signUpAction, type AuthState } from "./actions";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
+
+/** 「記住我」在瀏覽器保存帳密的 localStorage key */
+const REMEMBER_KEY = "execcal.remember";
+
+type Remembered = { email?: string; password?: string };
+
+function loadRemembered(): Remembered | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(REMEMBER_KEY);
+    return raw ? (JSON.parse(raw) as Remembered) : null;
+  } catch {
+    return null;
+  }
+}
 
 function SubmitButton({ pending, label }: { pending: boolean; label: string }) {
   return (
@@ -19,6 +35,9 @@ function SubmitButton({ pending, label }: { pending: boolean; label: string }) {
 
 export default function LoginPage() {
   const [tab, setTab] = useState("login");
+  const [remember, setRemember] = useState(true);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const [signInState, signIn, signInPending] = useActionState<AuthState, FormData>(
     signInAction,
     undefined,
@@ -27,6 +46,33 @@ export default function LoginPage() {
     signUpAction,
     undefined,
   );
+
+  // 首次載入：把上次「記住我」保存的帳密直接寫入未受控欄位（避免 hydration 落差）。
+  useEffect(() => {
+    const saved = loadRemembered();
+    if (!saved) return;
+    if (emailRef.current && saved.email) emailRef.current.value = saved.email;
+    if (passwordRef.current && saved.password)
+      passwordRef.current.value = saved.password;
+  }, []);
+
+  // 送出登入前：依「記住我」保存或清除帳密（onSubmit 於 Server Action 之前執行）。
+  function persistRemember() {
+    try {
+      const email = emailRef.current?.value ?? "";
+      const password = passwordRef.current?.value ?? "";
+      if (remember && email) {
+        window.localStorage.setItem(
+          REMEMBER_KEY,
+          JSON.stringify({ email, password }),
+        );
+      } else {
+        window.localStorage.removeItem(REMEMBER_KEY);
+      }
+    } catch {
+      // localStorage 不可用（隱私模式等）時，靜默略過即可。
+    }
+  }
 
   return (
     <div className="flex min-h-full flex-1 items-center justify-center p-4">
@@ -49,10 +95,11 @@ export default function LoginPage() {
             </TabsList>
 
             <TabsContent value="login">
-              <form action={signIn} className="mt-4 space-y-4">
+              <form action={signIn} onSubmit={persistRemember} className="mt-4 space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="login-email">Email</Label>
                   <Input
+                    ref={emailRef}
                     id="login-email"
                     name="email"
                     type="email"
@@ -64,12 +111,23 @@ export default function LoginPage() {
                 <div className="space-y-2">
                   <Label htmlFor="login-password">密碼</Label>
                   <Input
+                    ref={passwordRef}
                     id="login-password"
                     name="password"
                     type="password"
                     autoComplete="current-password"
                     required
                   />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="remember"
+                    checked={remember}
+                    onCheckedChange={(v) => setRemember(v === true)}
+                  />
+                  <Label htmlFor="remember" className="text-sm font-normal">
+                    記住帳號密碼（此裝置）
+                  </Label>
                 </div>
                 {signInState?.error && (
                   <p className="text-sm text-destructive" role="alert">
