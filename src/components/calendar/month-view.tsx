@@ -1,17 +1,20 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { format, isSameMonth, isToday } from "date-fns";
-import { Plus } from "lucide-react";
+import { CalendarRange, Plus } from "lucide-react";
 import { zoned } from "@/lib/calendar-utils";
 import { D } from "@/lib/date";
 import { cn } from "@/lib/utils";
-import { MonthChip } from "./event-card";
+import { MonthChip, EventTwoLineCard } from "./event-card";
+import { Button } from "@/components/ui/button";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import type { CalEvent } from "@/lib/client/events";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -75,6 +78,9 @@ export function MonthView({
   onCreateAt: (dateStr: string) => void;
   onOpenDay: (dateStr: string) => void;
 }) {
+  // 點某天 → 從底部滑出當天面板（不切走視圖，關掉即回月曆）。
+  const [peekDay, setPeekDay] = useState<string | null>(null);
+
   const byDay = new Map<string, CalEvent[]>();
   for (const ev of events) {
     for (const ds of eventDays(ev)) {
@@ -84,7 +90,23 @@ export function MonthView({
     }
   }
 
+  // 面板：當天全部行程（依開始時間排序）與最晚結束時間。
+  const peekEvents = peekDay
+    ? (byDay.get(peekDay) ?? [])
+        .slice()
+        .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
+    : [];
+  const peekTimed = peekEvents.filter((e) => !e.all_day);
+  const peekLastEnd =
+    peekTimed.length > 0
+      ? peekTimed.reduce(
+          (acc, e) => (new Date(e.ends_at) > new Date(acc) ? e.ends_at : acc),
+          peekTimed[0].ends_at,
+        )
+      : null;
+
   return (
+    <>
     <div className="overflow-hidden rounded-xl border bg-card">
       <div className="grid grid-cols-7 border-b bg-muted/40 text-center text-xs font-medium text-muted-foreground">
         {WEEKDAYS.map((w) => (
@@ -118,7 +140,7 @@ export function MonthView({
           return (
             <div
               key={ds}
-              onClick={() => onOpenDay(ds)}
+              onClick={() => setPeekDay(ds)}
               className={cn(
                 "min-h-24 cursor-pointer border-b border-r p-1 last:border-r-0 [&:nth-child(7n)]:border-r-0",
                 !inMonth && "bg-muted/30 text-muted-foreground",
@@ -145,7 +167,7 @@ export function MonthView({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onOpenDay(ds);
+                    setPeekDay(ds);
                   }}
                   aria-label={`查看 ${format(day, "M月d日")} 整天`}
                   title="查看整天"
@@ -188,35 +210,16 @@ export function MonthView({
                   );
                 })}
                 {extra > 0 && (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-full rounded px-1 py-0.5 text-left text-[11px] text-muted-foreground hover:bg-accent touch:py-2 touch:text-xs"
-                      >
-                        +{extra} 筆
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="start"
-                      className="w-56 space-y-1 p-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="px-1 pb-1 text-xs font-medium text-muted-foreground">
-                        {format(day, "M月d日")}
-                      </div>
-                      {dayEvents.map((ev) => (
-                        <MonthChip
-                          key={ev.id + "pop"}
-                          event={ev}
-                          color={colorOf(ev.calendar_id)}
-                          conflict={conflicts.has(ev.id)}
-                          onClick={() => onSelectEvent(ev)}
-                        />
-                      ))}
-                    </PopoverContent>
-                  </Popover>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPeekDay(ds);
+                    }}
+                    className="w-full rounded px-1 py-0.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-accent touch:py-2 touch:text-xs"
+                  >
+                    +{extra} 筆 · 看整天
+                  </button>
                 )}
                 {lastEndIso && (
                   <div className="pt-0.5 text-right text-[10px] font-medium leading-none text-muted-foreground/80 tabular-nums">
@@ -229,5 +232,100 @@ export function MonthView({
         })}
       </div>
     </div>
+
+      <Sheet
+        open={peekDay !== null}
+        onOpenChange={(o) => !o && setPeekDay(null)}
+      >
+        <SheetContent
+          side="bottom"
+          className="max-h-[80vh] gap-0 rounded-t-2xl"
+        >
+          <SheetHeader className="border-b">
+            <SheetTitle>{peekDay ? dayTitle(peekDay) : ""}</SheetTitle>
+            <p className="text-xs text-muted-foreground">
+              {peekTimed.length > 0
+                ? `${peekEvents.length} 筆行程 · 最後 ${D.time(peekLastEnd!)} 結束`
+                : peekEvents.length > 0
+                  ? `${peekEvents.length} 筆行程`
+                  : "這天沒有行程"}
+            </p>
+          </SheetHeader>
+
+          <div className="flex-1 space-y-1 overflow-y-auto p-4">
+            {peekEvents.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                這天還沒有安排，點下方按鈕新增。
+              </p>
+            ) : (
+              peekEvents.map((ev, i) => {
+                const prev = i > 0 ? peekEvents[i - 1] : null;
+                const gap =
+                  prev && !prev.all_day && !ev.all_day
+                    ? gapMinutes(prev, ev)
+                    : 0;
+                return (
+                  <Fragment key={ev.id}>
+                    {gap >= MIN_GAP_MINUTES && (
+                      <div className="flex items-center gap-2 px-1 py-0.5 text-xs text-muted-foreground">
+                        <span className="h-px flex-1 bg-border" />
+                        <span className="shrink-0 tabular-nums">
+                          空檔 {fmtDur(gap)}
+                        </span>
+                        <span className="h-px flex-1 bg-border" />
+                      </div>
+                    )}
+                    <EventTwoLineCard
+                      event={ev}
+                      color={colorOf(ev.calendar_id)}
+                      conflict={conflicts.has(ev.id)}
+                      onClick={() => {
+                        onSelectEvent(ev);
+                        setPeekDay(null);
+                      }}
+                    />
+                  </Fragment>
+                );
+              })
+            )}
+          </div>
+
+          <SheetFooter className="flex-row gap-2 border-t">
+            {canCreate && (
+              <Button
+                className="flex-1 touch:h-12"
+                onClick={() => {
+                  const ds = peekDay;
+                  setPeekDay(null);
+                  if (ds) onCreateAt(ds);
+                }}
+              >
+                <Plus className="size-4" />
+                在這天新增
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="flex-1 touch:h-12"
+              onClick={() => {
+                const ds = peekDay;
+                setPeekDay(null);
+                if (ds) onOpenDay(ds);
+              }}
+            >
+              <CalendarRange className="size-4" />
+              以日視圖開啟
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+    </>
   );
+}
+
+/** 面板標題：8月24日 週日 */
+function dayTitle(ds: string): string {
+  const [y, m, d] = ds.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  return `${m}月${d}日 週${WEEKDAYS[date.getDay()]}`;
 }
