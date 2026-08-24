@@ -84,6 +84,12 @@ export function CalendarView() {
     setCreateOpen(true);
   };
 
+  // 從月視圖點某天 → 切到「日視圖」展開整天（中午為錨，避開時區邊界）。
+  const openDay = (dateStr: string) => {
+    setAnchor(new Date(zonedToIso(new Date(`${dateStr}T12:00:00`))));
+    setView("day");
+  };
+
   return (
     <div>
       <PageHeader
@@ -155,8 +161,10 @@ export function CalendarView() {
           events={events}
           colorOf={colorOf}
           conflicts={conflicts}
+          canCreate={canCreate}
           onSelectEvent={setDetail}
           onCreateAt={(ds) => openCreate(ds)}
+          onOpenDay={openDay}
         />
       ) : (
         <TimeGridView

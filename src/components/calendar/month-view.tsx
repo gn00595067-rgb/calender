@@ -2,6 +2,7 @@
 
 import { Fragment } from "react";
 import { format, isSameMonth, isToday } from "date-fns";
+import { Plus } from "lucide-react";
 import { zoned } from "@/lib/calendar-utils";
 import { D } from "@/lib/date";
 import { cn } from "@/lib/utils";
@@ -59,16 +60,20 @@ export function MonthView({
   events,
   colorOf,
   conflicts,
+  canCreate,
   onSelectEvent,
   onCreateAt,
+  onOpenDay,
 }: {
   days: Date[];
   monthStart: Date;
   events: CalEvent[];
   colorOf: (calendarId: string) => string;
   conflicts: Set<string>;
+  canCreate: boolean;
   onSelectEvent: (event: CalEvent) => void;
   onCreateAt: (dateStr: string) => void;
+  onOpenDay: (dateStr: string) => void;
 }) {
   const byDay = new Map<string, CalEvent[]>();
   for (const ev of events) {
@@ -113,7 +118,7 @@ export function MonthView({
           return (
             <div
               key={ds}
-              onClick={() => onCreateAt(ds)}
+              onClick={() => onOpenDay(ds)}
               className={cn(
                 "min-h-24 cursor-pointer border-b border-r p-1 last:border-r-0 [&:nth-child(7n)]:border-r-0",
                 !inMonth && "bg-muted/30 text-muted-foreground",
@@ -121,16 +126,39 @@ export function MonthView({
                   "bg-amber-50 ring-2 ring-inset ring-amber-400 dark:bg-amber-950/30 dark:ring-amber-500/70",
               )}
             >
-              <div className="mb-1 flex justify-end">
-                <span
+              <div className="mb-1 flex items-center gap-1">
+                {canCreate && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCreateAt(ds);
+                    }}
+                    aria-label={`在 ${format(day, "M月d日")} 新增行程`}
+                    title="新增行程"
+                    className="flex size-6 items-center justify-center rounded-full text-muted-foreground/50 transition hover:bg-accent hover:text-foreground touch:size-9"
+                  >
+                    <Plus className="size-3.5 touch:size-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenDay(ds);
+                  }}
+                  aria-label={`查看 ${format(day, "M月d日")} 整天`}
+                  title="查看整天"
                   className={cn(
-                    "flex size-6 items-center justify-center rounded-full text-xs",
-                    today && "bg-primary font-bold text-primary-foreground",
+                    "ml-auto flex size-6 items-center justify-center rounded-full text-xs transition touch:size-9 touch:text-sm",
+                    today
+                      ? "bg-primary font-bold text-primary-foreground"
+                      : "hover:bg-accent",
                     !today && !inMonth && "text-muted-foreground/60",
                   )}
                 >
                   {format(day, "d")}
-                </span>
+                </button>
               </div>
               <div className="space-y-0.5">
                 {shown.map((ev, i) => {
