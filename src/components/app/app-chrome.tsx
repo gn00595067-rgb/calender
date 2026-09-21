@@ -9,6 +9,7 @@ import { SidebarContent } from "./sidebar";
 import { UserMenu } from "./user-menu";
 import { CommandPaletteProvider, useCommandPalette } from "./command-palette";
 import { AppDataProvider, type Me } from "./app-data";
+import { VoiceAddButton } from "@/components/voice/voice-add-button";
 import type { AccessibleCalendar } from "@/types/domain";
 
 /**
@@ -59,6 +60,7 @@ function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
       </Button>
       <div className="flex-1" />
       <SearchTrigger />
+      <VoiceAddButton variant="icon" />
       <UserMenu />
     </header>
   );

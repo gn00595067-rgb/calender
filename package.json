@@ -13,6 +13,7 @@
     "gen:types": "supabase gen types typescript --linked > src/types/database.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
     "@hookform/resolvers": "^5.7.1",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",

@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { EventTwoLineCard } from "@/components/calendar/event-card";
 import { EventDetailDialog } from "@/components/calendar/event-detail-dialog";
 import { EventModal } from "@/components/calendar/event-modal";
+import { MicButton } from "@/components/voice/mic-button";
 import { IntervalAvailabilityPanel } from "@/components/digest/availability";
 import { presetInterval } from "@/components/digest/interval-picker";
 import { useAppData } from "@/components/app/app-data";
@@ -205,19 +206,26 @@ function SearchInner() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="搜尋標題、地點、人物、標籤、回饋…"
-            className="h-11 pl-9 pr-9"
+            className="h-11 pl-9 pr-16"
             autoFocus
           />
-          {q && (
-            <button
-              type="button"
-              onClick={() => setQ("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label="清除"
-            >
-              <X className="size-4" />
-            </button>
-          )}
+          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+            {q && (
+              <button
+                type="button"
+                onClick={() => setQ("")}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="清除"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+            <MicButton
+              title="語音搜尋"
+              onInterim={(t) => setQ(t)}
+              onFinal={(t) => setQ(t)}
+            />
+          </div>
         </div>
 
         {/* 時間區間：外層直接可選——快速鍵＋自訂起訖日，設了就顯示該期間的空檔 */}

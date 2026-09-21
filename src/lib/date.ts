@@ -46,6 +46,18 @@ export function taipeiTodayStr(): string {
   return formatInTimeZone(new Date(), TIME_ZONE, "yyyy-MM-dd");
 }
 
+/** 台北「現在」的牆上時間字串 yyyy-MM-dd'T'HH:mm（給語音解析當時間基準用） */
+export function taipeiNowWall(): string {
+  return formatInTimeZone(new Date(), TIME_ZONE, "yyyy-MM-dd'T'HH:mm");
+}
+
+/** 台北「現在」含星期，如 2026-09-21(日) 14:05（給 LLM 當基準，避免算錯星期） */
+export function taipeiNowHuman(): string {
+  return formatInTimeZone(new Date(), TIME_ZONE, "yyyy-MM-dd(EEE) HH:mm", {
+    locale: zhTW,
+  });
+}
+
 /** 常用顯示格式 */
 export const D = {
   time: (utc: string | Date) => fmt(utc, "HH:mm"),

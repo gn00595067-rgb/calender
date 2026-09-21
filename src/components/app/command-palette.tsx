@@ -18,6 +18,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { MAIN_NAV, SETTINGS_NAV } from "./nav";
+import { MicButton } from "@/components/voice/mic-button";
 import { Search } from "lucide-react";
 
 interface CommandPaletteValue {
@@ -76,11 +77,20 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
     <Ctx value={value}>
       {children}
       <CommandDialog open={open} onOpenChange={setOpen}>
-        <CommandInput
-          placeholder="搜尋行程、人物、標籤，或前往頁面…"
-          value={query}
-          onValueChange={setQuery}
-        />
+        <div className="relative">
+          <CommandInput
+            placeholder="搜尋行程、人物、標籤，或前往頁面…"
+            value={query}
+            onValueChange={setQuery}
+          />
+          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <MicButton
+              title="語音搜尋"
+              onInterim={(t) => setQuery(t)}
+              onFinal={(t) => setQuery(t)}
+            />
+          </div>
+        </div>
         <CommandList>
           <CommandEmpty>沒有符合的項目。</CommandEmpty>
           {query.trim() && (

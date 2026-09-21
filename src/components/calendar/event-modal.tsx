@@ -63,6 +63,17 @@ function plusMonths(dateStr: string, m: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** 建立新行程時可預先帶入的欄位（供語音新增等情境）。 */
+export interface EventDraft {
+  calendarId?: string;
+  title?: string;
+  location?: string;
+  allDay?: boolean;
+  startWall?: string;
+  endWall?: string;
+  isImportant?: boolean;
+}
+
 export function EventModal({
   open,
   onOpenChange,
@@ -70,6 +81,7 @@ export function EventModal({
   event,
   defaultCalendarId,
   defaultStartWall,
+  draft,
   onSaved,
 }: {
   open: boolean;
@@ -78,6 +90,8 @@ export function EventModal({
   event?: CalEvent;
   defaultCalendarId?: string;
   defaultStartWall?: string;
+  /** create 模式下預先帶入的欄位（語音解析結果）。 */
+  draft?: EventDraft;
   onSaved?: () => void;
 }) {
   const { ownedCalendars, sharedCalendars, calendarById } = useAppData();
@@ -99,17 +113,18 @@ export function EventModal({
     });
 
   function buildDefaults(): FormValues {
+    const start = draft?.startWall ?? defaultStart;
     return {
-      calendarId: defaultCalendarId ?? editableCalendars[0]?.id ?? "",
-      title: "",
+      calendarId: draft?.calendarId ?? defaultCalendarId ?? editableCalendars[0]?.id ?? "",
+      title: draft?.title ?? "",
       description: "",
-      location: "",
-      allDay: false,
-      startWall: defaultStart,
-      endWall: addHour(defaultStart),
-      isImportant: false,
+      location: draft?.location ?? "",
+      allDay: draft?.allDay ?? false,
+      startWall: start,
+      endWall: draft?.endWall ?? addHour(start),
+      isImportant: draft?.isImportant ?? false,
       recurrence: "none",
-      recurrenceUntil: plusMonths(defaultStart.slice(0, 10), 3),
+      recurrenceUntil: plusMonths(start.slice(0, 10), 3),
       scope: "this",
       contactIds: [],
       tagNames: [],
