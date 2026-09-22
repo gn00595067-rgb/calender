@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Mic, Loader2, Sparkles } from "lucide-react";
 import {
@@ -21,8 +22,9 @@ import { taipeiNowWall, taipeiNowHuman } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
 /**
- * 語音新增行程：說（或用鍵盤麥克風／打字輸入）一句話，交給 Claude 解析成
- * 結構化欄位，再開啟「新增行程」對話框讓使用者確認後送出。
+ * 語音助理：說（或用鍵盤麥克風／打字輸入）一句話，交給 Claude 先判斷意圖：
+ *   - 新增：解析成結構化欄位，開啟「新增行程」對話框讓使用者確認後送出。
+ *   - 搜尋：抽出關鍵字後導到搜尋頁。
  */
 export function VoiceAddButton({
   variant = "icon",
@@ -34,6 +36,7 @@ export function VoiceAddButton({
   className?: string;
   onSaved?: () => void;
 }) {
+  const router = useRouter();
   const { ownedCalendars, sharedCalendars } = useAppData();
   const editable = [...ownedCalendars, ...sharedCalendars].filter((c) =>
     can.editEvents(c.effectiveRole),
@@ -68,6 +71,17 @@ export function VoiceAddButton({
         toast.error(data?.error ?? "解析失敗，請再試一次");
         return;
       }
+
+      // 搜尋意圖：關掉對話框、導到搜尋頁
+      if (data.intent === "search") {
+        setOpen(false);
+        setText("");
+        if (data.note) toast.message(data.note);
+        router.push(`/search?q=${encodeURIComponent(data.query)}`);
+        return;
+      }
+
+      // 新增意圖：帶入「新增行程」對話框
       setDraft({
         calendarId: data.calendarId,
         title: data.title,
@@ -96,8 +110,8 @@ export function VoiceAddButton({
           size="icon"
           className={cn("h-9 w-9 touch:size-11", className)}
           onClick={() => setOpen(true)}
-          aria-label="語音新增行程"
-          title="語音新增行程"
+          aria-label="語音助理（搜尋或新增行程）"
+          title="語音助理（搜尋或新增行程）"
         >
           <Mic className="size-4" />
         </Button>
@@ -108,7 +122,7 @@ export function VoiceAddButton({
           onClick={() => setOpen(true)}
         >
           <Mic className="size-4" />
-          語音新增
+          語音助理
         </Button>
       )}
 
@@ -118,11 +132,11 @@ export function VoiceAddButton({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="size-4 text-primary" />
-              語音新增行程
+              語音助理
             </DialogTitle>
             <DialogDescription>
-              說一句話，例如「明天下午三點跟客戶開會兩小時」。也可直接用鍵盤上的
-              🎤 聽寫，或手動打字。解析後會帶入「新增行程」讓你確認。
+              說一句話即可，會自動判斷要「新增」還是「搜尋」。例如「明天下午三點跟客戶開會兩小時」會帶入新增行程；「幫我搜尋跟運動有關的行程」會直接帶你去搜尋。也可用鍵盤上的
+              🎤 聽寫或手動打字。
             </DialogDescription>
           </DialogHeader>
 
@@ -136,7 +150,7 @@ export function VoiceAddButton({
                   void submit();
                 }
               }}
-              placeholder="例：下週一早上十點在公司開產品會議一小時"
+              placeholder="新增：下週一早上十點開產品會議一小時／搜尋：幫我找跟運動有關的行程"
               rows={3}
               autoFocus
               className="pr-11"

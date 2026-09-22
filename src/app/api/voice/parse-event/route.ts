@@ -4,10 +4,13 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * 語音新增行程：把一句口語（如「明天下午三點跟客戶開會兩小時」）用 Claude Haiku
- * 解析成結構化欄位，回給前端帶入「新增行程」對話框讓使用者確認後再送出。
+ * 語音助理：把一句口語用 Claude Haiku 先判斷「意圖」，再解析：
+ *   - 新增（create）：如「明天下午三點跟客戶開會兩小時」→ 結構化欄位，
+ *     回給前端帶入「新增行程」對話框讓使用者確認後再送出。
+ *   - 搜尋（search）：如「幫我搜尋跟運動有關的行程」→ 精煉關鍵字 query，
+ *     回給前端導到搜尋頁。
  *
- * 只做「文字 → 欄位」解析，不直接寫資料庫——避免辨識/解析錯誤污染行事曆。
+ * 只做「文字 → 意圖／欄位」解析，不直接寫資料庫——避免辨識/解析錯誤污染行事曆。
  */
 
 export const runtime = "nodejs";
@@ -23,8 +26,9 @@ const bodySchema = z.object({
   nowHuman: z.string().min(1).max(60),
 });
 
-// Claude 回傳的形狀
-const parsedSchema = z.object({
+// Claude 回傳的形狀（依 intent 分兩種）
+const createSchema = z.object({
+  intent: z.literal("create"),
   calendarId: z.string().nullable(),
   title: z.string(),
   allDay: z.boolean(),
@@ -36,12 +40,36 @@ const parsedSchema = z.object({
   note: z.string(),
 });
 
+const searchSchema = z.object({
+  intent: z.literal("search"),
+  query: z.string(),
+  note: z.string(),
+});
+
+const parsedSchema = z.discriminatedUnion("intent", [createSchema, searchSchema]);
+
 function buildSystemPrompt(nowHuman: string, calendars: { id: string; name: string }[]) {
   const calList = calendars.map((c) => `- id="${c.id}" 名稱="${c.name}"`).join("\n");
-  return `你是行事曆助理，負責把使用者口述的一句話，解析成「新增行程」需要的結構化欄位。
+  return `你是行事曆語音助理。先判斷使用者這句話的「意圖」，再依意圖解析。
 
 現在時間（台北）：${nowHuman}
 
+意圖判斷（intent）：
+- "search"：使用者想「找出／查詢」已存在的行程。常見說法：幫我搜尋…、找一下…、查…、有沒有…、之前那個…、幾號有…、跟○○有關的行程。
+- "create"：使用者想「新增／安排」一個新行程。常見說法：明天三點開會、幫我加一個…、排一個…、提醒我…、○○日要…。
+- 兩者皆可解釋時，只有出現明確的搜尋/查詢動詞才判 search；否則預設 create。
+
+────────────────────────
+若 intent = "search"：
+- query：抽出精煉的搜尋關鍵字（用來比對行程標題、地點、人物、標籤、回饋）。去掉「幫我搜尋」「找一下」「跟…有關的行程」等贅語，只留核心詞。例：
+  - 「幫我搜尋跟運動有關係的行程」→ query="運動"
+  - 「找一下上次跟王經理開會」→ query="王經理 開會"
+  - 「有沒有下週的體檢」→ query="體檢"
+- note：若你對關鍵字做了取捨，用一句中文說明；否則空字串。
+- 只輸出：{"intent":"search","query": string,"note": string}
+
+────────────────────────
+若 intent = "create"：
 可用的行事曆分類（務必從中挑一個最合適的 id；真的無法判斷才回 null）：
 ${calList}
 
@@ -57,9 +85,10 @@ ${calList}
 - isImportant：使用者明確強調很重要/一定要/別忘了時才 true，否則 false。
 - confidence：你對這次解析的把握（0~1）。
 - note：若有模糊或你做了假設，用一句中文說明；否則空字串。
+- 只輸出：{"intent":"create","calendarId": string|null, "title": string, "allDay": boolean, "startWall": "YYYY-MM-DDTHH:mm", "endWall": "YYYY-MM-DDTHH:mm", "location": string|null, "isImportant": boolean, "confidence": number, "note": string}
 
-只輸出一個 JSON 物件，不要有任何其他文字或 markdown 圍欄。JSON 形狀：
-{"calendarId": string|null, "title": string, "allDay": boolean, "startWall": "YYYY-MM-DDTHH:mm", "endWall": "YYYY-MM-DDTHH:mm", "location": string|null, "isImportant": boolean, "confidence": number, "note": string}`;
+────────────────────────
+一律只輸出一個 JSON 物件，不要有任何其他文字或 markdown 圍欄。`;
 }
 
 function extractJson(text: string): unknown {
@@ -120,7 +149,18 @@ export async function POST(req: Request) {
     );
   }
 
-  // 4) 收斂 calendarId：若模型給的 id 不在清單內，就退回第一個分類
+  // 4a) 搜尋意圖：回精煉關鍵字，讓前端導到搜尋頁
+  if (result.intent === "search") {
+    const query = result.query.trim();
+    // 抽不出關鍵字就退回原句，至少能搜到東西
+    return NextResponse.json({
+      intent: "search",
+      query: query || parsed.transcript,
+      note: result.note.trim(),
+    });
+  }
+
+  // 4b) 新增意圖：收斂 calendarId（模型給的 id 不在清單內就退回第一個分類）
   const validIds = new Set(parsed.calendars.map((c) => c.id));
   const calendarId =
     result.calendarId && validIds.has(result.calendarId)
@@ -128,6 +168,7 @@ export async function POST(req: Request) {
       : parsed.calendars[0].id;
 
   return NextResponse.json({
+    intent: "create",
     calendarId,
     title: result.title.trim() || "（未命名行程）",
     allDay: result.allDay,
