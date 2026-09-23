@@ -10,8 +10,8 @@ import {
 import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import { TIME_ZONE } from "./constants";
 
-/** 週起始日：週日（符合台灣常見月曆 日一二三四五六） */
-const WEEK_STARTS_ON = 0 as const;
+/** 週起始日：週一（月曆自週一排到週日 一二三四五六日） */
+const WEEK_STARTS_ON = 1 as const;
 
 export interface UtcRange {
   startIso: string;

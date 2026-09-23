@@ -17,7 +17,10 @@ import {
 } from "@/components/ui/sheet";
 import type { CalEvent } from "@/lib/client/events";
 
+// getDay() 索引用（0=日..6=六）
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+// 月曆表頭順序：週一起（一二三四五六日）
+const WEEK_HEADER = ["一", "二", "三", "四", "五", "六", "日"];
 
 /** 分鐘數 → 「X時Y分」/「X小時」/「Y分」 */
 function fmtDur(min: number): string {
@@ -109,7 +112,7 @@ export function MonthView({
     <>
     <div className="overflow-hidden rounded-xl border bg-card">
       <div className="grid grid-cols-7 border-b bg-muted/40 text-center text-xs font-medium text-muted-foreground">
-        {WEEKDAYS.map((w) => (
+        {WEEK_HEADER.map((w) => (
           <div key={w} className="py-2">
             {w}
           </div>

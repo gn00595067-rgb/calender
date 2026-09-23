@@ -30,6 +30,8 @@ const baseEventSchema = z.object({
   isImportant: z.boolean(),
   recurrence: z.enum(["none", "daily", "weekly", "biweekly", "monthly"]),
   recurrenceUntil: dateOnly.optional().nullable(),
+  // 「每週」時可指定重複的星期（0=日..6=六）；空／未給則每週同一天。
+  weekdays: z.array(z.number().int().min(0).max(6)).optional().nullable(),
   contactIds: z.array(z.uuid()).default([]),
   tagNames: z.array(z.string().trim().min(1).max(30)).default([]),
   finance: financeSchema.optional().nullable(),
@@ -44,12 +46,25 @@ function generateDates(
   startDate: string,
   rule: "daily" | "weekly" | "biweekly" | "monthly",
   until: string | null | undefined,
+  weekdays?: number[] | null,
 ): string[] {
   const anchor = new Date(`${startDate}T12:00:00Z`);
   const hardCap = addMonths(anchor, RECURRENCE_MAX_MONTHS);
   const untilCap = until ? new Date(`${until}T12:00:00Z`) : null;
   const cap =
     untilCap && untilCap < hardCap ? untilCap : hardCap;
+
+  // 每週 + 指定星期（如每週二、四）：逐日掃描，取符合星期者
+  if (rule === "weekly" && weekdays && weekdays.length) {
+    const set = new Set(weekdays);
+    const out: string[] = [];
+    let cur = anchor;
+    for (let i = 0; i < 400 && cur <= cap; i++) {
+      if (set.has(cur.getUTCDay())) out.push(cur.toISOString().slice(0, 10));
+      cur = addDays(cur, 1);
+    }
+    return out;
+  }
 
   const step = (d: Date): Date => {
     switch (rule) {
@@ -117,10 +132,12 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
       new Date(toUtc(d.endWall)).getTime() - new Date(toUtc(d.startWall)).getTime();
 
     // 決定所有 occurrence 的起始日
-    const dates =
+    let dates =
       d.recurrence === "none"
         ? [startDate]
-        : generateDates(startDate, d.recurrence, d.recurrenceUntil);
+        : generateDates(startDate, d.recurrence, d.recurrenceUntil, d.weekdays);
+    // 保底：任何情況都至少建立起始日這一筆
+    if (dates.length === 0) dates = [startDate];
 
     const groupId =
       d.recurrence === "none" ? null : crypto.randomUUID();
@@ -190,7 +207,7 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
 }
 
 const updateSchema = baseEventSchema
-  .omit({ recurrence: true, recurrenceUntil: true })
+  .omit({ recurrence: true, recurrenceUntil: true, weekdays: true })
   .extend({
     id: z.uuid(),
     scope: z.enum(["this", "following"]),

@@ -28,12 +28,18 @@ import {
 } from "@/components/ui/select";
 import { ContactMultiSelect } from "./contact-multi-select";
 import { TagInput } from "./tag-input";
+import { TimeDurationField } from "./time-duration-field";
 import { useAppData } from "@/components/app/app-data";
 import { useEventEditData } from "@/lib/client/lookups";
 import { can } from "@/lib/permissions";
-import { RECURRENCE_OPTIONS, FINANCE_DIRECTIONS } from "@/lib/constants";
+import {
+  RECURRENCE_OPTIONS,
+  FINANCE_DIRECTIONS,
+  WEEKDAY_CHIPS,
+} from "@/lib/constants";
 import { createEventAction, updateEventAction } from "@/lib/actions/events";
 import { utcToTaipeiWall } from "@/lib/date";
+import { addMinutesToWall, wallWeekday } from "@/lib/wall-time";
 import type { CalEvent } from "@/lib/client/events";
 
 interface FormValues {
@@ -47,6 +53,7 @@ interface FormValues {
   isImportant: boolean;
   recurrence: "none" | "daily" | "weekly" | "biweekly" | "monthly";
   recurrenceUntil: string;
+  recurrenceWeekdays: number[];
   scope: "this" | "following";
   contactIds: string[];
   tagNames: string[];
@@ -121,10 +128,11 @@ export function EventModal({
       location: draft?.location ?? "",
       allDay: draft?.allDay ?? false,
       startWall: start,
-      endWall: draft?.endWall ?? addHour(start),
+      endWall: draft?.endWall ?? addMinutesToWall(start, 60),
       isImportant: draft?.isImportant ?? false,
       recurrence: "none",
       recurrenceUntil: plusMonths(start.slice(0, 10), 3),
+      recurrenceWeekdays: [wallWeekday(start)],
       scope: "this",
       contactIds: [],
       tagNames: [],
@@ -151,6 +159,7 @@ export function EventModal({
         isImportant: event.is_important,
         recurrence: "none",
         recurrenceUntil: "",
+        recurrenceWeekdays: [],
         scope: "this",
         contactIds: [],
         tagNames: event.tagNames,
@@ -184,6 +193,7 @@ export function EventModal({
   const recurrence = watch("recurrence");
   const calendarId = watch("calendarId");
   const startWall = watch("startWall");
+  const endWall = watch("endWall");
 
   const canFinance = useMemo(() => {
     const cal = calendarById.get(calendarId);
@@ -219,6 +229,10 @@ export function EventModal({
               isImportant: v.isImportant,
               recurrence: v.recurrence,
               recurrenceUntil: v.recurrence === "none" ? null : v.recurrenceUntil,
+              weekdays:
+                v.recurrence === "weekly" && v.recurrenceWeekdays.length
+                  ? v.recurrenceWeekdays
+                  : null,
               contactIds: v.contactIds,
               tagNames: v.tagNames,
               finance,
@@ -354,36 +368,41 @@ export function EventModal({
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="ev-start">開始{allDay ? "日期" : "時間"}</Label>
-                <Input
-                  id="ev-start"
-                  type={allDay ? "date" : "datetime-local"}
-                  value={allDay ? startWall.slice(0, 10) : startWall}
-                  onChange={(e) =>
-                    setValue(
-                      "startWall",
-                      allDay ? `${e.target.value}T00:00` : e.target.value,
-                    )
-                  }
-                />
+            {allDay ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="ev-start">開始日期</Label>
+                  <Input
+                    id="ev-start"
+                    type="date"
+                    value={startWall.slice(0, 10)}
+                    onChange={(e) =>
+                      setValue("startWall", `${e.target.value}T00:00`)
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ev-end">結束日期</Label>
+                  <Input
+                    id="ev-end"
+                    type="date"
+                    value={endWall.slice(0, 10)}
+                    onChange={(e) =>
+                      setValue("endWall", `${e.target.value}T23:59`)
+                    }
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="ev-end">結束{allDay ? "日期" : "時間"}</Label>
-                <Input
-                  id="ev-end"
-                  type={allDay ? "date" : "datetime-local"}
-                  value={allDay ? watch("endWall").slice(0, 10) : watch("endWall")}
-                  onChange={(e) =>
-                    setValue(
-                      "endWall",
-                      allDay ? `${e.target.value}T23:59` : e.target.value,
-                    )
-                  }
-                />
-              </div>
-            </div>
+            ) : (
+              <TimeDurationField
+                startWall={startWall}
+                endWall={endWall}
+                onChange={(s, e) => {
+                  setValue("startWall", s);
+                  setValue("endWall", e);
+                }}
+              />
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="ev-location">地點</Label>
@@ -462,6 +481,47 @@ export function EventModal({
                   <div className="space-y-2">
                     <Label htmlFor="ev-until">重複至</Label>
                     <Input id="ev-until" type="date" {...register("recurrenceUntil")} />
+                  </div>
+                )}
+                {recurrence === "weekly" && (
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>重複的星期（可多選，如每週二、四）</Label>
+                    <Controller
+                      control={control}
+                      name="recurrenceWeekdays"
+                      render={({ field }) => (
+                        <div className="flex flex-wrap gap-1.5">
+                          {WEEKDAY_CHIPS.map((w) => {
+                            const on = field.value.includes(w.value);
+                            return (
+                              <button
+                                key={w.value}
+                                type="button"
+                                aria-pressed={on}
+                                onClick={() =>
+                                  field.onChange(
+                                    on
+                                      ? field.value.filter((d) => d !== w.value)
+                                      : [...field.value, w.value],
+                                  )
+                                }
+                                className={
+                                  "flex size-9 items-center justify-center rounded-full border text-sm font-medium transition " +
+                                  (on
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "hover:border-primary hover:bg-accent")
+                                }
+                              >
+                                {w.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      未選任何星期時，預設每週的同一天重複。
+                    </p>
                   </div>
                 )}
               </div>
@@ -568,14 +628,4 @@ export function EventModal({
 
 function nowWall(): string {
   return utcToTaipeiWall(new Date().toISOString()).slice(0, 11) + "09:00";
-}
-
-function addHour(wall: string): string {
-  const [date, time] = wall.split("T");
-  const [h, m] = time.split(":").map(Number);
-  const d = new Date(Date.UTC(2000, 0, 1, h, m));
-  d.setUTCHours(d.getUTCHours() + 1);
-  const hh = String(d.getUTCHours()).padStart(2, "0");
-  const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${date}T${hh}:${mm}`;
 }

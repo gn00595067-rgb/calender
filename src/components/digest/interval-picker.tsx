@@ -30,8 +30,8 @@ export function presetInterval(
       return { startDate: format(t, "yyyy-MM-dd"), endDate: format(t, "yyyy-MM-dd") };
     case "week":
       return {
-        startDate: format(startOfWeek(t, { weekStartsOn: 0 }), "yyyy-MM-dd"),
-        endDate: format(endOfWeek(t, { weekStartsOn: 0 }), "yyyy-MM-dd"),
+        startDate: format(startOfWeek(t, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+        endDate: format(endOfWeek(t, { weekStartsOn: 1 }), "yyyy-MM-dd"),
       };
     case "next7":
       return {

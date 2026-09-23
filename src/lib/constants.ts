@@ -93,9 +93,42 @@ export type RecurrenceRule = "daily" | "weekly" | "biweekly" | "monthly";
 export const RECURRENCE_OPTIONS: { value: RecurrenceRule | "none"; label: string }[] = [
   { value: "none", label: "不重複" },
   { value: "daily", label: "每天" },
-  { value: "weekly", label: "每週" },
+  { value: "weekly", label: "每週（可指定星期）" },
   { value: "biweekly", label: "每兩週" },
   { value: "monthly", label: "每月" },
+];
+
+/**
+ * 常用時長選項（分鐘）。新增行程時選「長度」即由開始時間自動推算結束時間，
+ * 不必每次都手動選幾點幾分。
+ */
+export const DURATION_OPTIONS: { value: number; label: string }[] = [
+  { value: 15, label: "15 分鐘" },
+  { value: 30, label: "30 分鐘" },
+  { value: 45, label: "45 分鐘" },
+  { value: 60, label: "1 小時" },
+  { value: 90, label: "1.5 小時" },
+  { value: 120, label: "2 小時" },
+  { value: 150, label: "2.5 小時" },
+  { value: 180, label: "3 小時" },
+  { value: 240, label: "4 小時" },
+  { value: 300, label: "5 小時" },
+  { value: 360, label: "6 小時" },
+  { value: 480, label: "8 小時" },
+];
+
+/**
+ * 星期籤（週一起）。value 為 JS `getDay()` 值（0=日..6=六），
+ * 用於「每週」重複時指定要重複的星期（如每週二、四）。
+ */
+export const WEEKDAY_CHIPS: { value: number; label: string }[] = [
+  { value: 1, label: "一" },
+  { value: 2, label: "二" },
+  { value: 3, label: "三" },
+  { value: 4, label: "四" },
+  { value: 5, label: "五" },
+  { value: 6, label: "六" },
+  { value: 0, label: "日" },
 ];
 
 /** 財務方向 */
