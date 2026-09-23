@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { format, differenceInCalendarDays } from "date-fns";
-import { AlertTriangle, CalendarClock, Star, Plus } from "lucide-react";
+import { AlertTriangle, CalendarClock, Star, Plus, Filter } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, ListSkeleton } from "@/components/app/states";
@@ -59,6 +59,15 @@ export function DigestView() {
   // 找空檔設定（時間帶 + 最小空檔），永遠顯示、不需開關
   const [windowKey, setWindowKey] = useState<WindowKey>("full");
   const [minGapKey, setMinGapKey] = useState<MinGapKey>("60");
+  // 空檔對象：多選分類（如 本人+小明+小美）；空＝全部合併
+  const [avTargets, setAvTargets] = useState<Set<string>>(new Set());
+  const toggleTarget = (id: string) =>
+    setAvTargets((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const w = useMemo(() => windowFromKey(windowKey), [windowKey]);
   const minGap = minutesFromGapKey(minGapKey);
   const focusDay = (ds: string) => setInterval({ startDate: ds, endDate: ds });
@@ -113,14 +122,23 @@ export function DigestView() {
     [...visibleIds],
   );
 
-  const conflicts = useMemo(() => conflictIds(events), [events]);
+  // 依「空檔對象」過濾：影響空檔計算、行程顯示與衝突
+  const shownEvents = useMemo(
+    () =>
+      avTargets.size === 0
+        ? events
+        : events.filter((e) => avTargets.has(e.calendar_id)),
+    [events, avTargets],
+  );
+
+  const conflicts = useMemo(() => conflictIds(shownEvents), [shownEvents]);
   const financeSummary = useMemo(() => summarize(finance), [finance]);
   const colorOf = (id: string) => calendarById.get(id)?.color ?? "#64748B";
 
   const days = useMemo(() => enumerateDays(interval), [interval]);
   const avail = useMemo(
-    () => intervalAvailability(days, () => events, w, minGap),
-    [days, events, w, minGap],
+    () => intervalAvailability(days, () => shownEvents, w, minGap),
+    [days, shownEvents, w, minGap],
   );
 
   // 各分類計數
@@ -137,24 +155,30 @@ export function DigestView() {
   );
 
   const jumpToConflict = () => {
-    const first = events.find((e) => conflicts.has(e.id));
+    const first = shownEvents.find((e) => conflicts.has(e.id));
     if (first) setDetail(first);
   };
 
   const body = () => {
-    if (events.length === 0)
+    if (shownEvents.length === 0)
       return (
         <EmptyState
           icon={CalendarClock}
-          title="這段期間沒有行程"
-          description="換個區間，或到行事曆新增行程。"
+          title={
+            events.length === 0 ? "這段期間沒有行程" : "所選對象這段期間沒有行程"
+          }
+          description={
+            events.length === 0
+              ? "換個區間，或到行事曆新增行程。"
+              : "調整上方「空檔對象」或改回全部。"
+          }
         />
       );
     if (spanDays <= 7)
       return (
         <IntervalGrid
           days={days}
-          events={events}
+          events={shownEvents}
           w={w}
           colorOf={colorOf}
           conflicts={conflicts}
@@ -168,7 +192,7 @@ export function DigestView() {
       return (
         <WeekHeatmap
           interval={interval}
-          events={events}
+          events={shownEvents}
           colorOf={colorOf}
           conflicts={conflicts}
           onSelect={setDetail}
@@ -176,7 +200,7 @@ export function DigestView() {
       );
     return (
       <MonthlySummary
-        events={events}
+        events={shownEvents}
         finance={finance}
         colorOf={colorOf}
         calendarNameOf={(id) => calendarById.get(id)?.name ?? "分類"}
@@ -213,6 +237,53 @@ export function DigestView() {
           minGapKey={minGapKey}
           onMinGapKeyChange={setMinGapKey}
         />
+
+        {/* 空檔對象：多選分類，合併看或只看大人／只看小孩 */}
+        {perCalendar.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border bg-card p-3">
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium">
+              <Filter className="size-4 text-muted-foreground" />
+              空檔對象
+            </span>
+            <button
+              type="button"
+              onClick={() => setAvTargets(new Set())}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-sm transition",
+                avTargets.size === 0
+                  ? "border-primary bg-primary/10 font-medium"
+                  : "hover:bg-accent",
+              )}
+            >
+              全部合併
+            </button>
+            {perCalendar.map(({ calendar }) => {
+              const on = avTargets.has(calendar.id);
+              return (
+                <button
+                  key={calendar.id}
+                  type="button"
+                  onClick={() => toggleTarget(calendar.id)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm transition",
+                    on ? "border-primary bg-primary/10 font-medium" : "hover:bg-accent",
+                  )}
+                >
+                  <span
+                    className="size-2.5 rounded-full"
+                    style={{ backgroundColor: calendar.color }}
+                  />
+                  {calendar.name}
+                </button>
+              );
+            })}
+            {avTargets.size > 0 && (
+              <span className="text-xs text-muted-foreground">
+                只算所選對象的行程與空檔
+              </span>
+            )}
+          </div>
+        )}
 
         {/* 摘要列 */}
         <div className="flex flex-wrap items-center gap-2">
@@ -254,7 +325,7 @@ export function DigestView() {
           )}
         </div>
 
-        {spanDays > 1 && events.length > 0 && (
+        {spanDays > 1 && shownEvents.length > 0 && (
           <AvailabilitySummary
             totalFreeMin={avail.totalFreeMin}
             freeDayCount={avail.freeDayCount}

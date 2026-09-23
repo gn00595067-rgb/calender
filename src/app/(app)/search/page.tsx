@@ -3,7 +3,14 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
+import {
+  format,
+  addDays,
+  startOfWeek,
+  endOfWeek,
+  differenceInCalendarDays,
+} from "date-fns";
+import { CalendarPlus } from "lucide-react";
 import {
   Search as SearchIcon,
   Star,
@@ -101,6 +108,42 @@ function SearchInner() {
     }
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [results]);
+
+  // —— 推算下次預約：以搜尋結果的最後一次為基準 + 間隔天數 ——
+  const [intervalDays, setIntervalDays] = useState<number | null>(null);
+  const occDates = useMemo(
+    () =>
+      [...new Set(results.map((r) => format(zoned(r.starts_at), "yyyy-MM-dd")))]
+        .sort()
+        .map((s) => new Date(`${s}T12:00:00`)),
+    [results],
+  );
+  const lastOcc = occDates.length ? occDates[occDates.length - 1] : null;
+  const typicalGap = useMemo(() => {
+    if (occDates.length < 2) return 7;
+    const gaps: number[] = [];
+    for (let i = 1; i < occDates.length; i++)
+      gaps.push(differenceInCalendarDays(occDates[i], occDates[i - 1]));
+    gaps.sort((a, b) => a - b);
+    return gaps[Math.floor(gaps.length / 2)] || 7;
+  }, [occDates]);
+  const effGap = intervalDays ?? typicalGap;
+  const targetDate = lastOcc ? addDays(lastOcc, effGap) : null;
+  const weekChar = (d: Date) => "日一二三四五六"[d.getDay()];
+  // 最後一次的上課時刻（新增建議沿用）
+  const lastHour = useMemo(() => {
+    if (!results.length) return 9;
+    const le = results.reduce((a, b) =>
+      new Date(a.starts_at) > new Date(b.starts_at) ? a : b,
+    );
+    return zoned(le.starts_at).getHours();
+  }, [results]);
+
+  const jumpToTargetWeek = () => {
+    if (!targetDate) return;
+    setStartDate(format(startOfWeek(targetDate, { weekStartsOn: 1 }), "yyyy-MM-dd"));
+    setEndDate(format(endOfWeek(targetDate, { weekStartsOn: 1 }), "yyyy-MM-dd"));
+  };
 
   // —— 這段期間的空檔：輸入起訖日即顯示（以所有顯示中分類的行程計算）——
   const [availWindowKey, setAvailWindowKey] = useState<WindowKey>("full");
@@ -467,6 +510,76 @@ function SearchInner() {
           </div>
         )}
 
+        {/* 推算下次預約 */}
+        {results.length > 0 && lastOcc && targetDate && (
+          <div className="space-y-2 rounded-xl border bg-card p-3">
+            <div className="flex items-center gap-1.5 text-sm font-semibold">
+              <CalendarPlus className="size-4 text-primary" />
+              推算下次預約
+            </div>
+            <p className="text-xs text-muted-foreground">
+              最後一次：{format(lastOcc, "M/d")}（週{weekChar(lastOcc)}） · 通常間隔{" "}
+              {typicalGap} 天
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">間隔</span>
+              {[7, 14, 20, 21, 28, 30].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setIntervalDays(n)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-sm transition",
+                    effGap === n
+                      ? "border-primary bg-primary/10 font-medium"
+                      : "hover:bg-accent",
+                  )}
+                >
+                  {n} 天
+                </button>
+              ))}
+              <input
+                type="number"
+                min={1}
+                value={intervalDays ?? ""}
+                onChange={(e) =>
+                  setIntervalDays(e.target.value ? Number(e.target.value) : null)
+                }
+                placeholder="自訂"
+                className="h-8 w-20 rounded-md border px-2 text-sm"
+              />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-primary/5 p-2.5">
+              <div className="text-sm">
+                下次建議：
+                <span className="font-bold">
+                  {format(targetDate, "yyyy/M/d")}（週{weekChar(targetDate)}）
+                </span>
+                <span className="ml-1 text-xs text-muted-foreground">
+                  （{effGap} 天後）
+                </span>
+              </div>
+              <div className="flex gap-1.5">
+                <Button variant="outline" size="sm" onClick={jumpToTargetWeek}>
+                  <CalendarClock className="size-4" />
+                  看那週空檔
+                </Button>
+                {canCreate && (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      openCreate(format(targetDate, "yyyy-MM-dd"), lastHour)
+                    }
+                  >
+                    <Plus className="size-4" />
+                    在這天新增
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 結果 */}
         {!hasCriteria ? (
           <EmptyState
@@ -483,8 +596,23 @@ function SearchInner() {
         ) : (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">共 {results.length} 筆結果</p>
-            {grouped.map(([ds, list]) => (
+            {grouped.map(([ds, list], gi) => {
+              const prevDs = gi > 0 ? grouped[gi - 1][0] : null;
+              const gapDays = prevDs
+                ? differenceInCalendarDays(
+                    new Date(`${ds}T12:00:00`),
+                    new Date(`${prevDs}T12:00:00`),
+                  )
+                : 0;
+              return (
               <div key={ds}>
+                {gapDays > 0 && (
+                  <div className="mb-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <span className="h-px flex-1 bg-border" />
+                    隔 {gapDays} 天
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                )}
                 <div className="mb-1.5 text-sm font-semibold text-muted-foreground">
                   {D.full(list[0].starts_at).slice(0, 14)}
                 </div>
@@ -519,7 +647,8 @@ function SearchInner() {
                   ))}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

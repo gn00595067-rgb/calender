@@ -512,7 +512,7 @@ export default function ReportsPage() {
               {byCategory.map((grp) => (
                 <div key={grp.group} className="overflow-hidden rounded-xl border bg-card">
                   <div className="flex items-center justify-between bg-muted/40 px-3 py-2">
-                    <span className="font-medium">{grp.group}</span>
+                    <span className="font-medium">{grp.group}小計</span>
                     <span className="font-semibold tabular-nums">{twd(grp.total)}</span>
                   </div>
                   <div className="divide-y">
@@ -526,6 +526,13 @@ export default function ReportsPage() {
                   </div>
                 </div>
               ))}
+              {/* 總計：所有類別支出加總 */}
+              <div className="flex items-center justify-between rounded-xl border-2 border-primary/30 bg-primary/5 px-3 py-2.5">
+                <span className="font-semibold">總支出</span>
+                <span className="text-lg font-bold tabular-nums text-primary">
+                  {twd(byCategory.reduce((s, g) => s + g.total, 0))}
+                </span>
+              </div>
             </div>
           </section>
 
