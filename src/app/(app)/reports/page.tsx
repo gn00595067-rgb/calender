@@ -27,6 +27,7 @@ import {
   BookText,
   Users,
   Tags,
+  Hash,
   Wallet,
 } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
@@ -39,6 +40,7 @@ import { can } from "@/lib/permissions";
 import {
   useFinanceRange,
   useNotesRange,
+  useTagStatsRange,
   type FinanceItem,
 } from "@/lib/client/reports";
 import { settleFinanceAction } from "@/lib/actions/finance";
@@ -108,6 +110,11 @@ export default function ReportsPage() {
     scopeIds,
   );
   const { data: notes = [], isLoading: notesLoading } = useNotesRange(
+    period.start,
+    period.end,
+    scopeIds,
+  );
+  const { data: tagStats = [] } = useTagStatsRange(
     period.start,
     period.end,
     scopeIds,
@@ -543,6 +550,34 @@ export default function ReportsPage() {
               ))}
             </div>
           </section>
+
+          {/* 依標籤（次數統計） */}
+          {tagStats.length > 0 && (
+            <section>
+              <h2 className="mb-2 flex items-center gap-1.5 text-lg font-semibold">
+                <Hash className="size-5" />
+                依標籤（次數）
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {tagStats.map((t) => (
+                  <div
+                    key={t.name}
+                    className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm"
+                  >
+                    <span className="font-medium">#{t.name}</span>
+                    <span className="rounded-full bg-primary/10 px-1.5 font-semibold tabular-nums text-primary">
+                      {t.count} 次
+                    </span>
+                    {t.amount > 0 && (
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {twd(t.amount)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
 

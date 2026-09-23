@@ -111,6 +111,85 @@ export function useFinanceRange(
   });
 }
 
+export interface TagStat {
+  name: string;
+  count: number; // 出現次數（標到此標籤的行程數）
+  amount: number; // 這些行程的支出合計
+}
+
+/**
+ * 區間內「依標籤」的次數與金額統計。
+ * 例：這個月「游泳」幾次、花了多少。一筆行程有多個標籤時，各標籤都會計入。
+ */
+export function useTagStatsRange(
+  start: string,
+  end: string,
+  calendarIds: string[],
+) {
+  const ids = [...calendarIds].sort();
+  return useQuery({
+    queryKey: ["report-tags", start, end, ids],
+    enabled: ids.length > 0 && !!start && !!end,
+    queryFn: async (): Promise<TagStat[]> => {
+      const supabase = createClient();
+      // 區間內的行程（依台北曆日）
+      const { data: events, error } = await supabase
+        .from("events")
+        .select("id")
+        .in("calendar_id", ids)
+        .gte("starts_at", taipeiDateStartUtcISO(start))
+        .lt("starts_at", taipeiDateEndExclusiveUtcISO(end));
+      if (error) throw new Error(error.message);
+      const eventIds = (events ?? []).map((e) => e.id);
+      if (eventIds.length === 0) return [];
+
+      const [etRes, finRes] = await Promise.all([
+        supabase
+          .from("event_tags")
+          .select("event_id, tag_id")
+          .in("event_id", eventIds),
+        supabase
+          .from("finance_records")
+          .select("event_id, amount, direction, covered_by_prepaid")
+          .in("event_id", eventIds),
+      ]);
+      const eventTags = etRes.data ?? [];
+      if (eventTags.length === 0) return [];
+
+      const tagIds = [...new Set(eventTags.map((r) => r.tag_id))];
+      const { data: tags } = await supabase
+        .from("tags")
+        .select("id, name")
+        .in("id", tagIds);
+      const tagName = new Map((tags ?? []).map((t) => [t.id, t.name]));
+
+      // 每筆行程的支出（排除預繳扣抵）
+      const spendByEvent = new Map<string, number>();
+      for (const f of finRes.data ?? []) {
+        if (f.direction !== "expense" || f.covered_by_prepaid) continue;
+        spendByEvent.set(
+          f.event_id as string,
+          (spendByEvent.get(f.event_id as string) ?? 0) + f.amount,
+        );
+      }
+
+      const stats = new Map<string, TagStat>();
+      for (const et of eventTags) {
+        const name = tagName.get(et.tag_id);
+        if (!name) continue;
+        let s = stats.get(name);
+        if (!s) {
+          s = { name, count: 0, amount: 0 };
+          stats.set(name, s);
+        }
+        s.count += 1;
+        s.amount += spendByEvent.get(et.event_id) ?? 0;
+      }
+      return [...stats.values()].sort((a, b) => b.count - a.count);
+    },
+  });
+}
+
 export interface NoteReportItem {
   id: string;
   content: string;

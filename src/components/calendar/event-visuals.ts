@@ -20,10 +20,10 @@ export function eventStyle(color: string, conflict = false): CSSProperties {
   };
 }
 
-/** 月視圖單行 chip 樣式 */
+/** 月視圖單行 chip 樣式：較深的底色＋較粗的左色條，讓不同分類更好區分 */
 export function chipStyle(color: string, conflict = false): CSSProperties {
   return {
-    backgroundColor: hexToRgba(color, 0.14),
-    borderLeft: `3px solid ${conflict ? CONFLICT_COLOR : color}`,
+    backgroundColor: hexToRgba(color, 0.22),
+    borderLeft: `4px solid ${conflict ? CONFLICT_COLOR : color}`,
   };
 }

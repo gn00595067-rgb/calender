@@ -120,7 +120,12 @@ export function MonthChip({
     >
       {event.is_important && <Star className="size-2.5 shrink-0 fill-amber-400 text-amber-500" />}
       {!event.all_day && (
-        <span className="shrink-0 font-semibold tabular-nums">{D.time(event.starts_at)}</span>
+        <span
+          className="shrink-0 font-semibold tabular-nums"
+          style={{ color }}
+        >
+          {D.time(event.starts_at)}
+        </span>
       )}
       <span className="truncate">{event.title}</span>
       {unread && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-red-600" />}
