@@ -19,6 +19,17 @@ export interface FinanceItem {
   direction: "expense" | "income";
   amount: number;
   category_label: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  category_group: string | null;
+  payment_method:
+    | "monthly"
+    | "per_time"
+    | "prepaid_deduct"
+    | "prepaid_term"
+    | null;
+  is_prepaid_topup: boolean;
+  covered_by_prepaid: boolean;
   is_settled: boolean;
   calendar_id: string | null;
   event_id: string | null;
@@ -28,18 +39,25 @@ export interface FinanceItem {
   note: string | null;
 }
 
-export function useMonthlyFinance(month: string, calendarIds: string[]) {
+/**
+ * 任意日期區間（含端點）的財務明細。含類別名稱/分群、付款方式、預繳旗標，
+ * 供報表依 老師／類別／付款方式 統計。
+ */
+export function useFinanceRange(
+  start: string,
+  end: string,
+  calendarIds: string[],
+) {
   const ids = [...calendarIds].sort();
   return useQuery({
-    queryKey: ["report-finance", month, ids],
-    enabled: ids.length > 0,
+    queryKey: ["report-finance", start, end, ids],
+    enabled: ids.length > 0 && !!start && !!end,
     queryFn: async (): Promise<FinanceItem[]> => {
       const supabase = createClient();
-      const { start, end } = monthBounds(month);
       const { data, error } = await supabase
         .from("finance_records")
         .select(
-          "id, occurred_on, direction, amount, category_label, is_settled, calendar_id, event_id, contact_id, note",
+          "id, occurred_on, direction, amount, category_label, category_id, payment_method, is_prepaid_topup, covered_by_prepaid, is_settled, calendar_id, event_id, contact_id, note",
         )
         .gte("occurred_on", start)
         .lte("occurred_on", end)
@@ -49,25 +67,46 @@ export function useMonthlyFinance(month: string, calendarIds: string[]) {
       const rows = data ?? [];
       if (rows.length === 0) return [];
 
-      const eventIds = [...new Set(rows.map((r) => r.event_id).filter(Boolean))] as string[];
-      const contactIds = [...new Set(rows.map((r) => r.contact_id).filter(Boolean))] as string[];
+      const eventIds = [
+        ...new Set(rows.map((r) => r.event_id).filter(Boolean)),
+      ] as string[];
+      const contactIds = [
+        ...new Set(rows.map((r) => r.contact_id).filter(Boolean)),
+      ] as string[];
+      const categoryIds = [
+        ...new Set(rows.map((r) => r.category_id).filter(Boolean)),
+      ] as string[];
 
-      const [evRes, ctRes] = await Promise.all([
+      const [evRes, ctRes, catRes] = await Promise.all([
         eventIds.length
           ? supabase.from("events").select("id, title").in("id", eventIds)
           : Promise.resolve({ data: [] as { id: string; title: string }[] }),
         contactIds.length
           ? supabase.from("contacts").select("id, name").in("id", contactIds)
           : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+        categoryIds.length
+          ? supabase
+              .from("expense_categories")
+              .select("id, name, group_label")
+              .in("id", categoryIds)
+          : Promise.resolve({
+              data: [] as { id: string; name: string; group_label: string | null }[],
+            }),
       ]);
       const evTitle = new Map((evRes.data ?? []).map((e) => [e.id, e.title]));
       const ctName = new Map((ctRes.data ?? []).map((c) => [c.id, c.name]));
+      const catById = new Map((catRes.data ?? []).map((c) => [c.id, c]));
 
-      return rows.map((r) => ({
-        ...r,
-        event_title: r.event_id ? (evTitle.get(r.event_id) ?? null) : null,
-        contact_name: r.contact_id ? (ctName.get(r.contact_id) ?? null) : null,
-      }));
+      return rows.map((r) => {
+        const cat = r.category_id ? catById.get(r.category_id) : null;
+        return {
+          ...r,
+          category_name: cat?.name ?? r.category_label ?? null,
+          category_group: cat?.group_label ?? null,
+          event_title: r.event_id ? (evTitle.get(r.event_id) ?? null) : null,
+          contact_name: r.contact_id ? (ctName.get(r.contact_id) ?? null) : null,
+        };
+      });
     },
   });
 }
@@ -83,15 +122,18 @@ export interface NoteReportItem {
   calendar_id: string;
 }
 
-export function useMonthlyNotes(month: string, calendarIds: string[]) {
+export function useNotesRange(
+  start: string,
+  end: string,
+  calendarIds: string[],
+) {
   const ids = [...calendarIds].sort();
   return useQuery({
-    queryKey: ["report-notes", month, ids],
-    enabled: ids.length > 0,
+    queryKey: ["report-notes", start, end, ids],
+    enabled: ids.length > 0 && !!start && !!end,
     queryFn: async (): Promise<NoteReportItem[]> => {
       const supabase = createClient();
-      const { start, end } = monthBounds(month);
-      // 該月的行程
+      // 該區間的行程
       const { data: events, error } = await supabase
         .from("events")
         .select("id, title, starts_at, calendar_id")

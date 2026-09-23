@@ -36,6 +36,7 @@ import {
   useContactsBilling,
   useCategories,
 } from "@/lib/client/lookups";
+import { usePrepaidAccounts } from "@/lib/client/prepaid";
 import { can } from "@/lib/permissions";
 import {
   RECURRENCE_OPTIONS,
@@ -45,7 +46,7 @@ import {
   type PaymentMethod,
 } from "@/lib/constants";
 import { createEventAction, updateEventAction } from "@/lib/actions/events";
-import { utcToTaipeiWall } from "@/lib/date";
+import { utcToTaipeiWall, twd } from "@/lib/date";
 import { addMinutesToWall, wallWeekday, diffMinutes } from "@/lib/wall-time";
 import type { CalEvent } from "@/lib/client/events";
 
@@ -70,6 +71,7 @@ interface FormValues {
   financeCategory: string;
   financeCategoryId: string | null;
   financePaymentMethod: PaymentMethod | "";
+  financePrepaidAccountId: string | null;
   financeSettled: boolean;
 }
 
@@ -152,6 +154,7 @@ export function EventModal({
       financeCategory: "",
       financeCategoryId: null,
       financePaymentMethod: "",
+      financePrepaidAccountId: null,
       financeSettled: false,
     };
   }
@@ -181,6 +184,7 @@ export function EventModal({
         financeCategory: "",
         financeCategoryId: null,
         financePaymentMethod: "",
+        financePrepaidAccountId: null,
         financeSettled: false,
       });
     } else {
@@ -203,6 +207,10 @@ export function EventModal({
         "financePaymentMethod",
         editData.data.finance.payment_method ?? "",
       );
+      setValue(
+        "financePrepaidAccountId",
+        editData.data.finance.prepaid_account_id ?? null,
+      );
       setValue("financeSettled", editData.data.finance.is_settled);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -221,10 +229,24 @@ export function EventModal({
   }, [calendarId, calendarById]);
 
   const categories = useCategories();
+  const prepaid = usePrepaidAccounts({ activeOnly: true });
 
   // 目前選到、且有預設收費的老師（供顯示帶入提示）
   const autoBillingContact = (contactsBilling.data ?? []).find(
     (b) => contactIds.includes(b.id) && b.default_rate != null,
+  );
+
+  const financePaymentMethod = watch("financePaymentMethod");
+  const usesPrepaid =
+    financePaymentMethod === "prepaid_deduct" ||
+    financePaymentMethod === "prepaid_term";
+  // 可扣抵帳戶：屬於所選老師或通用（未指定老師）者
+  const firstContactId = contactIds[0] ?? null;
+  const prepaidChoices = (prepaid.data ?? []).filter(
+    (a) =>
+      !a.contact_id ||
+      a.contact_id === firstContactId ||
+      a.id === watch("financePrepaidAccountId"),
   );
 
   // 選到「有預設收費」的老師 → 自動帶入財務（金額/類別/付款方式）。
@@ -279,6 +301,8 @@ export function EventModal({
     const pmMeta = PAYMENT_METHODS.find(
       (p) => p.value === v.financePaymentMethod,
     );
+    const usesPrepaidMethod = pmMeta?.usesPrepaid ?? false;
+    const prepaidAccountId = usesPrepaidMethod ? v.financePrepaidAccountId : null;
     const finance =
       v.financeEnabled && canFinance && Number(v.financeAmount) > 0
         ? {
@@ -287,7 +311,9 @@ export function EventModal({
             categoryLabel: v.financeCategory || null,
             categoryId: v.financeCategoryId,
             paymentMethod: v.financePaymentMethod || null,
-            coveredByPrepaid: pmMeta?.usesPrepaid ?? false,
+            prepaidAccountId,
+            // 有實際扣抵帳戶才算「已由預繳支付」，否則當一般支出計入
+            coveredByPrepaid: usesPrepaidMethod && !!prepaidAccountId,
             isSettled: v.financeSettled,
           }
         : null;
@@ -713,6 +739,54 @@ export function EventModal({
                         />
                       </div>
                     </div>
+
+                    {/* 預繳/預付：選擇要扣抵的帳戶 */}
+                    {usesPrepaid && (
+                      <div className="space-y-1.5 rounded-lg border bg-muted/30 p-2.5">
+                        <Label className="text-xs">從預繳帳戶扣抵</Label>
+                        <Controller
+                          control={control}
+                          name="financePrepaidAccountId"
+                          render={({ field }) => (
+                            <Select
+                              value={field.value || undefined}
+                              onValueChange={field.onChange}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="選擇帳戶" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {prepaidChoices.length === 0 ? (
+                                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                    尚無帳戶，請至「設定 → 預繳帳戶」建立
+                                  </div>
+                                ) : (
+                                  prepaidChoices.map((a) => (
+                                    <SelectItem key={a.id} value={a.id}>
+                                      {a.label}（餘 {twd(a.balance)}
+                                      {a.remainingSessions != null
+                                        ? ` · 剩 ${a.remainingSessions} 堂`
+                                        : ""}
+                                      ）
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                        {watch("financePrepaidAccountId") ? (
+                          <p className="text-xs text-muted-foreground">
+                            此堂金額會從帳戶餘額扣抵，不重複計入支出。
+                          </p>
+                        ) : (
+                          <p className="text-xs text-amber-600">
+                            未選帳戶時，此堂會當成一般支出計入。
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     <Controller
                       control={control}
                       name="financeSettled"

@@ -5,57 +5,113 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  startOfYear,
+  endOfYear,
+  addWeeks,
+  addMonths,
+  addYears,
+  format,
+} from "date-fns";
+import {
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Download,
   TrendingDown,
   TrendingUp,
   CircleAlert,
   BookText,
+  Users,
+  Tags,
+  Wallet,
 } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState, ListSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useAppData } from "@/components/app/app-data";
 import { can } from "@/lib/permissions";
 import {
-  useMonthlyFinance,
-  useMonthlyNotes,
+  useFinanceRange,
+  useNotesRange,
   type FinanceItem,
 } from "@/lib/client/reports";
 import { settleFinanceAction } from "@/lib/actions/finance";
 import { downloadCsv } from "@/lib/csv";
-import { twd, D } from "@/lib/date";
+import { twd, D, taipeiTodayStr } from "@/lib/date";
+import { PAYMENT_METHOD_LABEL, CATEGORY_GROUPS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
+type PeriodMode = "week" | "month" | "year";
 
-interface Group {
-  key: string;
-  direction: "expense" | "income";
-  category: string;
-  contact: string;
-  items: FinanceItem[];
-  total: number;
-  settled: number;
-  unsettled: number;
+/** 這筆是否計入「實際支出」（預繳扣抵的每堂不重複計） */
+function spendOf(r: FinanceItem): number {
+  return r.direction === "expense" && !r.covered_by_prepaid ? r.amount : 0;
+}
+/** 這筆是否為一堂課（用於次數統計；排除儲值本身） */
+function isSession(r: FinanceItem): boolean {
+  return !!r.event_id && !r.is_prepaid_topup;
+}
+function groupLabel(v: string | null): string {
+  return CATEGORY_GROUPS.find((g) => g.value === v)?.label ?? "未分群";
 }
 
 export default function ReportsPage() {
   const { calendars, calendarById } = useAppData();
   const financeCals = calendars.filter((c) => can.viewFinance(c.effectiveRole));
-  const [month, setMonth] = useState(currentMonth());
   const [scope, setScope] = useState<Set<string>>(new Set());
   const scopeIds = scope.size > 0 ? [...scope] : financeCals.map((c) => c.id);
 
-  const { data: finance = [], isLoading } = useMonthlyFinance(month, scopeIds);
-  const { data: notes = [], isLoading: notesLoading } = useMonthlyNotes(month, scopeIds);
+  const [mode, setMode] = useState<PeriodMode>("month");
+  const [refDate, setRefDate] = useState(taipeiTodayStr());
+
+  const period = useMemo(() => {
+    const d = new Date(`${refDate}T12:00:00`);
+    let s: Date;
+    let e: Date;
+    let label: string;
+    if (mode === "week") {
+      s = startOfWeek(d, { weekStartsOn: 1 });
+      e = endOfWeek(d, { weekStartsOn: 1 });
+      label = `${format(s, "yyyy/M/d")} – ${format(e, "M/d")}`;
+    } else if (mode === "year") {
+      s = startOfYear(d);
+      e = endOfYear(d);
+      label = format(d, "yyyy 年");
+    } else {
+      s = startOfMonth(d);
+      e = endOfMonth(d);
+      label = format(d, "yyyy 年 M 月");
+    }
+    return { start: format(s, "yyyy-MM-dd"), end: format(e, "yyyy-MM-dd"), label };
+  }, [mode, refDate]);
+
+  const shift = (dir: number) => {
+    const d = new Date(`${refDate}T12:00:00`);
+    const nd =
+      mode === "week"
+        ? addWeeks(d, dir)
+        : mode === "year"
+          ? addYears(d, dir)
+          : addMonths(d, dir);
+    setRefDate(format(nd, "yyyy-MM-dd"));
+  };
+
+  const { data: finance = [], isLoading } = useFinanceRange(
+    period.start,
+    period.end,
+    scopeIds,
+  );
+  const { data: notes = [], isLoading: notesLoading } = useNotesRange(
+    period.start,
+    period.end,
+    scopeIds,
+  );
   const qc = useQueryClient();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -67,9 +123,9 @@ export default function ReportsPage() {
     let unsettledAmount = 0;
     let unsettledCount = 0;
     for (const f of finance) {
-      if (f.direction === "expense") expense += f.amount;
-      else income += f.amount;
-      if (!f.is_settled) {
+      expense += spendOf(f);
+      if (f.direction === "income") income += f.amount;
+      if (!f.is_settled && !f.covered_by_prepaid) {
         unsettledAmount += f.amount;
         unsettledCount += 1;
       }
@@ -77,23 +133,81 @@ export default function ReportsPage() {
     return { expense, income, unsettledAmount, unsettledCount };
   }, [finance]);
 
-  const groups = useMemo<Group[]>(() => {
-    const map = new Map<string, Group>();
+  // 依老師
+  interface ContactGroup {
+    key: string;
+    name: string;
+    total: number;
+    sessions: number;
+    items: FinanceItem[];
+  }
+  const byContact = useMemo<ContactGroup[]>(() => {
+    const map = new Map<string, ContactGroup>();
     for (const f of finance) {
-      const category = f.category_label ?? "未分類";
-      const contact = f.contact_name ?? "—";
-      const key = `${f.direction}||${category}||${contact}`;
-      let g = map.get(key);
+      const name = f.contact_name ?? "未指定人物";
+      let g = map.get(name);
       if (!g) {
-        g = { key, direction: f.direction, category, contact, items: [], total: 0, settled: 0, unsettled: 0 };
-        map.set(key, g);
+        g = { key: name, name, total: 0, sessions: 0, items: [] };
+        map.set(name, g);
       }
+      g.total += spendOf(f);
+      if (isSession(f)) g.sessions += 1;
       g.items.push(f);
-      g.total += f.amount;
-      if (f.is_settled) g.settled += 1;
-      else g.unsettled += 1;
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
+  }, [finance]);
+
+  // 依類別（先分群，再分類別）
+  interface CatRow {
+    name: string;
+    total: number;
+    count: number;
+  }
+  interface CatGroup {
+    group: string;
+    total: number;
+    rows: CatRow[];
+  }
+  const byCategory = useMemo<CatGroup[]>(() => {
+    const groups = new Map<string, Map<string, CatRow>>();
+    for (const f of finance) {
+      if (f.direction !== "expense") continue;
+      const g = groupLabel(f.category_group);
+      const cat = f.category_name ?? "未分類";
+      if (!groups.has(g)) groups.set(g, new Map());
+      const rows = groups.get(g)!;
+      let row = rows.get(cat);
+      if (!row) {
+        row = { name: cat, total: 0, count: 0 };
+        rows.set(cat, row);
+      }
+      row.total += spendOf(f);
+      if (isSession(f)) row.count += 1;
+    }
+    return [...groups.entries()]
+      .map(([group, rows]) => {
+        const list = [...rows.values()].sort((a, b) => b.total - a.total);
+        return { group, total: list.reduce((s, r) => s + r.total, 0), rows: list };
+      })
+      .sort((a, b) => b.total - a.total);
+  }, [finance]);
+
+  // 依付款方式
+  const byPayment = useMemo(() => {
+    const map = new Map<string, { total: number; count: number }>();
+    for (const f of finance) {
+      if (f.direction !== "expense") continue;
+      const key = f.payment_method
+        ? PAYMENT_METHOD_LABEL[f.payment_method]
+        : "未指定";
+      const cur = map.get(key) ?? { total: 0, count: 0 };
+      cur.total += spendOf(f);
+      if (isSession(f)) cur.count += 1;
+      map.set(key, cur);
+    }
+    return [...map.entries()]
+      .map(([label, v]) => ({ label, ...v }))
+      .sort((a, b) => b.total - a.total);
   }, [finance]);
 
   const refresh = async () => {
@@ -123,18 +237,34 @@ export default function ReportsPage() {
   };
 
   const exportCsv = () => {
-    const header = ["日期", "分類", "費用類別", "人物", "行程", "收支", "金額", "結清狀態"];
+    const header = [
+      "日期",
+      "分類",
+      "費用類別",
+      "人物",
+      "行程",
+      "付款方式",
+      "收支",
+      "金額",
+      "預繳扣抵",
+      "結清狀態",
+    ];
     const rows = finance.map((f) => [
       f.occurred_on,
       calendarById.get(f.calendar_id ?? "")?.name ?? "",
-      f.category_label ?? "",
+      f.category_name ?? "",
       f.contact_name ?? "",
-      f.event_title ?? "",
+      f.event_title ?? (f.is_prepaid_topup ? "（儲值）" : ""),
+      f.payment_method ? PAYMENT_METHOD_LABEL[f.payment_method] : "",
       f.direction === "expense" ? "支出" : "收入",
       f.amount,
+      f.covered_by_prepaid ? "是" : "",
       f.is_settled ? "已結清" : "未結清",
     ]);
-    downloadCsv(`ExecCal_財務明細_${month}.csv`, [header, ...rows]);
+    downloadCsv(`ExecCal_財務明細_${period.start}_${period.end}.csv`, [
+      header,
+      ...rows,
+    ]);
   };
 
   const notesByCalendar = useMemo(() => {
@@ -151,7 +281,10 @@ export default function ReportsPage() {
     return (
       <div className="mx-auto max-w-4xl">
         <PageHeader title="報表結算" />
-        <EmptyState title="沒有可檢視財務的行事曆" description="只有擁有者或編輯者能查看財務報表。" />
+        <EmptyState
+          title="沒有可檢視財務的行事曆"
+          description="只有擁有者或編輯者能查看財務報表。"
+        />
       </div>
     );
   }
@@ -160,7 +293,7 @@ export default function ReportsPage() {
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="報表結算"
-        description="每月財務統整、費用結清與教學進度統整。"
+        description="依週／月／年統整支出，並依老師、類別、付款方式分組。"
         actions={
           <Button variant="outline" onClick={exportCsv} disabled={finance.length === 0}>
             <Download className="size-4" />
@@ -169,15 +302,52 @@ export default function ReportsPage() {
         }
       />
 
-      {/* 篩選 */}
-      <div className="mb-4 flex flex-col gap-3 rounded-xl border bg-card p-3 sm:flex-row sm:items-center">
-        <Input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="h-9 w-44"
-          aria-label="選擇月份"
-        />
+      {/* 期間 + 篩選 */}
+      <div className="mb-4 space-y-3 rounded-xl border bg-card p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex overflow-hidden rounded-lg border">
+            {(
+              [
+                { k: "week", l: "週" },
+                { k: "month", l: "月" },
+                { k: "year", l: "年" },
+              ] as const
+            ).map((m) => (
+              <button
+                key={m.k}
+                type="button"
+                onClick={() => setMode(m.k)}
+                className={cn(
+                  "px-3 py-1.5 text-sm transition",
+                  mode === m.k
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-accent",
+                )}
+              >
+                {m.l}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" className="size-8" onClick={() => shift(-1)}>
+              <ChevronLeft className="size-4" />
+            </Button>
+            <span className="min-w-32 text-center text-sm font-medium tabular-nums">
+              {period.label}
+            </span>
+            <Button variant="outline" size="icon" className="size-8" onClick={() => shift(1)}>
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            onClick={() => setRefDate(taipeiTodayStr())}
+          >
+            回今天
+          </Button>
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {financeCals.map((c) => (
             <button
@@ -205,20 +375,10 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* 財務總覽卡 */}
+      {/* 總覽卡 */}
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <SummaryCard
-          icon={TrendingDown}
-          label="本月支出"
-          value={twd(summary.expense)}
-          tone="expense"
-        />
-        <SummaryCard
-          icon={TrendingUp}
-          label="本月收入"
-          value={twd(summary.income)}
-          tone="income"
-        />
+        <SummaryCard icon={TrendingDown} label="支出" value={twd(summary.expense)} tone="expense" />
+        <SummaryCard icon={TrendingUp} label="收入" value={twd(summary.income)} tone="income" />
         <SummaryCard
           icon={CircleAlert}
           label="未結清"
@@ -228,110 +388,174 @@ export default function ReportsPage() {
         />
       </div>
 
-      {/* 費用明細表 */}
-      <section className="mb-8">
-        <h2 className="mb-2 text-lg font-semibold">費用明細（依類別 × 人物）</h2>
-        {isLoading ? (
-          <ListSkeleton rows={4} />
-        ) : groups.length === 0 ? (
-          <EmptyState title="本月沒有財務紀錄" description="於行程中掛上收支後，會在此統整。" />
-        ) : (
-          <div className="divide-y overflow-hidden rounded-xl border bg-card">
-            {groups.map((g) => {
-              const open = expanded.has(g.key);
-              const unsettledIds = g.items.filter((i) => !i.is_settled).map((i) => i.id);
-              return (
-                <div key={g.key}>
-                  <div className="flex items-center gap-2 p-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleExpand(g.key)}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    >
-                      {open ? (
-                        <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 font-medium">
-                          {g.category}
-                          <span className="text-sm text-muted-foreground">／{g.contact}</span>
-                          {g.direction === "income" && (
-                            <Badge variant="secondary" className="text-xs">收入</Badge>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {g.items.length} 筆 · 已結清 {g.settled} · 未結清 {g.unsettled}
-                        </div>
-                      </div>
-                      <div className="shrink-0 text-right font-semibold tabular-nums">
-                        {twd(g.total)}
-                      </div>
-                    </button>
-                    {unsettledIds.length > 0 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={pending}
-                        onClick={() => settle(unsettledIds, true)}
+      {isLoading ? (
+        <ListSkeleton rows={5} />
+      ) : finance.length === 0 ? (
+        <EmptyState title="這段期間沒有財務紀錄" description="於行程中掛上收支後，會在此統整。" />
+      ) : (
+        <div className="space-y-8">
+          {/* 依老師 */}
+          <section>
+            <h2 className="mb-2 flex items-center gap-1.5 text-lg font-semibold">
+              <Users className="size-5" />
+              依老師／對象
+            </h2>
+            <div className="divide-y overflow-hidden rounded-xl border bg-card">
+              {byContact.map((g) => {
+                const open = expanded.has(g.key);
+                const unsettledIds = g.items
+                  .filter((i) => !i.is_settled && !i.covered_by_prepaid)
+                  .map((i) => i.id);
+                return (
+                  <div key={g.key}>
+                    <div className="flex items-center gap-2 p-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(g.key)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
                       >
-                        本組全部結清
-                      </Button>
+                        {open ? (
+                          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium">{g.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {g.sessions} 堂
+                            {unsettledIds.length > 0 && ` · 未結清 ${unsettledIds.length}`}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right font-semibold tabular-nums">
+                          {twd(g.total)}
+                        </div>
+                      </button>
+                      {unsettledIds.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => settle(unsettledIds, true)}
+                        >
+                          全部結清
+                        </Button>
+                      )}
+                    </div>
+                    {open && (
+                      <div className="border-t bg-muted/20">
+                        {g.items
+                          .slice()
+                          .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on))
+                          .map((item) => (
+                            <label
+                              key={item.id}
+                              className="flex items-center gap-3 border-b px-3 py-2 pl-9 text-sm last:border-b-0"
+                            >
+                              <Checkbox
+                                checked={item.is_settled}
+                                disabled={pending || item.covered_by_prepaid}
+                                onCheckedChange={(c) => settle([item.id], !!c)}
+                              />
+                              <span className="w-16 shrink-0 tabular-nums text-muted-foreground">
+                                {item.occurred_on.slice(5)}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate">
+                                {item.event_title ??
+                                  (item.is_prepaid_topup ? "儲值" : item.note ?? "（無關聯行程）")}
+                                {item.category_name && (
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    · {item.category_name}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="shrink-0 tabular-nums">{twd(item.amount)}</span>
+                              <span
+                                className={cn(
+                                  "w-16 shrink-0 text-right text-xs",
+                                  item.covered_by_prepaid
+                                    ? "text-sky-600"
+                                    : item.is_settled
+                                      ? "text-emerald-600"
+                                      : "text-amber-600",
+                                )}
+                              >
+                                {item.covered_by_prepaid
+                                  ? "預繳扣抵"
+                                  : item.is_settled
+                                    ? "已結清"
+                                    : "未結清"}
+                              </span>
+                            </label>
+                          ))}
+                      </div>
                     )}
                   </div>
+                );
+              })}
+            </div>
+          </section>
 
-                  {open && (
-                    <div className="border-t bg-muted/20">
-                      {g.items
-                        .slice()
-                        .sort((a, b) => a.occurred_on.localeCompare(b.occurred_on))
-                        .map((item) => (
-                          <label
-                            key={item.id}
-                            className="flex items-center gap-3 border-b px-3 py-2 pl-9 text-sm last:border-b-0"
-                          >
-                            <Checkbox
-                              checked={item.is_settled}
-                              disabled={pending}
-                              onCheckedChange={(c) => settle([item.id], !!c)}
-                            />
-                            <span className="w-20 shrink-0 tabular-nums text-muted-foreground">
-                              {item.occurred_on.slice(5)}
-                            </span>
-                            <span className="min-w-0 flex-1 truncate">
-                              {item.event_title ?? item.note ?? "（無關聯行程）"}
-                            </span>
-                            <span className="shrink-0 tabular-nums">{twd(item.amount)}</span>
-                            <span
-                              className={cn(
-                                "w-14 shrink-0 text-right text-xs",
-                                item.is_settled ? "text-emerald-600" : "text-amber-600",
-                              )}
-                            >
-                              {item.is_settled ? "已結清" : "未結清"}
-                            </span>
-                          </label>
-                        ))}
-                    </div>
-                  )}
+          {/* 依類別（分群） */}
+          <section>
+            <h2 className="mb-2 flex items-center gap-1.5 text-lg font-semibold">
+              <Tags className="size-5" />
+              依費用類別
+            </h2>
+            <div className="space-y-3">
+              {byCategory.map((grp) => (
+                <div key={grp.group} className="overflow-hidden rounded-xl border bg-card">
+                  <div className="flex items-center justify-between bg-muted/40 px-3 py-2">
+                    <span className="font-medium">{grp.group}</span>
+                    <span className="font-semibold tabular-nums">{twd(grp.total)}</span>
+                  </div>
+                  <div className="divide-y">
+                    {grp.rows.map((r) => (
+                      <div key={r.name} className="flex items-center gap-2 px-3 py-2 text-sm">
+                        <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                        <span className="text-xs text-muted-foreground">{r.count} 筆</span>
+                        <span className="w-24 shrink-0 text-right tabular-nums">{twd(r.total)}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+              ))}
+            </div>
+          </section>
+
+          {/* 依付款方式 */}
+          <section>
+            <h2 className="mb-2 flex items-center gap-1.5 text-lg font-semibold">
+              <Wallet className="size-5" />
+              依付款方式
+            </h2>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {byPayment.map((p) => (
+                <div
+                  key={p.label}
+                  className="flex items-center justify-between rounded-lg border bg-card px-3 py-2"
+                >
+                  <div>
+                    <div className="text-sm font-medium">{p.label}</div>
+                    <div className="text-xs text-muted-foreground">{p.count} 筆</div>
+                  </div>
+                  <span className="font-semibold tabular-nums">{twd(p.total)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* 進度統整 */}
-      <section>
+      <section className="mt-8">
         <h2 className="mb-2 flex items-center gap-1.5 text-lg font-semibold">
           <BookText className="size-5" />
-          進度統整（本月回饋）
+          進度統整（本期回饋）
         </h2>
         {notesLoading ? (
           <ListSkeleton rows={3} />
         ) : notesByCalendar.length === 0 ? (
-          <EmptyState title="本月沒有回饋紀錄" description="家教或協作者填寫回饋後，會依行事曆分組統整於此。" />
+          <EmptyState title="這段期間沒有回饋紀錄" description="家教或協作者填寫回饋後，會依行事曆分組統整於此。" />
         ) : (
           <div className="space-y-4">
             {notesByCalendar.map(([calId, list]) => (

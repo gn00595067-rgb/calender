@@ -8,6 +8,7 @@ import {
   FolderCog,
   Download,
   Coins,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,5 +30,6 @@ export const SETTINGS_NAV: NavItem[] = [
   { href: "/settings/shares", label: "分享與權限", icon: Share2 },
   { href: "/settings/contacts", label: "人物管理", icon: Users },
   { href: "/settings/categories", label: "費用類別", icon: Coins },
+  { href: "/settings/prepaid", label: "預繳帳戶", icon: Wallet },
   { href: "/settings/import", label: "匯入 Google 行事曆", icon: Download },
 ];
