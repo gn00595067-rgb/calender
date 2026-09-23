@@ -5,6 +5,7 @@ import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
 import { addDays, addMonths, addWeeks } from "date-fns";
 import { getAuthed, fail, type ActionResult } from "./helpers";
+import { resolveCategoryId } from "./categories";
 import { TIME_ZONE, RECURRENCE_MAX_MONTHS } from "@/lib/constants";
 
 const wall = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, {
@@ -16,7 +17,15 @@ const financeSchema = z.object({
   direction: z.enum(["expense", "income"]),
   amount: z.number().int().nonnegative(),
   categoryLabel: z.string().trim().max(40).optional().nullable(),
+  categoryId: z.uuid().optional().nullable(),
   isSettled: z.boolean(),
+  paymentMethod: z
+    .enum(["monthly", "per_time", "prepaid_deduct", "prepaid_term"])
+    .optional()
+    .nullable(),
+  prepaidAccountId: z.uuid().optional().nullable(),
+  /** 這堂由預繳帳戶支付（計次數不重複計支出） */
+  coveredByPrepaid: z.boolean().optional().default(false),
 });
 
 const baseEventSchema = z.object({
@@ -181,6 +190,9 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
 
     // 財務：每個 occurrence 各一筆
     if (d.finance && d.finance.amount > 0) {
+      const categoryId =
+        d.finance.categoryId ??
+        (await resolveCategoryId(supabase, user.id, d.finance.categoryLabel));
       const finRows = events.map((e) => ({
         owner_id: user.id,
         calendar_id: d.calendarId,
@@ -188,6 +200,10 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
         direction: d.finance!.direction,
         amount: d.finance!.amount,
         category_label: d.finance!.categoryLabel ?? null,
+        category_id: categoryId,
+        payment_method: d.finance!.paymentMethod ?? null,
+        prepaid_account_id: d.finance!.prepaidAccountId ?? null,
+        covered_by_prepaid: d.finance!.coveredByPrepaid ?? false,
         contact_id: d.contactIds[0] ?? null,
         // occurred_on 取台北曆日（非 UTC 直接切片，避免凌晨行程日期偏移）
         occurred_on: new Date(e.starts_at)
@@ -303,6 +319,9 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
         .eq("event_id", current.id)
         .limit(1);
       if (d.finance.amount > 0) {
+        const categoryId =
+          d.finance.categoryId ??
+          (await resolveCategoryId(supabase, user.id, d.finance.categoryLabel));
         const finPayload = {
           owner_id: user.id,
           calendar_id: d.calendarId,
@@ -310,6 +329,10 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
           direction: d.finance.direction,
           amount: d.finance.amount,
           category_label: d.finance.categoryLabel ?? null,
+          category_id: categoryId,
+          payment_method: d.finance.paymentMethod ?? null,
+          prepaid_account_id: d.finance.prepaidAccountId ?? null,
+          covered_by_prepaid: d.finance.coveredByPrepaid ?? false,
           contact_id: d.contactIds[0] ?? null,
           occurred_on: new Date(newStartUtc)
             .toLocaleString("sv-SE", { timeZone: TIME_ZONE })

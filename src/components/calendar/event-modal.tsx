@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useTransition } from "react";
+import { useEffect, useMemo, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
@@ -29,17 +29,24 @@ import {
 import { ContactMultiSelect } from "./contact-multi-select";
 import { TagInput } from "./tag-input";
 import { TimeDurationField } from "./time-duration-field";
+import { CategorySelect } from "./category-select";
 import { useAppData } from "@/components/app/app-data";
-import { useEventEditData } from "@/lib/client/lookups";
+import {
+  useEventEditData,
+  useContactsBilling,
+  useCategories,
+} from "@/lib/client/lookups";
 import { can } from "@/lib/permissions";
 import {
   RECURRENCE_OPTIONS,
   FINANCE_DIRECTIONS,
   WEEKDAY_CHIPS,
+  PAYMENT_METHODS,
+  type PaymentMethod,
 } from "@/lib/constants";
 import { createEventAction, updateEventAction } from "@/lib/actions/events";
 import { utcToTaipeiWall } from "@/lib/date";
-import { addMinutesToWall, wallWeekday } from "@/lib/wall-time";
+import { addMinutesToWall, wallWeekday, diffMinutes } from "@/lib/wall-time";
 import type { CalEvent } from "@/lib/client/events";
 
 interface FormValues {
@@ -61,6 +68,8 @@ interface FormValues {
   financeDirection: "expense" | "income";
   financeAmount: string;
   financeCategory: string;
+  financeCategoryId: string | null;
+  financePaymentMethod: PaymentMethod | "";
   financeSettled: boolean;
 }
 
@@ -114,10 +123,11 @@ export function EventModal({
   const defaultStart = defaultStartWall ?? nowWall();
   const isRecurringEdit = mode === "edit" && !!event?.recurrence_group_id;
 
-  const { register, handleSubmit, control, watch, reset, setValue, formState } =
+  const { register, handleSubmit, control, watch, reset, setValue, getValues, formState } =
     useForm<FormValues>({
       defaultValues: buildDefaults(),
     });
+  const contactsBilling = useContactsBilling();
 
   function buildDefaults(): FormValues {
     const start = draft?.startWall ?? defaultStart;
@@ -140,6 +150,8 @@ export function EventModal({
       financeDirection: "expense",
       financeAmount: "",
       financeCategory: "",
+      financeCategoryId: null,
+      financePaymentMethod: "",
       financeSettled: false,
     };
   }
@@ -167,6 +179,8 @@ export function EventModal({
         financeDirection: "expense",
         financeAmount: "",
         financeCategory: "",
+        financeCategoryId: null,
+        financePaymentMethod: "",
         financeSettled: false,
       });
     } else {
@@ -184,6 +198,11 @@ export function EventModal({
       setValue("financeDirection", editData.data.finance.direction);
       setValue("financeAmount", String(editData.data.finance.amount));
       setValue("financeCategory", editData.data.finance.category_label ?? "");
+      setValue("financeCategoryId", editData.data.finance.category_id ?? null);
+      setValue(
+        "financePaymentMethod",
+        editData.data.finance.payment_method ?? "",
+      );
       setValue("financeSettled", editData.data.finance.is_settled);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,23 +213,81 @@ export function EventModal({
   const calendarId = watch("calendarId");
   const startWall = watch("startWall");
   const endWall = watch("endWall");
+  const contactIds = watch("contactIds");
 
   const canFinance = useMemo(() => {
     const cal = calendarById.get(calendarId);
     return cal ? can.viewFinance(cal.effectiveRole) : false;
   }, [calendarId, calendarById]);
 
+  const categories = useCategories();
+
+  // 目前選到、且有預設收費的老師（供顯示帶入提示）
+  const autoBillingContact = (contactsBilling.data ?? []).find(
+    (b) => contactIds.includes(b.id) && b.default_rate != null,
+  );
+
+  // 選到「有預設收費」的老師 → 自動帶入財務（金額/類別/付款方式）。
+  // 每位老師只自動套用一次，且不覆蓋使用者已輸入的金額。
+  const autoContactRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!canFinance) return;
+    const billing = contactsBilling.data ?? [];
+    const c = contactIds
+      .map((id) => billing.find((b) => b.id === id))
+      .find((b) => b && b.default_rate != null);
+    if (!c) return;
+    if (autoContactRef.current === c.id) return;
+    // 使用者已自行輸入金額 → 記住這位、但不覆蓋
+    if (getValues("financeEnabled") && getValues("financeAmount")) {
+      autoContactRef.current = c.id;
+      return;
+    }
+    autoContactRef.current = c.id;
+
+    const mins = diffMinutes(getValues("startWall"), getValues("endWall"));
+    const hours = Math.max(mins, 0) / 60;
+    const amount =
+      c.billing_mode === "hourly"
+        ? Math.round((c.default_rate ?? 0) * hours)
+        : (c.default_rate ?? 0);
+
+    setValue("financeEnabled", true);
+    setValue("financeDirection", c.default_direction ?? "expense");
+    setValue("financeAmount", String(amount));
+    if (c.default_category_id) {
+      setValue("financeCategoryId", c.default_category_id);
+      const name = (categories.data ?? []).find(
+        (cat) => cat.id === c.default_category_id,
+      )?.name;
+      if (name) setValue("financeCategory", name);
+    }
+    const pm = c.default_payment_method ?? "";
+    setValue("financePaymentMethod", pm);
+    if (pm) {
+      const meta = PAYMENT_METHODS.find((p) => p.value === pm);
+      if (meta) setValue("financeSettled", meta.defaultSettled);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactIds, contactsBilling.data, canFinance]);
+
   const onSubmit = handleSubmit((v) => {
     if (v.endWall < v.startWall) {
       toast.error("結束時間不可早於開始時間");
       return;
     }
+    const pmMeta = PAYMENT_METHODS.find(
+      (p) => p.value === v.financePaymentMethod,
+    );
     const finance =
       v.financeEnabled && canFinance && Number(v.financeAmount) > 0
         ? {
             direction: v.financeDirection,
             amount: Math.round(Number(v.financeAmount)),
             categoryLabel: v.financeCategory || null,
+            categoryId: v.financeCategoryId,
+            paymentMethod: v.financePaymentMethod || null,
+            coveredByPrepaid: pmMeta?.usesPrepaid ?? false,
             isSettled: v.financeSettled,
           }
         : null;
@@ -548,6 +625,11 @@ export function EventModal({
                 </div>
                 {watch("financeEnabled") && (
                   <div className="mt-3 space-y-3">
+                    {autoBillingContact && (
+                      <p className="rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground">
+                        已依〔{autoBillingContact.name}〕預設收費帶入，可直接修改；不影響老師設定。
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs">收／支</Label>
@@ -581,12 +663,55 @@ export function EventModal({
                         />
                       </div>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">費用類別</Label>
-                      <Input
-                        {...register("financeCategory")}
-                        placeholder="例：家教費、餐敘"
-                      />
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">費用類別</Label>
+                        <Controller
+                          control={control}
+                          name="financeCategoryId"
+                          render={({ field }) => (
+                            <CategorySelect
+                              value={field.value}
+                              label={watch("financeCategory")}
+                              onChange={(id, name) => {
+                                field.onChange(id);
+                                setValue("financeCategory", name ?? "");
+                              }}
+                            />
+                          )}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">付款方式</Label>
+                        <Controller
+                          control={control}
+                          name="financePaymentMethod"
+                          render={({ field }) => (
+                            <Select
+                              value={field.value || undefined}
+                              onValueChange={(v) => {
+                                field.onChange(v);
+                                const meta = PAYMENT_METHODS.find(
+                                  (p) => p.value === v,
+                                );
+                                if (meta)
+                                  setValue("financeSettled", meta.defaultSettled);
+                              }}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="選擇（選填）" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {PAYMENT_METHODS.map((p) => (
+                                  <SelectItem key={p.value} value={p.value}>
+                                    {p.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      </div>
                     </div>
                     <Controller
                       control={control}

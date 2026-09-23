@@ -13,6 +13,10 @@ import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 /** 「記住我」在瀏覽器保存帳密的 localStorage key */
 const REMEMBER_KEY = "execcal.remember";
 
+/** 測試用預設帳號：王董事長（登入頁預先帶入，方便測試免打字） */
+const DEMO_EMAIL = "boss@example.com";
+const DEMO_PASSWORD = "test1234";
+
 type Remembered = { email?: string; password?: string };
 
 function loadRemembered(): Remembered | null {
@@ -36,6 +40,7 @@ function SubmitButton({ pending, label }: { pending: boolean; label: string }) {
 export default function LoginPage() {
   const [tab, setTab] = useState("login");
   const [remember, setRemember] = useState(true);
+  const formRef = useRef<HTMLFormElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const [signInState, signIn, signInPending] = useActionState<AuthState, FormData>(
@@ -74,6 +79,13 @@ export default function LoginPage() {
     }
   }
 
+  // 一鍵以王董事長登入（測試用）：填入預設帳密並直接送出。
+  function loginAsDemo() {
+    if (emailRef.current) emailRef.current.value = DEMO_EMAIL;
+    if (passwordRef.current) passwordRef.current.value = DEMO_PASSWORD;
+    formRef.current?.requestSubmit();
+  }
+
   return (
     <div className="flex min-h-full flex-1 items-center justify-center p-4">
       <div className="w-full max-w-sm">
@@ -95,7 +107,7 @@ export default function LoginPage() {
             </TabsList>
 
             <TabsContent value="login">
-              <form action={signIn} onSubmit={persistRemember} className="mt-4 space-y-4">
+              <form ref={formRef} action={signIn} onSubmit={persistRemember} className="mt-4 space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="login-email">Email</Label>
                   <Input
@@ -105,6 +117,7 @@ export default function LoginPage() {
                     type="email"
                     autoComplete="email"
                     placeholder="boss@example.com"
+                    defaultValue={DEMO_EMAIL}
                     required
                   />
                 </div>
@@ -116,6 +129,7 @@ export default function LoginPage() {
                     name="password"
                     type="password"
                     autoComplete="current-password"
+                    defaultValue={DEMO_PASSWORD}
                     required
                   />
                 </div>
@@ -135,6 +149,15 @@ export default function LoginPage() {
                   </p>
                 )}
                 <SubmitButton pending={signInPending} label="登入" />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  disabled={signInPending}
+                  onClick={loginAsDemo}
+                >
+                  一鍵以王董事長登入（測試）
+                </Button>
               </form>
             </TabsContent>
 

@@ -139,5 +139,49 @@ export const FINANCE_DIRECTIONS: { value: FinanceDirection; label: string }[] = 
   { value: "income", label: "收入" },
 ];
 
+/** 老師收費：計費方式 */
+export type BillingMode = "fixed" | "hourly";
+
+export const BILLING_MODES: { value: BillingMode; label: string; hint: string }[] = [
+  { value: "fixed", label: "固定每堂", hint: "每堂固定金額" },
+  { value: "hourly", label: "時薪 × 時數", hint: "依行程長度自動換算" },
+];
+
+/** 付款方式 */
+export type PaymentMethod =
+  | "monthly"
+  | "per_time"
+  | "prepaid_deduct"
+  | "prepaid_term";
+
+export const PAYMENT_METHODS: {
+  value: PaymentMethod;
+  label: string;
+  hint: string;
+  /** 該付款方式下，單堂財務的「已結清」預設值 */
+  defaultSettled: boolean;
+  /** 是否走預繳/預付儲值帳戶 */
+  usesPrepaid: boolean;
+}[] = [
+  { value: "monthly", label: "月結", hint: "月底一次結清", defaultSettled: false, usesPrepaid: false },
+  { value: "per_time", label: "每次（LINE Pay）", hint: "當次即付即結", defaultSettled: true, usesPrepaid: false },
+  { value: "prepaid_deduct", label: "預繳累扣", hint: "先儲值、每堂扣抵", defaultSettled: true, usesPrepaid: true },
+  { value: "prepaid_term", label: "預付一學期", hint: "學期初付清、每堂扣抵", defaultSettled: true, usesPrepaid: true },
+];
+
+export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
+  monthly: "月結",
+  per_time: "每次（LINE Pay）",
+  prepaid_deduct: "預繳累扣",
+  prepaid_term: "預付一學期",
+};
+
+/** 費用類別分群（統計時可分大人／小孩／通用） */
+export const CATEGORY_GROUPS: { value: string; label: string }[] = [
+  { value: "child", label: "小孩" },
+  { value: "adult", label: "大人" },
+  { value: "common", label: "通用" },
+];
+
 /** 重複行程展開上限：至結束日或 6 個月，取較早 */
 export const RECURRENCE_MAX_MONTHS = 6;

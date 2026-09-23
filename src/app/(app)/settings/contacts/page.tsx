@@ -28,6 +28,23 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { CategorySelect } from "@/components/calendar/category-select";
+import {
+  BILLING_MODES,
+  PAYMENT_METHODS,
+  FINANCE_DIRECTIONS,
+  PAYMENT_METHOD_LABEL,
+  type BillingMode,
+  type PaymentMethod,
+} from "@/lib/constants";
+import { twd } from "@/lib/date";
+import {
   createContactAction,
   updateContactAction,
   deleteContactAction,
@@ -39,6 +56,16 @@ interface FullContact {
   role_label: string | null;
   phone: string | null;
   note: string | null;
+  billing_mode: "fixed" | "hourly" | null;
+  default_rate: number | null;
+  default_category_id: string | null;
+  default_direction: "expense" | "income" | null;
+  default_payment_method:
+    | "monthly"
+    | "per_time"
+    | "prepaid_deduct"
+    | "prepaid_term"
+    | null;
 }
 
 function useContactsFull() {
@@ -48,7 +75,9 @@ function useContactsFull() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("contacts")
-        .select("id, name, role_label, phone, note")
+        .select(
+          "id, name, role_label, phone, note, billing_mode, default_rate, default_category_id, default_direction, default_payment_method",
+        )
         .order("name", { ascending: true });
       if (error) throw new Error(error.message);
       return data ?? [];
@@ -111,9 +140,18 @@ export default function ContactsSettingsPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{c.name}</div>
-                {c.role_label && (
-                  <div className="text-xs text-muted-foreground">{c.role_label}</div>
-                )}
+                <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                  {c.role_label && <span>{c.role_label}</span>}
+                  {c.default_rate != null && (
+                    <span className="rounded bg-muted px-1.5 py-0.5 tabular-nums">
+                      {twd(c.default_rate)}
+                      {c.billing_mode === "hourly" ? "／時" : "／堂"}
+                      {c.default_payment_method
+                        ? ` · ${PAYMENT_METHOD_LABEL[c.default_payment_method]}`
+                        : ""}
+                    </span>
+                  )}
+                </div>
               </div>
               <Button
                 variant="ghost"
@@ -193,6 +231,16 @@ function ContactFormDialog({
   const [roleLabel, setRoleLabel] = useState("");
   const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
+  // 預設收費
+  const [billingMode, setBillingMode] = useState<BillingMode>("fixed");
+  const [defaultRate, setDefaultRate] = useState("");
+  const [defaultCategoryId, setDefaultCategoryId] = useState<string | null>(null);
+  const [defaultDirection, setDefaultDirection] = useState<"expense" | "income">(
+    "expense",
+  );
+  const [defaultPaymentMethod, setDefaultPaymentMethod] = useState<
+    PaymentMethod | ""
+  >("");
   const [pending, startTransition] = useTransition();
   const [init, setInit] = useState(false);
 
@@ -201,13 +249,31 @@ function ContactFormDialog({
     setRoleLabel(contact?.role_label ?? "");
     setPhone(contact?.phone ?? "");
     setNote(contact?.note ?? "");
+    setBillingMode(contact?.billing_mode ?? "fixed");
+    setDefaultRate(
+      contact?.default_rate != null ? String(contact.default_rate) : "",
+    );
+    setDefaultCategoryId(contact?.default_category_id ?? null);
+    setDefaultDirection(contact?.default_direction ?? "expense");
+    setDefaultPaymentMethod(contact?.default_payment_method ?? "");
     setInit(true);
   }
   if (!open && init) setInit(false);
 
   const submit = () => {
     startTransition(async () => {
-      const payload = { name, roleLabel: roleLabel || null, phone: phone || null, note: note || null };
+      const rate = defaultRate.trim() ? Math.round(Number(defaultRate)) : null;
+      const payload = {
+        name,
+        roleLabel: roleLabel || null,
+        phone: phone || null,
+        note: note || null,
+        billingMode: rate != null ? billingMode : null,
+        defaultRate: rate,
+        defaultCategoryId: defaultCategoryId,
+        defaultDirection: rate != null ? defaultDirection : null,
+        defaultPaymentMethod: defaultPaymentMethod || null,
+      };
       const res =
         mode === "create"
           ? await createContactAction(payload)
@@ -224,7 +290,7 @@ function ContactFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{mode === "create" ? "新增人物" : "編輯人物"}</DialogTitle>
         </DialogHeader>
@@ -265,6 +331,97 @@ function ContactFormDialog({
               onChange={(e) => setNote(e.target.value)}
               placeholder="選填"
             />
+          </div>
+
+          {/* 預設收費：設一次，新增行程選到此人即自動帶入 */}
+          <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+            <div className="text-sm font-medium">
+              預設收費（選填）
+              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                設定後，新增行程選到此人會自動帶入
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">計費方式</Label>
+                <Select
+                  value={billingMode}
+                  onValueChange={(v) => setBillingMode(v as BillingMode)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BILLING_MODES.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">
+                  {billingMode === "hourly" ? "時薪（每小時）" : "每堂金額"}
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={defaultRate}
+                  onChange={(e) => setDefaultRate(e.target.value)}
+                  placeholder="例：1600"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">預設費用類別</Label>
+              <CategorySelect
+                value={defaultCategoryId}
+                label={null}
+                onChange={(id) => setDefaultCategoryId(id)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">收／支</Label>
+                <Select
+                  value={defaultDirection}
+                  onValueChange={(v) =>
+                    setDefaultDirection(v as "expense" | "income")
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FINANCE_DIRECTIONS.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">付款方式</Label>
+                <Select
+                  value={defaultPaymentMethod || undefined}
+                  onValueChange={(v) => setDefaultPaymentMethod(v as PaymentMethod)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="選擇" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_METHODS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
         </div>
         <DialogFooter>

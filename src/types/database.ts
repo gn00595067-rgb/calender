@@ -131,6 +131,16 @@ export interface Database {
           phone: string | null;
           note: string | null;
           email: string | null;
+          billing_mode: "fixed" | "hourly" | null;
+          default_rate: number | null;
+          default_category_id: string | null;
+          default_direction: "expense" | "income" | null;
+          default_payment_method:
+            | "monthly"
+            | "per_time"
+            | "prepaid_deduct"
+            | "prepaid_term"
+            | null;
         };
         Insert: {
           id?: string;
@@ -140,6 +150,16 @@ export interface Database {
           phone?: string | null;
           note?: string | null;
           email?: string | null;
+          billing_mode?: "fixed" | "hourly" | null;
+          default_rate?: number | null;
+          default_category_id?: string | null;
+          default_direction?: "expense" | "income" | null;
+          default_payment_method?:
+            | "monthly"
+            | "per_time"
+            | "prepaid_deduct"
+            | "prepaid_term"
+            | null;
         };
         Update: {
           id?: string;
@@ -149,6 +169,88 @@ export interface Database {
           phone?: string | null;
           note?: string | null;
           email?: string | null;
+          billing_mode?: "fixed" | "hourly" | null;
+          default_rate?: number | null;
+          default_category_id?: string | null;
+          default_direction?: "expense" | "income" | null;
+          default_payment_method?:
+            | "monthly"
+            | "per_time"
+            | "prepaid_deduct"
+            | "prepaid_term"
+            | null;
+        };
+        Relationships: [];
+      };
+      expense_categories: {
+        Row: {
+          id: string;
+          owner_id: string;
+          name: string;
+          group_label: string | null;
+          position: number;
+          is_archived: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          name: string;
+          group_label?: string | null;
+          position?: number;
+          is_archived?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          owner_id?: string;
+          name?: string;
+          group_label?: string | null;
+          position?: number;
+          is_archived?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      prepaid_accounts: {
+        Row: {
+          id: string;
+          owner_id: string;
+          contact_id: string | null;
+          calendar_id: string | null;
+          label: string;
+          kind: "deduct" | "term";
+          total_amount: number;
+          total_sessions: number | null;
+          note: string | null;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          contact_id?: string | null;
+          calendar_id?: string | null;
+          label: string;
+          kind: "deduct" | "term";
+          total_amount?: number;
+          total_sessions?: number | null;
+          note?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          owner_id?: string;
+          contact_id?: string | null;
+          calendar_id?: string | null;
+          label?: string;
+          kind?: "deduct" | "term";
+          total_amount?: number;
+          total_sessions?: number | null;
+          note?: string | null;
+          is_active?: boolean;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -179,10 +281,20 @@ export interface Database {
           direction: "expense" | "income";
           amount: number;
           category_label: string | null;
+          category_id: string | null;
           contact_id: string | null;
           occurred_on: string;
           is_settled: boolean;
           note: string | null;
+          payment_method:
+            | "monthly"
+            | "per_time"
+            | "prepaid_deduct"
+            | "prepaid_term"
+            | null;
+          prepaid_account_id: string | null;
+          is_prepaid_topup: boolean;
+          covered_by_prepaid: boolean;
           created_at: string;
         };
         Insert: {
@@ -193,10 +305,20 @@ export interface Database {
           direction: "expense" | "income";
           amount: number;
           category_label?: string | null;
+          category_id?: string | null;
           contact_id?: string | null;
           occurred_on: string;
           is_settled?: boolean;
           note?: string | null;
+          payment_method?:
+            | "monthly"
+            | "per_time"
+            | "prepaid_deduct"
+            | "prepaid_term"
+            | null;
+          prepaid_account_id?: string | null;
+          is_prepaid_topup?: boolean;
+          covered_by_prepaid?: boolean;
           created_at?: string;
         };
         Update: {
@@ -207,10 +329,20 @@ export interface Database {
           direction?: "expense" | "income";
           amount?: number;
           category_label?: string | null;
+          category_id?: string | null;
           contact_id?: string | null;
           occurred_on?: string;
           is_settled?: boolean;
           note?: string | null;
+          payment_method?:
+            | "monthly"
+            | "per_time"
+            | "prepaid_deduct"
+            | "prepaid_term"
+            | null;
+          prepaid_account_id?: string | null;
+          is_prepaid_topup?: boolean;
+          covered_by_prepaid?: boolean;
           created_at?: string;
         };
         Relationships: [];

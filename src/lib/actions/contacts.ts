@@ -9,7 +9,27 @@ const contactSchema = z.object({
   roleLabel: z.string().trim().max(40).optional().nullable(),
   phone: z.string().trim().max(40).optional().nullable(),
   note: z.string().trim().max(500).optional().nullable(),
+  // 預設收費（選填）
+  billingMode: z.enum(["fixed", "hourly"]).optional().nullable(),
+  defaultRate: z.number().int().nonnegative().optional().nullable(),
+  defaultCategoryId: z.uuid().optional().nullable(),
+  defaultDirection: z.enum(["expense", "income"]).optional().nullable(),
+  defaultPaymentMethod: z
+    .enum(["monthly", "per_time", "prepaid_deduct", "prepaid_term"])
+    .optional()
+    .nullable(),
 });
+
+/** 收費欄位 → DB 欄位（create/update 共用） */
+function billingColumns(d: z.infer<typeof contactSchema>) {
+  return {
+    billing_mode: d.billingMode ?? null,
+    default_rate: d.defaultRate ?? null,
+    default_category_id: d.defaultCategoryId ?? null,
+    default_direction: d.defaultDirection ?? null,
+    default_payment_method: d.defaultPaymentMethod ?? null,
+  };
+}
 
 export async function createContactAction(
   input: unknown,
@@ -26,6 +46,7 @@ export async function createContactAction(
         role_label: parsed.data.roleLabel ?? null,
         phone: parsed.data.phone ?? null,
         note: parsed.data.note ?? null,
+        ...billingColumns(parsed.data),
       })
       .select("id, name, role_label")
       .single();
@@ -53,6 +74,7 @@ export async function updateContactAction(
         role_label: parsed.data.roleLabel ?? null,
         phone: parsed.data.phone ?? null,
         note: parsed.data.note ?? null,
+        ...billingColumns(parsed.data),
       })
       .eq("id", id);
     if (error) return fail(error.message);
