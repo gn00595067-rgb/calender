@@ -9,6 +9,15 @@ import { ErrorState, ListSkeleton } from "@/components/app/states";
 import { useAppData } from "@/components/app/app-data";
 import { can } from "@/lib/permissions";
 import { useCalendarEvents } from "@/lib/client/events";
+import { useContacts } from "@/lib/client/lookups";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Filter } from "lucide-react";
 import {
   monthGrid,
   weekDays,
@@ -56,8 +65,24 @@ export function CalendarView() {
     range.startIso,
     range.endIso,
   );
+  const { data: contacts = [] } = useContacts();
 
-  const conflicts = useMemo(() => conflictIds(events), [events]);
+  // 空檔對象：只看某分類或某人物的行程與其空檔（"all" | "cal:<id>" | "ct:<name>"）
+  const [gapTarget, setGapTarget] = useState("all");
+  const events2 = useMemo(() => {
+    if (gapTarget === "all") return events;
+    if (gapTarget.startsWith("cal:")) {
+      const id = gapTarget.slice(4);
+      return events.filter((e) => e.calendar_id === id);
+    }
+    if (gapTarget.startsWith("ct:")) {
+      const name = gapTarget.slice(3);
+      return events.filter((e) => e.contactNames.includes(name));
+    }
+    return events;
+  }, [events, gapTarget]);
+
+  const conflicts = useMemo(() => conflictIds(events2), [events2]);
   const colorOf = (calendarId: string) =>
     calendarById.get(calendarId)?.color ?? "#64748B";
 
@@ -149,8 +174,67 @@ export function CalendarView() {
               </button>
             ))}
           </div>
+
+          {/* 空檔對象：選分類或人物，只看該對象的行程與空檔 */}
+          <Select value={gapTarget} onValueChange={setGapTarget}>
+            <SelectTrigger
+              className="h-9 w-auto gap-1.5 touch:h-11"
+              aria-label="空檔對象"
+            >
+              <Filter className="size-3.5 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部行程</SelectItem>
+              {calendars.length > 0 && (
+                <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">
+                  分類
+                </div>
+              )}
+              {calendars.map((c) => (
+                <SelectItem key={c.id} value={`cal:${c.id}`}>
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="size-2.5 rounded-full"
+                      style={{ backgroundColor: c.color }}
+                    />
+                    {c.name}
+                  </span>
+                </SelectItem>
+              ))}
+              {contacts.length > 0 && (
+                <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">
+                  人物
+                </div>
+              )}
+              {contacts.map((ct) => (
+                <SelectItem key={ct.id} value={`ct:${ct.name}`}>
+                  {ct.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
+
+      {gapTarget !== "all" && (
+        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
+            只看
+            {gapTarget.startsWith("cal:")
+              ? `分類：${calendarById.get(gapTarget.slice(4))?.name ?? ""}`
+              : `人物：${gapTarget.slice(3)}`}
+            的行程與空檔
+          </span>
+          <button
+            type="button"
+            onClick={() => setGapTarget("all")}
+            className="underline hover:text-foreground"
+          >
+            清除
+          </button>
+        </div>
+      )}
 
       {isError ? (
         <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
@@ -160,7 +244,7 @@ export function CalendarView() {
         <MonthView
           days={days}
           monthStart={monthStart}
-          events={events}
+          events={events2}
           colorOf={colorOf}
           conflicts={conflicts}
           canCreate={canCreate}
@@ -171,7 +255,7 @@ export function CalendarView() {
       ) : (
         <TimeGridView
           days={days}
-          events={events}
+          events={events2}
           colorOf={colorOf}
           conflicts={conflicts}
           canCreate={canCreate}
