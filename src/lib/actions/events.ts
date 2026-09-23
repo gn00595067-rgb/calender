@@ -41,6 +41,8 @@ const baseEventSchema = z.object({
   recurrenceUntil: dateOnly.optional().nullable(),
   // 「每週」時可指定重複的星期（0=日..6=六）；空／未給則每週同一天。
   weekdays: z.array(z.number().int().min(0).max(6)).optional().nullable(),
+  // 提前幾分鐘提醒（null＝不提醒）
+  reminderMinutes: z.number().int().min(0).max(43200).optional().nullable(),
   contactIds: z.array(z.uuid()).default([]),
   tagNames: z.array(z.string().trim().min(1).max(30)).default([]),
   finance: financeSchema.optional().nullable(),
@@ -166,6 +168,7 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
         is_important: d.isImportant,
         recurrence_rule: d.recurrence === "none" ? null : d.recurrence,
         recurrence_group_id: groupId,
+        reminder_minutes: d.reminderMinutes ?? null,
       };
     });
 
@@ -255,6 +258,9 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
       location: d.location ?? null,
       all_day: d.allDay,
       is_important: d.isImportant,
+      reminder_minutes: d.reminderMinutes ?? null,
+      // 改動後重置 Email 已寄旗標，讓提醒重新評估
+      reminder_email_sent_at: null,
     };
 
     // 目標列：this = 僅此筆；following = 此筆與同群組之後全部

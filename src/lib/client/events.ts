@@ -17,6 +17,7 @@ export interface CalEvent {
   is_important: boolean;
   recurrence_rule: string | null;
   recurrence_group_id: string | null;
+  reminder_minutes: number | null;
   contactNames: string[];
   tagNames: string[];
   finance: { direction: "expense" | "income"; amount: number; is_settled: boolean }[];
@@ -37,6 +38,7 @@ type EventRowLite = {
   is_important: boolean;
   recurrence_rule: string | null;
   recurrence_group_id: string | null;
+  reminder_minutes: number | null;
 };
 
 /** 將行程原始列補上人物／標籤／財務／回饋數等關聯 */
@@ -116,6 +118,7 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
     is_important: e.is_important,
     recurrence_rule: e.recurrence_rule,
     recurrence_group_id: e.recurrence_group_id,
+    reminder_minutes: e.reminder_minutes,
     contactNames: contactsByEvent.get(e.id) ?? [],
     tagNames: tagsByEvent.get(e.id) ?? [],
     finance: finByEvent.get(e.id) ?? [],

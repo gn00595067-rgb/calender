@@ -43,6 +43,7 @@ import {
   FINANCE_DIRECTIONS,
   WEEKDAY_CHIPS,
   PAYMENT_METHODS,
+  REMINDER_OPTIONS,
   type PaymentMethod,
 } from "@/lib/constants";
 import { createEventAction, updateEventAction } from "@/lib/actions/events";
@@ -62,6 +63,7 @@ interface FormValues {
   recurrence: "none" | "daily" | "weekly" | "biweekly" | "monthly";
   recurrenceUntil: string;
   recurrenceWeekdays: number[];
+  reminderMinutes: number | null;
   scope: "this" | "following";
   contactIds: string[];
   tagNames: string[];
@@ -145,6 +147,7 @@ export function EventModal({
       recurrence: "none",
       recurrenceUntil: plusMonths(start.slice(0, 10), 3),
       recurrenceWeekdays: [wallWeekday(start)],
+      reminderMinutes: null,
       scope: "this",
       contactIds: [],
       tagNames: [],
@@ -175,6 +178,7 @@ export function EventModal({
         recurrence: "none",
         recurrenceUntil: "",
         recurrenceWeekdays: [],
+        reminderMinutes: event.reminder_minutes ?? null,
         scope: "this",
         contactIds: [],
         tagNames: event.tagNames,
@@ -336,6 +340,7 @@ export function EventModal({
                 v.recurrence === "weekly" && v.recurrenceWeekdays.length
                   ? v.recurrenceWeekdays
                   : null,
+              reminderMinutes: v.reminderMinutes,
               contactIds: v.contactIds,
               tagNames: v.tagNames,
               finance,
@@ -350,6 +355,7 @@ export function EventModal({
               startWall: v.startWall,
               endWall: v.endWall,
               isImportant: v.isImportant,
+              reminderMinutes: v.reminderMinutes,
               scope: v.scope,
               contactIds: v.contactIds,
               tagNames: v.tagNames,
@@ -556,6 +562,41 @@ export function EventModal({
                 )}
               />
             </div>
+
+            {!allDay && (
+              <div className="space-y-2">
+                <Label>提醒</Label>
+                <Controller
+                  control={control}
+                  name="reminderMinutes"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value == null ? "none" : String(field.value)}
+                      onValueChange={(v) =>
+                        field.onChange(v === "none" ? null : Number(v))
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {REMINDER_OPTIONS.map((o) => (
+                          <SelectItem
+                            key={o.label}
+                            value={o.value == null ? "none" : String(o.value)}
+                          >
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                <p className="text-xs text-muted-foreground">
+                  可提前提醒；桌面通知需開啟瀏覽器通知權限，Email 提醒依帳號設定寄送。
+                </p>
+              </div>
+            )}
 
             {mode === "create" && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

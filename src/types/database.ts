@@ -83,6 +83,8 @@ export interface Database {
           recurrence_rule: string | null;
           recurrence_group_id: string | null;
           source_uid: string | null;
+          reminder_minutes: number | null;
+          reminder_email_sent_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -100,6 +102,8 @@ export interface Database {
           recurrence_rule?: string | null;
           recurrence_group_id?: string | null;
           source_uid?: string | null;
+          reminder_minutes?: number | null;
+          reminder_email_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -117,6 +121,8 @@ export interface Database {
           recurrence_rule?: string | null;
           recurrence_group_id?: string | null;
           source_uid?: string | null;
+          reminder_minutes?: number | null;
+          reminder_email_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

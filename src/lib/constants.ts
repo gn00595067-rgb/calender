@@ -188,6 +188,17 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   prepaid_term: "預付一學期",
 };
 
+/** 行程提醒：提前幾分鐘（null＝不提醒） */
+export const REMINDER_OPTIONS: { value: number | null; label: string }[] = [
+  { value: null, label: "不提醒" },
+  { value: 5, label: "5 分鐘前" },
+  { value: 10, label: "10 分鐘前" },
+  { value: 30, label: "30 分鐘前" },
+  { value: 60, label: "1 小時前" },
+  { value: 120, label: "2 小時前" },
+  { value: 1440, label: "1 天前" },
+];
+
 /** 費用類別分群（統計時可分大人／小孩／通用） */
 export const CATEGORY_GROUPS: { value: string; label: string }[] = [
   { value: "child", label: "小孩" },

@@ -4,6 +4,7 @@ import { hasSupabaseEnv } from "@/lib/env";
 import { ensureBootstrap } from "@/lib/bootstrap";
 import { getAccessibleCalendars } from "@/lib/queries/calendars";
 import { AppChrome } from "@/components/app/app-chrome";
+import { ReminderNotifier } from "@/components/app/reminder-notifier";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   if (!hasSupabaseEnv()) {
@@ -45,8 +46,11 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   };
 
   return (
-    <AppChrome me={me} calendars={calendars}>
-      {children}
-    </AppChrome>
+    <>
+      <AppChrome me={me} calendars={calendars}>
+        {children}
+      </AppChrome>
+      <ReminderNotifier />
+    </>
   );
 }
