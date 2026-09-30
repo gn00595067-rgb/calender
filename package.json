@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "seed": "tsx supabase/seed.ts",
     "seed:rates": "tsx supabase/set-contact-rates.ts",
+    "seed:subjects": "tsx supabase/seed-subjects.ts",
     "db:push": "supabase db push",
     "gen:types": "supabase gen types typescript --linked > src/types/database.ts"
   },
