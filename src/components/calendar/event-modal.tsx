@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,10 +46,11 @@ import {
   REMINDER_OPTIONS,
   type PaymentMethod,
 } from "@/lib/constants";
-import { createEventAction, updateEventAction } from "@/lib/actions/events";
-import { utcToTaipeiWall, twd } from "@/lib/date";
+import { createEventAction, updateEventAction, deleteEventAction } from "@/lib/actions/events";
+import { utcToTaipeiWall, taipeiWallToUtcISO, twd } from "@/lib/date";
 import { addMinutesToWall, wallWeekday, diffMinutes } from "@/lib/wall-time";
-import type { CalEvent } from "@/lib/client/events";
+import { fetchEventsInRange, type CalEvent } from "@/lib/client/events";
+import { ConflictPrompt } from "./conflict-prompt";
 
 interface FormValues {
   calendarId: string;
@@ -115,13 +116,17 @@ export function EventModal({
   draft?: EventDraft;
   onSaved?: () => void;
 }) {
-  const { ownedCalendars, sharedCalendars, calendarById } = useAppData();
+  const { calendars, ownedCalendars, sharedCalendars, calendarById } = useAppData();
   const editableCalendars = [...ownedCalendars, ...sharedCalendars].filter((c) =>
     can.editEvents(c.effectiveRole),
   );
   const router = useRouter();
   const qc = useQueryClient();
   const [pending, startTransition] = useTransition();
+  /** 儲存前偵測到的同時段行程；有值時表單換成衝突面板 */
+  const [conflictList, setConflictList] = useState<CalEvent[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  const pendingValues = useRef<FormValues | null>(null);
 
   const editData = useEventEditData(mode === "edit" && open ? (event?.id ?? null) : null);
 
@@ -167,6 +172,8 @@ export function EventModal({
   // 開啟時載入初始值
   useEffect(() => {
     if (!open) return;
+    setConflictList(null);
+    pendingValues.current = null;
     if (mode === "edit" && event) {
       reset({
         calendarId: event.calendar_id,
@@ -302,11 +309,45 @@ export function EventModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participantIds, contactsBilling.data, canFinance]);
 
-  const onSubmit = handleSubmit((v) => {
+  /** 找出與此行程同時段的既有時段行程（全部可存取分類；排除自己與整日行程） */
+  async function findConflicts(v: FormValues): Promise<CalEvent[]> {
+    // 整日行程不佔時段；新增重複行程先不逐堂比對（MVP 範圍外）
+    if (v.allDay || (mode === "create" && v.recurrence !== "none")) return [];
+    const startIso = taipeiWallToUtcISO(v.startWall);
+    const endIso = taipeiWallToUtcISO(v.endWall);
+    if (endIso <= startIso) return [];
+    const found = await fetchEventsInRange(
+      startIso,
+      endIso,
+      calendars.map((c) => c.id),
+    );
+    return found.filter((e) => !e.all_day && e.id !== event?.id);
+  }
+
+  const onSubmit = handleSubmit(async (v) => {
     if (v.endWall < v.startWall) {
       toast.error("結束時間不可早於開始時間");
       return;
     }
+    setChecking(true);
+    let found: CalEvent[] = [];
+    try {
+      found = await findConflicts(v);
+    } catch {
+      // 查詢失敗不擋儲存，只是少了提醒
+    } finally {
+      setChecking(false);
+    }
+    if (found.length > 0) {
+      pendingValues.current = v;
+      setConflictList(found);
+      return;
+    }
+    save(v, []);
+  });
+
+  /** 實際儲存；成功後刪除使用者在衝突面板勾選的舊行程 */
+  function save(v: FormValues, deleteIds: string[]) {
     const pmMeta = PAYMENT_METHODS.find(
       (p) => p.value === v.financePaymentMethod,
     );
@@ -373,27 +414,54 @@ export function EventModal({
         toast.error(res.error);
         return;
       }
-      toast.success(mode === "create" ? "已新增行程" : "已更新行程");
+      let deleted = 0;
+      for (const id of deleteIds) {
+        const r = await deleteEventAction(id, "this");
+        if (r.ok) deleted++;
+      }
+      const base = mode === "create" ? "已新增行程" : "已更新行程";
+      if (deleteIds.length === 0) toast.success(base);
+      else if (deleted === deleteIds.length) toast.success(`${base}，並刪除 ${deleted} 筆舊行程`);
+      else toast.error(`${base}，但有 ${deleteIds.length - deleted} 筆舊行程刪除失敗，請手動處理`);
       await qc.invalidateQueries({ queryKey: ["events"] });
       onOpenChange(false);
       router.refresh();
       onSaved?.();
     });
-  });
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{mode === "create" ? "新增行程" : "編輯行程"}</DialogTitle>
+          <DialogTitle>
+            {conflictList ? "時間衝突" : mode === "create" ? "新增行程" : "編輯行程"}
+          </DialogTitle>
         </DialogHeader>
+
+        {conflictList && (
+          <ConflictPrompt
+            conflicts={conflictList}
+            isEdit={mode === "edit"}
+            calendarName={(id) => calendarById.get(id)?.name ?? "（未知分類）"}
+            colorOf={(id) => calendarById.get(id)?.color ?? "#64748B"}
+            canDelete={(e) => {
+              const cal = calendarById.get(e.calendar_id);
+              return !!cal && can.editEvents(cal.effectiveRole);
+            }}
+            pending={pending}
+            onBack={() => setConflictList(null)}
+            onDiscard={() => onOpenChange(false)}
+            onSave={(ids) => pendingValues.current && save(pendingValues.current, ids)}
+          />
+        )}
 
         {editableCalendars.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             你沒有可新增行程的分類。
           </p>
         ) : (
-          <form onSubmit={onSubmit} className="space-y-4">
+          <form onSubmit={onSubmit} className={conflictList ? "hidden" : "space-y-4"}>
             {isRecurringEdit && (
               <div className="rounded-lg border bg-muted/40 p-3">
                 <Label className="mb-2 block text-xs text-muted-foreground">
@@ -893,8 +961,8 @@ export function EventModal({
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 取消
               </Button>
-              <Button type="submit" disabled={pending}>
-                {pending ? "儲存中…" : "儲存"}
+              <Button type="submit" disabled={pending || checking}>
+                {pending ? "儲存中…" : checking ? "檢查時段…" : "儲存"}
               </Button>
             </DialogFooter>
           </form>
