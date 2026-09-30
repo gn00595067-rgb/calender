@@ -94,7 +94,8 @@ export function CalendarView() {
     match: (e: CalEvent) => boolean;
   } | null>(() => {
     // 本人：未指定主角的行程即視為本人（Peggy）自己的
-    if (gapTarget === "self") {
+    // 家庭視角也以本人為主軸（週/日視圖與提示沿用）
+    if (gapTarget === "self" || gapTarget === "family") {
       return { name: "本人", match: (e) => e.subjectNames.length === 0 };
     }
     // 主角（誰的行程）：小孩／本人
@@ -116,6 +117,18 @@ export function CalendarView() {
     }
     return null;
   }, [gapTarget, calendarById]);
+
+  // 家庭視角：以本人為主軸，家人（小孩）只在「當天有活動」的日子才顯示其空檔
+  const familyFocus = useMemo(() => {
+    if (gapTarget !== "family") return null;
+    return {
+      primary: { name: "本人", match: (e: CalEvent) => e.subjectNames.length === 0 },
+      members: familyContacts.map((c) => ({
+        name: c.name,
+        match: (e: CalEvent) => e.subjectNames.includes(c.name),
+      })),
+    };
+  }, [gapTarget, familyContacts]);
 
   const conflicts = useMemo(() => conflictIds(events), [events]);
   const colorOf = (calendarId: string) =>
@@ -223,6 +236,9 @@ export function CalendarView() {
               <SelectItem value="all">全部行程</SelectItem>
               <SelectItem value="self">本人（未指定主角）</SelectItem>
               {familyContacts.length > 0 && (
+                <SelectItem value="family">本人＋家人（家庭視角）</SelectItem>
+              )}
+              {familyContacts.length > 0 && (
                 <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">
                   主角（誰的行程）
                 </div>
@@ -266,7 +282,9 @@ export function CalendarView() {
       {gapFilter && (
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <span className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
-            聚焦「{gapFilter.name}」的空檔 · 其他行程淡化顯示
+            {familyFocus
+              ? "家庭視角：本人空檔為主，家人在當天有活動時一併顯示其空檔"
+              : `聚焦「${gapFilter.name}」的空檔 · 其他行程淡化顯示`}
           </span>
           <button
             type="button"
@@ -288,6 +306,7 @@ export function CalendarView() {
           monthStart={monthStart}
           events={events}
           gapFilter={gapFilter}
+          familyFocus={familyFocus}
           colorOf={colorOf}
           conflicts={conflicts}
           canCreate={canCreate}

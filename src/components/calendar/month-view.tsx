@@ -50,6 +50,13 @@ const FOCUS_MIN_GAP_PEEK = 30;
 
 /** 空檔對象（聚焦）：其他行程淡化，空檔只依此對象計算並標名 */
 export type GapFilter = { name: string; match: (e: CalEvent) => boolean };
+/**
+ * 家庭視角：以本人（primary）為主軸，家人（members）只在「當天有活動」的日子
+ * 才一併顯示其空檔。不淡化任何行程。
+ */
+export type FamilyFocus = { primary: GapFilter; members: GapFilter[] };
+/** 一段標名空檔（供月曆／面板統一渲染） */
+type FreeLine = { start: number; end: number; label: string };
 
 /** 取得事件在台北曆涵蓋的日期字串（含跨日） */
 function eventDays(event: CalEvent): string[] {
@@ -75,6 +82,7 @@ export function MonthView({
   monthStart,
   events,
   gapFilter,
+  familyFocus,
   colorOf,
   conflicts,
   canCreate,
@@ -86,6 +94,7 @@ export function MonthView({
   monthStart: Date;
   events: CalEvent[];
   gapFilter?: GapFilter | null;
+  familyFocus?: FamilyFocus | null;
   colorOf: (calendarId: string) => string;
   conflicts: Set<string>;
   canCreate: boolean;
@@ -93,7 +102,38 @@ export function MonthView({
   onCreateAt: (dateStr: string, hour?: number, minute?: number) => void;
   onOpenDay: (dateStr: string) => void;
 }) {
-  const isTarget = (ev: CalEvent) => !gapFilter || gapFilter.match(ev);
+  // 是否有聚焦（單一對象或家庭視角）
+  const focusOn = !!gapFilter || !!familyFocus;
+  // 只有「單一對象聚焦」才淡化非對象；家庭視角不淡化
+  const dimNonTarget = !!gapFilter && !familyFocus;
+  const isTarget = (ev: CalEvent) => !dimNonTarget || gapFilter!.match(ev);
+
+  /** 計算某日的標名空檔：家庭視角＝本人＋（當天有活動的）家人；否則＝單一對象 */
+  const freeLinesFor = (dayEvents: CalEvent[], ds: string, minGap: number): FreeLine[] => {
+    const lines: FreeLine[] = [];
+    if (familyFocus) {
+      for (const b of freeOnDay(
+        dayEvents.filter(familyFocus.primary.match),
+        ds,
+        FOCUS_WINDOW,
+        minGap,
+      )) {
+        lines.push({ ...b, label: familyFocus.primary.name });
+      }
+      for (const m of familyFocus.members) {
+        // 家人：當天有其活動才顯示其空檔
+        if (!dayEvents.some(m.match)) continue;
+        for (const b of freeOnDay(dayEvents.filter(m.match), ds, FOCUS_WINDOW, minGap)) {
+          lines.push({ ...b, label: m.name });
+        }
+      }
+    } else if (gapFilter) {
+      for (const b of freeOnDay(dayEvents.filter(gapFilter.match), ds, FOCUS_WINDOW, minGap)) {
+        lines.push({ ...b, label: gapFilter.name });
+      }
+    }
+    return lines.sort((a, b) => a.start - b.start);
+  };
   // 點某天 → 從底部滑出當天面板（不切走視圖，關掉即回月曆）。
   const [peekDay, setPeekDay] = useState<string | null>(null);
 
@@ -120,15 +160,10 @@ export function MonthView({
           peekTimed[0].ends_at,
         )
       : null;
-  // 聚焦：當天面板中該對象的真實空檔（門檻較低，供規劃）
-  const peekFree =
-    peekDay && gapFilter
-      ? freeOnDay(
-          peekEvents.filter(isTarget),
-          peekDay,
-          FOCUS_WINDOW,
-          FOCUS_MIN_GAP_PEEK,
-        )
+  // 聚焦：當天面板中的真實標名空檔（門檻較低，供規劃）
+  const peekFree: FreeLine[] =
+    peekDay && focusOn
+      ? freeLinesFor(peekEvents, peekDay, FOCUS_MIN_GAP_PEEK)
       : [];
 
   return (
@@ -151,14 +186,9 @@ export function MonthView({
           const today = isToday(day);
           const shown = dayEvents.slice(0, 3);
           const extra = dayEvents.length - shown.length;
-          // 聚焦模式：該對象當天在工作時段內的真實空檔
-          const cellFree = gapFilter
-            ? freeOnDay(
-                dayEvents.filter(isTarget),
-                ds,
-                FOCUS_WINDOW,
-                FOCUS_MIN_GAP_CELL,
-              )
+          // 聚焦模式：當天在工作時段內的真實標名空檔
+          const cellFree: FreeLine[] = focusOn
+            ? freeLinesFor(dayEvents, ds, FOCUS_MIN_GAP_CELL)
             : [];
 
           // 當天有時段（非整日）行程時，取最晚結束時間，做為「尾巴結束」提示。
@@ -218,9 +248,9 @@ export function MonthView({
                 </button>
               </div>
               <div className="space-y-0.5">
-                {gapFilter
+                {focusOn
                   ? (() => {
-                      // 聚焦：目標空檔（標名）穿插於行程間，非目標行程淡化
+                      // 聚焦：標名空檔穿插於行程間；單一對象模式淡化非對象
                       const nodes: React.ReactNode[] = [];
                       let bi = 0;
                       const flushBefore = (limit: number) => {
@@ -228,12 +258,12 @@ export function MonthView({
                           const b = cellFree[bi++];
                           nodes.push(
                             <div
-                              key={`free-${ds}-${b.start}`}
+                              key={`free-${ds}-${b.label}-${b.start}`}
                               className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-primary/80"
                             >
                               <span className="h-px flex-1 bg-primary/25" />
                               <span className="shrink-0 tabular-nums">
-                                {gapFilter.name} 空 {fmtDur(b.end - b.start)}
+                                {b.label} 空 {fmtDur(b.end - b.start)}
                               </span>
                               <span className="h-px flex-1 bg-primary/25" />
                             </div>,
@@ -335,18 +365,18 @@ export function MonthView({
                 這天還沒有安排，點下方按鈕新增。
               </p>
             ) : (
-              gapFilter
+              focusOn
                 ? (() => {
-                    // 聚焦：標名空檔（可點擊在空檔起點新增），非目標行程淡化
+                    // 聚焦：標名空檔（可點擊在空檔起點新增），單一對象模式淡化非對象
                     const nodes: React.ReactNode[] = [];
                     let bi = 0;
                     const flushBefore = (limit: number) => {
                       while (bi < peekFree.length && peekFree[bi].start < limit) {
                         const b = peekFree[bi++];
-                        const label = `${gapFilter.name} 空檔 ${minToHHMM(b.start)}–${minToHHMM(b.end)} · ${fmtDur(b.end - b.start)}`;
+                        const label = `${b.label} 空檔 ${minToHHMM(b.start)}–${minToHHMM(b.end)} · ${fmtDur(b.end - b.start)}`;
                         nodes.push(
                           <div
-                            key={`free-${b.start}`}
+                            key={`free-${b.label}-${b.start}`}
                             className="flex items-center gap-2 px-1 py-0.5 text-xs text-primary"
                           >
                             <span className="h-px flex-1 bg-primary/30" />
