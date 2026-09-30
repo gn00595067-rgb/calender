@@ -52,3 +52,5 @@
 **驗證**：`npm run typecheck` 綠；lint 僅既有檔（reminder-notifier/event-modal）問題，本次三檔零新增。
 
 **下一步**：使用者在部署站實測聚焦切換、淡化與標名空檔；工作時段 08–22 若不符需求可調或做成可選。
+
+**追加**：聚焦對象改為**記住上次選擇**（localStorage `execcal:gapTarget`，仿 digest-view/app-data 慣例以 effect 讀取）。使用者反映「全部行程混合空白無法歸給單一人」，確認後採「預設聚焦對象」方案——設一次，之後進月曆自動套用該對象的空檔，不用每次手動切。清除即回 all。

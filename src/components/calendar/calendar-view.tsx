@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { addDays, addMonths, addWeeks, format } from "date-fns";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
@@ -70,6 +70,23 @@ export function CalendarView() {
   // 空檔對象（聚焦）：選某分類或某人物後，仍顯示全部行程（其他淡化），
   // 但空檔只依所選對象計算並標名。值："all" | "cal:<id>" | "ct:<name>"
   const [gapTarget, setGapTarget] = useState("all");
+  // 記住上次的聚焦對象；以 effect 讀取避免 SSR 水合不一致
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("execcal:gapTarget");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 掛載時自 localStorage 同步一次
+      if (saved) setGapTarget(saved);
+    } catch {
+      /* localStorage 不可用時忽略 */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("execcal:gapTarget", gapTarget);
+    } catch {
+      /* 忽略 */
+    }
+  }, [gapTarget]);
   const gapFilter = useMemo<{
     name: string;
     match: (e: CalEvent) => boolean;
