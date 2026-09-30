@@ -67,22 +67,28 @@ export function CalendarView() {
   );
   const { data: contacts = [] } = useContacts();
 
-  // 空檔對象：只看某分類或某人物的行程與其空檔（"all" | "cal:<id>" | "ct:<name>"）
+  // 空檔對象（聚焦）：選某分類或某人物後，仍顯示全部行程（其他淡化），
+  // 但空檔只依所選對象計算並標名。值："all" | "cal:<id>" | "ct:<name>"
   const [gapTarget, setGapTarget] = useState("all");
-  const events2 = useMemo(() => {
-    if (gapTarget === "all") return events;
+  const gapFilter = useMemo<{
+    name: string;
+    match: (e: CalEvent) => boolean;
+  } | null>(() => {
     if (gapTarget.startsWith("cal:")) {
       const id = gapTarget.slice(4);
-      return events.filter((e) => e.calendar_id === id);
+      return {
+        name: calendarById.get(id)?.name ?? "分類",
+        match: (e) => e.calendar_id === id,
+      };
     }
     if (gapTarget.startsWith("ct:")) {
       const name = gapTarget.slice(3);
-      return events.filter((e) => e.contactNames.includes(name));
+      return { name, match: (e) => e.contactNames.includes(name) };
     }
-    return events;
-  }, [events, gapTarget]);
+    return null;
+  }, [gapTarget, calendarById]);
 
-  const conflicts = useMemo(() => conflictIds(events2), [events2]);
+  const conflicts = useMemo(() => conflictIds(events), [events]);
   const colorOf = (calendarId: string) =>
     calendarById.get(calendarId)?.color ?? "#64748B";
 
@@ -217,14 +223,10 @@ export function CalendarView() {
         </div>
       </div>
 
-      {gapTarget !== "all" && (
+      {gapFilter && (
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <span className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
-            只看
-            {gapTarget.startsWith("cal:")
-              ? `分類：${calendarById.get(gapTarget.slice(4))?.name ?? ""}`
-              : `人物：${gapTarget.slice(3)}`}
-            的行程與空檔
+            聚焦「{gapFilter.name}」的空檔 · 其他行程淡化顯示
           </span>
           <button
             type="button"
@@ -244,7 +246,8 @@ export function CalendarView() {
         <MonthView
           days={days}
           monthStart={monthStart}
-          events={events2}
+          events={events}
+          gapFilter={gapFilter}
           colorOf={colorOf}
           conflicts={conflicts}
           canCreate={canCreate}
@@ -255,7 +258,8 @@ export function CalendarView() {
       ) : (
         <TimeGridView
           days={days}
-          events={events2}
+          events={events}
+          gapFilter={gapFilter}
           colorOf={colorOf}
           conflicts={conflicts}
           canCreate={canCreate}

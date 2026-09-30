@@ -6,6 +6,7 @@ import { CalendarRange, Plus } from "lucide-react";
 import { zoned } from "@/lib/calendar-utils";
 import { D } from "@/lib/date";
 import { cn } from "@/lib/utils";
+import { freeOnDay, eventSegmentOnDay, minToHHMM } from "@/lib/availability";
 import { MonthChip, EventTwoLineCard } from "./event-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,15 @@ function gapMinutes(prev: CalEvent, next: CalEvent): number {
 /** 低於此門檻的空檔不顯示，避免細碎雜訊 */
 const MIN_GAP_MINUTES = 15;
 
+/** 聚焦某對象時，以此工作時段（08–22）計算其一日內的真實空檔 */
+const FOCUS_WINDOW = { start: 8 * 60, end: 22 * 60 };
+/** 聚焦空檔門檻：月曆格較小取 1 小時、當天面板取 30 分 */
+const FOCUS_MIN_GAP_CELL = 60;
+const FOCUS_MIN_GAP_PEEK = 30;
+
+/** 空檔對象（聚焦）：其他行程淡化，空檔只依此對象計算並標名 */
+export type GapFilter = { name: string; match: (e: CalEvent) => boolean };
+
 /** 取得事件在台北曆涵蓋的日期字串（含跨日） */
 function eventDays(event: CalEvent): string[] {
   const s = zoned(event.starts_at);
@@ -64,6 +74,7 @@ export function MonthView({
   days,
   monthStart,
   events,
+  gapFilter,
   colorOf,
   conflicts,
   canCreate,
@@ -74,6 +85,7 @@ export function MonthView({
   days: Date[];
   monthStart: Date;
   events: CalEvent[];
+  gapFilter?: GapFilter | null;
   colorOf: (calendarId: string) => string;
   conflicts: Set<string>;
   canCreate: boolean;
@@ -81,6 +93,7 @@ export function MonthView({
   onCreateAt: (dateStr: string, hour?: number, minute?: number) => void;
   onOpenDay: (dateStr: string) => void;
 }) {
+  const isTarget = (ev: CalEvent) => !gapFilter || gapFilter.match(ev);
   // 點某天 → 從底部滑出當天面板（不切走視圖，關掉即回月曆）。
   const [peekDay, setPeekDay] = useState<string | null>(null);
 
@@ -107,6 +120,16 @@ export function MonthView({
           peekTimed[0].ends_at,
         )
       : null;
+  // 聚焦：當天面板中該對象的真實空檔（門檻較低，供規劃）
+  const peekFree =
+    peekDay && gapFilter
+      ? freeOnDay(
+          peekEvents.filter(isTarget),
+          peekDay,
+          FOCUS_WINDOW,
+          FOCUS_MIN_GAP_PEEK,
+        )
+      : [];
 
   return (
     <>
@@ -128,6 +151,15 @@ export function MonthView({
           const today = isToday(day);
           const shown = dayEvents.slice(0, 3);
           const extra = dayEvents.length - shown.length;
+          // 聚焦模式：該對象當天在工作時段內的真實空檔
+          const cellFree = gapFilter
+            ? freeOnDay(
+                dayEvents.filter(isTarget),
+                ds,
+                FOCUS_WINDOW,
+                FOCUS_MIN_GAP_CELL,
+              )
+            : [];
 
           // 當天有時段（非整日）行程時，取最晚結束時間，做為「尾巴結束」提示。
           const timed = dayEvents.filter((e) => !e.all_day);
@@ -186,32 +218,74 @@ export function MonthView({
                 </button>
               </div>
               <div className="space-y-0.5">
-                {shown.map((ev, i) => {
-                  const prev = i > 0 ? shown[i - 1] : null;
-                  const gap =
-                    prev && !prev.all_day && !ev.all_day
-                      ? gapMinutes(prev, ev)
-                      : 0;
-                  return (
-                    <Fragment key={ev.id + ds}>
-                      {gap >= MIN_GAP_MINUTES && (
-                        <div className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-muted-foreground/70">
-                          <span className="h-px flex-1 bg-border" />
-                          <span className="shrink-0 tabular-nums">
-                            空 {fmtDur(gap)}
-                          </span>
-                          <span className="h-px flex-1 bg-border" />
-                        </div>
-                      )}
-                      <MonthChip
-                        event={ev}
-                        color={colorOf(ev.calendar_id)}
-                        conflict={conflicts.has(ev.id)}
-                        onClick={() => onSelectEvent(ev)}
-                      />
-                    </Fragment>
-                  );
-                })}
+                {gapFilter
+                  ? (() => {
+                      // 聚焦：目標空檔（標名）穿插於行程間，非目標行程淡化
+                      const nodes: React.ReactNode[] = [];
+                      let bi = 0;
+                      const flushBefore = (limit: number) => {
+                        while (bi < cellFree.length && cellFree[bi].start < limit) {
+                          const b = cellFree[bi++];
+                          nodes.push(
+                            <div
+                              key={`free-${ds}-${b.start}`}
+                              className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-primary/80"
+                            >
+                              <span className="h-px flex-1 bg-primary/25" />
+                              <span className="shrink-0 tabular-nums">
+                                {gapFilter.name} 空 {fmtDur(b.end - b.start)}
+                              </span>
+                              <span className="h-px flex-1 bg-primary/25" />
+                            </div>,
+                          );
+                        }
+                      };
+                      for (const ev of shown) {
+                        const segStart = eventSegmentOnDay(ev, ds)?.start ?? 0;
+                        flushBefore(segStart);
+                        nodes.push(
+                          <div
+                            key={ev.id + ds}
+                            className={cn(!isTarget(ev) && "opacity-40")}
+                          >
+                            <MonthChip
+                              event={ev}
+                              color={colorOf(ev.calendar_id)}
+                              conflict={conflicts.has(ev.id)}
+                              onClick={() => onSelectEvent(ev)}
+                            />
+                          </div>,
+                        );
+                      }
+                      flushBefore(Infinity);
+                      return nodes;
+                    })()
+                  : shown.map((ev, i) => {
+                      const prev = i > 0 ? shown[i - 1] : null;
+                      const gap =
+                        prev && !prev.all_day && !ev.all_day
+                          ? gapMinutes(prev, ev)
+                          : 0;
+                      return (
+                        <Fragment key={ev.id + ds}>
+                          {gap >= MIN_GAP_MINUTES && (
+                            <div className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-muted-foreground/70">
+                              <span className="h-px flex-1 bg-border" />
+                              <span className="shrink-0 tabular-nums">
+                                空 {fmtDur(gap)}
+                              </span>
+                              <span className="h-px flex-1 bg-border" />
+                            </div>
+                          )}
+                          <MonthChip
+                            event={ev}
+                            color={colorOf(ev.calendar_id)}
+                            conflict={conflicts.has(ev.id)}
+                            onClick={() => onSelectEvent(ev)}
+                          />
+                        </Fragment>
+                      );
+                    })}
                 {extra > 0 && (
                   <button
                     type="button"
@@ -261,52 +335,121 @@ export function MonthView({
                 這天還沒有安排，點下方按鈕新增。
               </p>
             ) : (
-              peekEvents.map((ev, i) => {
-                const prev = i > 0 ? peekEvents[i - 1] : null;
-                const gap =
-                  prev && !prev.all_day && !ev.all_day
-                    ? gapMinutes(prev, ev)
-                    : 0;
-                return (
-                  <Fragment key={ev.id}>
-                    {gap >= MIN_GAP_MINUTES && (
-                      <div className="flex items-center gap-2 px-1 py-0.5 text-xs text-muted-foreground">
-                        <span className="h-px flex-1 bg-border" />
-                        {canCreate ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const end = zoned(prev!.ends_at);
-                              const ds = peekDay;
-                              setPeekDay(null);
-                              if (ds)
-                                onCreateAt(ds, end.getHours(), end.getMinutes());
-                            }}
-                            title="在這個空檔新增行程"
-                            className="inline-flex shrink-0 items-center gap-0.5 rounded-full border px-2 py-0.5 tabular-nums transition hover:border-primary hover:bg-accent hover:text-foreground touch:py-1"
+              gapFilter
+                ? (() => {
+                    // 聚焦：標名空檔（可點擊在空檔起點新增），非目標行程淡化
+                    const nodes: React.ReactNode[] = [];
+                    let bi = 0;
+                    const flushBefore = (limit: number) => {
+                      while (bi < peekFree.length && peekFree[bi].start < limit) {
+                        const b = peekFree[bi++];
+                        const label = `${gapFilter.name} 空檔 ${minToHHMM(b.start)}–${minToHHMM(b.end)} · ${fmtDur(b.end - b.start)}`;
+                        nodes.push(
+                          <div
+                            key={`free-${b.start}`}
+                            className="flex items-center gap-2 px-1 py-0.5 text-xs text-primary"
                           >
-                            <Plus className="size-3" />空檔 {fmtDur(gap)}
-                          </button>
-                        ) : (
-                          <span className="shrink-0 tabular-nums">
-                            空檔 {fmtDur(gap)}
-                          </span>
+                            <span className="h-px flex-1 bg-primary/30" />
+                            {canCreate ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const ds = peekDay;
+                                  setPeekDay(null);
+                                  if (ds)
+                                    onCreateAt(
+                                      ds,
+                                      Math.floor(b.start / 60),
+                                      b.start % 60,
+                                    );
+                                }}
+                                title="在這個空檔新增行程"
+                                className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-primary/40 px-2 py-0.5 tabular-nums transition hover:bg-accent touch:py-1"
+                              >
+                                <Plus className="size-3" />
+                                {label}
+                              </button>
+                            ) : (
+                              <span className="shrink-0 tabular-nums">{label}</span>
+                            )}
+                            <span className="h-px flex-1 bg-primary/30" />
+                          </div>,
+                        );
+                      }
+                    };
+                    for (const ev of peekEvents) {
+                      const segStart = eventSegmentOnDay(ev, peekDay!)?.start ?? 0;
+                      flushBefore(segStart);
+                      nodes.push(
+                        <div
+                          key={ev.id}
+                          className={cn(!isTarget(ev) && "opacity-40")}
+                        >
+                          <EventTwoLineCard
+                            event={ev}
+                            color={colorOf(ev.calendar_id)}
+                            conflict={conflicts.has(ev.id)}
+                            onClick={() => {
+                              onSelectEvent(ev);
+                              setPeekDay(null);
+                            }}
+                          />
+                        </div>,
+                      );
+                    }
+                    flushBefore(Infinity);
+                    return nodes;
+                  })()
+                : peekEvents.map((ev, i) => {
+                    const prev = i > 0 ? peekEvents[i - 1] : null;
+                    const gap =
+                      prev && !prev.all_day && !ev.all_day
+                        ? gapMinutes(prev, ev)
+                        : 0;
+                    return (
+                      <Fragment key={ev.id}>
+                        {gap >= MIN_GAP_MINUTES && (
+                          <div className="flex items-center gap-2 px-1 py-0.5 text-xs text-muted-foreground">
+                            <span className="h-px flex-1 bg-border" />
+                            {canCreate ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const end = zoned(prev!.ends_at);
+                                  const ds = peekDay;
+                                  setPeekDay(null);
+                                  if (ds)
+                                    onCreateAt(
+                                      ds,
+                                      end.getHours(),
+                                      end.getMinutes(),
+                                    );
+                                }}
+                                title="在這個空檔新增行程"
+                                className="inline-flex shrink-0 items-center gap-0.5 rounded-full border px-2 py-0.5 tabular-nums transition hover:border-primary hover:bg-accent hover:text-foreground touch:py-1"
+                              >
+                                <Plus className="size-3" />空檔 {fmtDur(gap)}
+                              </button>
+                            ) : (
+                              <span className="shrink-0 tabular-nums">
+                                空檔 {fmtDur(gap)}
+                              </span>
+                            )}
+                            <span className="h-px flex-1 bg-border" />
+                          </div>
                         )}
-                        <span className="h-px flex-1 bg-border" />
-                      </div>
-                    )}
-                    <EventTwoLineCard
-                      event={ev}
-                      color={colorOf(ev.calendar_id)}
-                      conflict={conflicts.has(ev.id)}
-                      onClick={() => {
-                        onSelectEvent(ev);
-                        setPeekDay(null);
-                      }}
-                    />
-                  </Fragment>
-                );
-              })
+                        <EventTwoLineCard
+                          event={ev}
+                          color={colorOf(ev.calendar_id)}
+                          conflict={conflicts.has(ev.id)}
+                          onClick={() => {
+                            onSelectEvent(ev);
+                            setPeekDay(null);
+                          }}
+                        />
+                      </Fragment>
+                    );
+                  })
             )}
           </div>
 

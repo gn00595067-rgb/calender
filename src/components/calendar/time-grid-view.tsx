@@ -58,6 +58,7 @@ function busyIntervals(dayEvents: CalEvent[], ds: string): [number, number][] {
 export function TimeGridView({
   days,
   events,
+  gapFilter,
   colorOf,
   conflicts,
   canCreate,
@@ -66,12 +67,14 @@ export function TimeGridView({
 }: {
   days: Date[];
   events: CalEvent[];
+  gapFilter?: { name: string; match: (e: CalEvent) => boolean } | null;
   colorOf: (calendarId: string) => string;
   conflicts: Set<string>;
   canCreate: boolean;
   onSelectEvent: (event: CalEvent) => void;
   onCreateAt: (dateStr: string, hour: number, minute?: number) => void;
 }) {
+  const isTarget = (ev: CalEvent) => !gapFilter || gapFilter.match(ev);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // 初次捲動到 7 點
@@ -151,7 +154,11 @@ export function TimeGridView({
               (e) => !e.all_day && format(zoned(e.starts_at), "yyyy-MM-dd") === ds,
             );
             const positioned = layoutDay(dayEvents);
-            const busy = busyIntervals(dayEvents, ds);
+            // 聚焦時空檔只依所選對象計算；否則用全部行程
+            const busy = busyIntervals(
+              gapFilter ? dayEvents.filter(isTarget) : dayEvents,
+              ds,
+            );
             const lastEndMin = busy.length > 0 ? busy[busy.length - 1][1] : null;
             return (
               <div
@@ -205,7 +212,10 @@ export function TimeGridView({
                         left: `calc(${col * widthPct}% + 2px)`,
                         width: `calc(${span * widthPct}% - 4px)`,
                       }}
-                      className="overflow-hidden rounded-md px-1.5 py-0.5 text-left hover:brightness-95 touch:min-h-8"
+                      className={cn(
+                        "overflow-hidden rounded-md px-1.5 py-0.5 text-left hover:brightness-95 touch:min-h-8",
+                        !isTarget(event) && "opacity-40",
+                      )}
                     >
                       <div className="flex items-center gap-1 text-[11px] font-semibold leading-tight">
                         {event.is_important && (
@@ -252,11 +262,12 @@ export function TimeGridView({
                           title={`在 ${hhmm(end)}–${hhmm(nextStart)} 空檔新增行程`}
                           className="pointer-events-auto inline-flex items-center gap-0.5 rounded-full border bg-card/95 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm transition hover:border-primary hover:bg-accent hover:text-foreground touch:px-2 touch:py-1"
                         >
-                          <Plus className="size-2.5" />空 {fmtDurShort(gap)}
+                          <Plus className="size-2.5" />
+                          {gapFilter ? `${gapFilter.name} ` : ""}空 {fmtDurShort(gap)}
                         </button>
                       ) : (
                         <span className="rounded-full border bg-card/90 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
-                          空 {fmtDurShort(gap)}
+                          {gapFilter ? `${gapFilter.name} ` : ""}空 {fmtDurShort(gap)}
                         </span>
                       )}
                     </div>
