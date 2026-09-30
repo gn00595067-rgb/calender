@@ -102,37 +102,50 @@ export function MonthView({
   onCreateAt: (dateStr: string, hour?: number, minute?: number) => void;
   onOpenDay: (dateStr: string) => void;
 }) {
-  // 是否有聚焦（單一對象或家庭視角）
-  const focusOn = !!gapFilter || !!familyFocus;
-  // 只有「單一對象聚焦」才淡化非對象；家庭視角不淡化
+  // 空檔一律以「標名空檔」呈現（含全部行程模式）
+  const focusOn = true;
+  // 只有「單一對象聚焦」才淡化非對象；家庭／全部視角不淡化
   const dimNonTarget = !!gapFilter && !familyFocus;
   const isTarget = (ev: CalEvent) => !dimNonTarget || gapFilter!.match(ev);
 
-  /** 計算某日的標名空檔：家庭視角＝本人＋（當天有活動的）家人；否則＝單一對象 */
+  /**
+   * 某日的標名空檔。通用規則：**當天有行程的人才列空檔**（含本人）；
+   * 當天沒行程者不列（避免整天全空的雜訊）。
+   * - 單一對象聚焦：只列該對象
+   * - 家庭視角：本人＋家人
+   * - 全部行程：本人＋當天出現的每位主角
+   */
   const freeLinesFor = (dayEvents: CalEvent[], ds: string, minGap: number): FreeLine[] => {
+    const self = { label: "本人", match: (e: CalEvent) => e.subjectNames.length === 0 };
+    const asGroup = (g: GapFilter) => ({ label: g.name, match: g.match });
+    let groups: { label: string; match: (e: CalEvent) => boolean }[];
+    if (gapFilter) {
+      groups = [asGroup(gapFilter)];
+    } else if (familyFocus) {
+      groups = [asGroup(familyFocus.primary), ...familyFocus.members.map(asGroup)];
+    } else {
+      // 全部行程：本人＋當天出現過的每位主角
+      const names = new Set<string>();
+      for (const e of dayEvents) for (const s of e.subjectNames) names.add(s);
+      groups = [
+        self,
+        ...[...names].map((name) => ({
+          label: name,
+          match: (e: CalEvent) => e.subjectNames.includes(name),
+        })),
+      ];
+    }
+
     const lines: FreeLine[] = [];
-    if (familyFocus) {
-      for (const b of freeOnDay(
-        dayEvents.filter(familyFocus.primary.match),
-        ds,
-        FOCUS_WINDOW,
-        minGap,
-      )) {
-        lines.push({ ...b, label: familyFocus.primary.name });
-      }
-      for (const m of familyFocus.members) {
-        // 家人：當天有其活動才顯示其空檔
-        if (!dayEvents.some(m.match)) continue;
-        for (const b of freeOnDay(dayEvents.filter(m.match), ds, FOCUS_WINDOW, minGap)) {
-          lines.push({ ...b, label: m.name });
-        }
-      }
-    } else if (gapFilter) {
-      for (const b of freeOnDay(dayEvents.filter(gapFilter.match), ds, FOCUS_WINDOW, minGap)) {
-        lines.push({ ...b, label: gapFilter.name });
+    for (const g of groups) {
+      const evs = dayEvents.filter(g.match);
+      // 當天要「有實際時段行程」才列此人的空檔
+      if (!evs.some((e) => !e.all_day)) continue;
+      for (const b of freeOnDay(evs, ds, FOCUS_WINDOW, minGap)) {
+        lines.push({ ...b, label: g.label });
       }
     }
-    return lines.sort((a, b) => a.start - b.start);
+    return lines.sort((a, b) => a.start - b.start || a.label.localeCompare(b.label));
   };
   // 點某天 → 從底部滑出當天面板（不切走視圖，關掉即回月曆）。
   const [peekDay, setPeekDay] = useState<string | null>(null);
