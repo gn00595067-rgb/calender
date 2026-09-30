@@ -7,6 +7,7 @@ import { addDays, addMonths, addWeeks } from "date-fns";
 import { getAuthed, fail, type ActionResult } from "./helpers";
 import { resolveCategoryId } from "./categories";
 import { TIME_ZONE, RECURRENCE_MAX_MONTHS } from "@/lib/constants";
+import { tagKey } from "@/lib/tags";
 
 const wall = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, {
   error: "時間格式有誤",
@@ -106,25 +107,35 @@ async function resolveTagIds(
   ownerId: string,
   names: string[],
 ): Promise<string[]> {
-  const uniq = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
-  if (uniq.length === 0) return [];
+  // 依正規化 key 去重（大小寫/全半形/空白差異視為同一），保留第一個顯示寫法
+  const inputByKey = new Map<string, string>();
+  for (const raw of names) {
+    const name = raw.trim();
+    if (!name) continue;
+    const key = tagKey(name);
+    if (key && !inputByKey.has(key)) inputByKey.set(key, name);
+  }
+  if (inputByKey.size === 0) return [];
 
+  // 撈該擁有者所有標籤，以 key 比對既有者（防呆：變體歸到既有，不新建）
   const { data: existing } = await supabase
     .from("tags")
     .select("id, name")
-    .eq("owner_id", ownerId)
-    .in("name", uniq);
+    .eq("owner_id", ownerId);
+  const idByKey = new Map<string, string>();
+  for (const t of existing ?? []) idByKey.set(tagKey(t.name), t.id);
 
-  const byName = new Map((existing ?? []).map((t) => [t.name, t.id]));
-  const toCreate = uniq.filter((n) => !byName.has(n));
+  const toCreate = [...inputByKey].filter(([key]) => !idByKey.has(key)).map(([, name]) => name);
   if (toCreate.length) {
     const { data: created } = await supabase
       .from("tags")
       .insert(toCreate.map((name) => ({ owner_id: ownerId, name })))
       .select("id, name");
-    for (const t of created ?? []) byName.set(t.name, t.id);
+    for (const t of created ?? []) idByKey.set(tagKey(t.name), t.id);
   }
-  return uniq.map((n) => byName.get(n)).filter((id): id is string => !!id);
+  return [...inputByKey.keys()]
+    .map((key) => idByKey.get(key))
+    .filter((id): id is string => !!id);
 }
 
 export async function createEventAction(input: unknown): Promise<ActionResult<{ groupId: string | null }>> {

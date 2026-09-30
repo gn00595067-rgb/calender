@@ -4,6 +4,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useTags } from "@/lib/client/lookups";
+import { tagKey } from "@/lib/tags";
 
 export function TagInput({
   value,
@@ -17,19 +18,28 @@ export function TagInput({
 
   const add = (name: string) => {
     const n = name.trim();
-    if (!n || value.includes(n)) {
+    const key = tagKey(n);
+    if (!key) {
       setDraft("");
       return;
     }
-    onChange([...value, n]);
+    // 已選過（大小寫/全半形/空白差異視為同一）→ 不重複加
+    if (value.some((v) => tagKey(v) === key)) {
+      setDraft("");
+      return;
+    }
+    // 吸附既有標籤的正式寫法，避免產生「數學/Math」這類分裂變體
+    const existing = tags.find((t) => tagKey(t.name) === key);
+    onChange([...value, existing ? existing.name : n]);
     setDraft("");
   };
 
   const remove = (name: string) => onChange(value.filter((v) => v !== name));
 
+  const selectedKeys = new Set(value.map(tagKey));
   const suggestions = tags
     .map((t) => t.name)
-    .filter((n) => !value.includes(n));
+    .filter((n) => !selectedKeys.has(tagKey(n)));
 
   return (
     <div>
