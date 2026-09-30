@@ -91,6 +91,10 @@ export function CalendarView() {
     name: string;
     match: (e: CalEvent) => boolean;
   } | null>(() => {
+    // 本人：未掛任何人物的行程即視為本人（Peggy）自己的
+    if (gapTarget === "self") {
+      return { name: "本人", match: (e) => e.contactNames.length === 0 };
+    }
     if (gapTarget.startsWith("cal:")) {
       const id = gapTarget.slice(4);
       return {
@@ -209,6 +213,7 @@ export function CalendarView() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部行程</SelectItem>
+              <SelectItem value="self">本人（未指定人物）</SelectItem>
               {calendars.length > 0 && (
                 <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">
                   分類
