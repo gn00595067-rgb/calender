@@ -5,16 +5,13 @@ import { format, isToday } from "date-fns";
 import { zoned, layoutDay } from "@/lib/calendar-utils";
 import { cn } from "@/lib/utils";
 import { D } from "@/lib/date";
+import { eventSegmentOnDay } from "@/lib/availability";
 import { eventStyle } from "./event-visuals";
 import { Plus, Star } from "lucide-react";
 import type { CalEvent } from "@/lib/client/events";
 
 const HOUR_HEIGHT = 48;
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
-
-function minutesOfDay(d: Date): number {
-  return d.getHours() * 60 + d.getMinutes();
-}
 
 /** 時間軸標籤用的精簡時長：1h30／45m */
 function fmtDurShort(min: number): string {
@@ -34,17 +31,12 @@ function hhmm(min: number): string {
 /** 空檔門檻（分鐘）：時間軸較密，門檻拉高以免雜訊 */
 const GRID_MIN_GAP = 30;
 
-/** 合併當天所有時段行程成忙碌區間（分鐘），用於算空檔與最後結束 */
+/** 合併當天所有時段行程成忙碌區間（分鐘），用於算空檔與最後結束；跨日行程只取落在當天的那段 */
 function busyIntervals(dayEvents: CalEvent[], ds: string): [number, number][] {
   const spans = dayEvents
-    .map((e): [number, number] => {
-      const s = zoned(e.starts_at);
-      const en = zoned(e.ends_at);
-      const startMin = minutesOfDay(s);
-      const endMin =
-        format(en, "yyyy-MM-dd") === ds ? minutesOfDay(en) : 24 * 60;
-      return [startMin, Math.max(endMin, startMin)];
-    })
+    .map((e) => eventSegmentOnDay(e, ds))
+    .filter((seg): seg is NonNullable<typeof seg> => seg !== null)
+    .map((seg): [number, number] => [seg.start, seg.end])
     .sort((a, b) => a[0] - b[0]);
   const merged: [number, number][] = [];
   for (const [s, e] of spans) {
@@ -150,9 +142,13 @@ export function TimeGridView({
           {/* 每日欄 */}
           {days.map((day) => {
             const ds = format(day, "yyyy-MM-dd");
-            const dayEvents = events.filter(
-              (e) => !e.all_day && format(zoned(e.starts_at), "yyyy-MM-dd") === ds,
-            );
+            // 跨日行程：每一天各畫一段（裁切到當天），讓每天都看得到
+            const segs = new Map<string, { start: number; end: number }>();
+            const dayEvents = events.filter((e) => {
+              const seg = eventSegmentOnDay(e, ds);
+              if (seg) segs.set(e.id, seg);
+              return seg !== null;
+            });
             const positioned = layoutDay(dayEvents);
             // 聚焦時空檔只依所選對象計算；否則用全部行程
             const busy = busyIntervals(
@@ -183,13 +179,13 @@ export function TimeGridView({
                   />
                 ))}
                 {positioned.map(({ event, col, cols, span }) => {
-                  const start = zoned(event.starts_at);
-                  const end = zoned(event.ends_at);
-                  const startMin = minutesOfDay(start);
-                  const endMin = Math.min(
-                    24 * 60,
-                    format(end, "yyyy-MM-dd") === ds ? minutesOfDay(end) : 24 * 60,
-                  );
+                  const { start: startMin, end: endMin } = segs.get(event.id)!;
+                  const startDs = format(zoned(event.starts_at), "yyyy-MM-dd");
+                  const endZ = zoned(event.ends_at);
+                  const endDs = format(endZ, "yyyy-MM-dd");
+                  const multiDay = startDs !== endDs;
+                  const isCont = startDs < ds; // 前一天延續過來
+                  const continues = endMin >= 24 * 60 && endDs > ds; // 延續到隔天
                   const top = (startMin / 60) * HOUR_HEIGHT;
                   const height = Math.max(20, ((endMin - startMin) / 60) * HOUR_HEIGHT);
                   const widthPct = 100 / cols;
@@ -197,7 +193,9 @@ export function TimeGridView({
                     <button
                       key={event.id}
                       type="button"
-                      title={`${D.time(event.starts_at)}–${D.time(event.ends_at)} ${event.title}${
+                      title={`${multiDay ? `${format(zoned(event.starts_at), "M/d")} ` : ""}${D.time(event.starts_at)}–${
+                        multiDay ? `${format(endZ, "M/d")} ` : ""
+                      }${D.time(event.ends_at)} ${event.title}${
                         event.location ? ` @ ${event.location}` : ""
                       }${conflicts.has(event.id) ? "（衝突）" : ""}`}
                       onClick={(e) => {
@@ -221,7 +219,12 @@ export function TimeGridView({
                         {event.is_important && (
                           <Star className="size-2.5 shrink-0 fill-amber-400 text-amber-500" />
                         )}
-                        <span className="tabular-nums">{D.time(event.starts_at)}</span>
+                        <span className="tabular-nums">
+                          {isCont
+                            ? `↳ 續～${continues ? "" : D.time(event.ends_at)}`
+                            : D.time(event.starts_at)}
+                          {!isCont && continues && ` → ${format(endZ, "M/d")} ${D.time(event.ends_at)}`}
+                        </span>
                       </div>
                       <div
                         className={cn(
