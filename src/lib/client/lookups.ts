@@ -7,6 +7,7 @@ export interface ContactLite {
   id: string;
   name: string;
   role_label: string | null;
+  is_family: boolean;
 }
 
 export function useContacts() {
@@ -16,7 +17,7 @@ export function useContacts() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("contacts")
-        .select("id, name, role_label")
+        .select("id, name, role_label, is_family")
         .order("name", { ascending: true });
       if (error) throw new Error(error.message);
       return data ?? [];
@@ -95,7 +96,8 @@ export function useTags() {
 }
 
 export interface EventEditData {
-  contactIds: string[];
+  subjectIds: string[];
+  participantIds: string[];
   finance: {
     id: string;
     direction: "expense" | "income";
@@ -121,7 +123,10 @@ export function useEventEditData(eventId: string | null) {
     queryFn: async (): Promise<EventEditData> => {
       const supabase = createClient();
       const [ecRes, finRes] = await Promise.all([
-        supabase.from("event_contacts").select("contact_id").eq("event_id", eventId!),
+        supabase
+          .from("event_contacts")
+          .select("contact_id, role")
+          .eq("event_id", eventId!),
         supabase
           .from("finance_records")
           .select(
@@ -131,8 +136,12 @@ export function useEventEditData(eventId: string | null) {
           .order("created_at", { ascending: true })
           .limit(1),
       ]);
+      const ec = ecRes.data ?? [];
       return {
-        contactIds: (ecRes.data ?? []).map((r) => r.contact_id),
+        subjectIds: ec.filter((r) => r.role === "subject").map((r) => r.contact_id),
+        participantIds: ec
+          .filter((r) => r.role !== "subject")
+          .map((r) => r.contact_id),
         finance: finRes.data && finRes.data.length ? finRes.data[0] : null,
       };
     },

@@ -126,8 +126,17 @@ export function EventDetailDialog({
               <Row icon={Repeat}>重複行程（{recurrenceLabel}）</Row>
             )}
             {event.location && <Row icon={MapPin}>{event.location}</Row>}
-            {event.contactNames.length > 0 && (
-              <Row icon={Users}>{event.contactNames.join("、")}</Row>
+            {event.subjectNames.length > 0 && (
+              <Row icon={Users}>
+                <span className="text-muted-foreground">主角：</span>
+                {event.subjectNames.join("、")}
+              </Row>
+            )}
+            {event.participantNames.length > 0 && (
+              <Row icon={Users}>
+                <span className="text-muted-foreground">相關人物：</span>
+                {event.participantNames.join("、")}
+              </Row>
             )}
             {event.tagNames.length > 0 && (
               <Row icon={TagIcon}>

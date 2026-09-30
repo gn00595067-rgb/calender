@@ -66,6 +66,8 @@ export function CalendarView() {
     range.endIso,
   );
   const { data: contacts = [] } = useContacts();
+  const familyContacts = contacts.filter((c) => c.is_family);
+  const otherContacts = contacts.filter((c) => !c.is_family);
 
   // 空檔對象（聚焦）：選某分類或某人物後，仍顯示全部行程（其他淡化），
   // 但空檔只依所選對象計算並標名。值："all" | "cal:<id>" | "ct:<name>"
@@ -91,9 +93,14 @@ export function CalendarView() {
     name: string;
     match: (e: CalEvent) => boolean;
   } | null>(() => {
-    // 本人：未掛任何人物的行程即視為本人（Peggy）自己的
+    // 本人：未指定主角的行程即視為本人（Peggy）自己的
     if (gapTarget === "self") {
-      return { name: "本人", match: (e) => e.contactNames.length === 0 };
+      return { name: "本人", match: (e) => e.subjectNames.length === 0 };
+    }
+    // 主角（誰的行程）：小孩／本人
+    if (gapTarget.startsWith("subj:")) {
+      const name = gapTarget.slice(5);
+      return { name, match: (e) => e.subjectNames.includes(name) };
     }
     if (gapTarget.startsWith("cal:")) {
       const id = gapTarget.slice(4);
@@ -102,9 +109,10 @@ export function CalendarView() {
         match: (e) => e.calendar_id === id,
       };
     }
+    // 相關人物（拜訪／參與／對象）
     if (gapTarget.startsWith("ct:")) {
       const name = gapTarget.slice(3);
-      return { name, match: (e) => e.contactNames.includes(name) };
+      return { name, match: (e) => e.participantNames.includes(name) };
     }
     return null;
   }, [gapTarget, calendarById]);
@@ -213,7 +221,17 @@ export function CalendarView() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部行程</SelectItem>
-              <SelectItem value="self">本人（未指定人物）</SelectItem>
+              <SelectItem value="self">本人（未指定主角）</SelectItem>
+              {familyContacts.length > 0 && (
+                <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">
+                  主角（誰的行程）
+                </div>
+              )}
+              {familyContacts.map((ct) => (
+                <SelectItem key={ct.id} value={`subj:${ct.name}`}>
+                  {ct.name}
+                </SelectItem>
+              ))}
               {calendars.length > 0 && (
                 <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">
                   分類
@@ -230,12 +248,12 @@ export function CalendarView() {
                   </span>
                 </SelectItem>
               ))}
-              {contacts.length > 0 && (
+              {otherContacts.length > 0 && (
                 <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground">
-                  人物
+                  相關人物（拜訪／參與）
                 </div>
               )}
-              {contacts.map((ct) => (
+              {otherContacts.map((ct) => (
                 <SelectItem key={ct.id} value={`ct:${ct.name}`}>
                   {ct.name}
                 </SelectItem>

@@ -44,7 +44,9 @@ const baseEventSchema = z.object({
   weekdays: z.array(z.number().int().min(0).max(6)).optional().nullable(),
   // 提前幾分鐘提醒（null＝不提醒）
   reminderMinutes: z.number().int().min(0).max(43200).optional().nullable(),
-  contactIds: z.array(z.uuid()).default([]),
+  // 主角（誰的行程）與相關人物（拜訪／參與／對象）
+  subjectIds: z.array(z.uuid()).default([]),
+  participantIds: z.array(z.uuid()).default([]),
   tagNames: z.array(z.string().trim().min(1).max(30)).default([]),
   finance: financeSchema.optional().nullable(),
 });
@@ -193,9 +195,18 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
     // 標籤（find-or-create）
     const tagIds = await resolveTagIds(supabase, user.id, d.tagNames);
 
-    const ecRows = events.flatMap((e) =>
-      d.contactIds.map((cid) => ({ event_id: e.id, contact_id: cid })),
-    );
+    const ecRows = events.flatMap((e) => [
+      ...d.subjectIds.map((cid) => ({
+        event_id: e.id,
+        contact_id: cid,
+        role: "subject" as const,
+      })),
+      ...d.participantIds.map((cid) => ({
+        event_id: e.id,
+        contact_id: cid,
+        role: "participant" as const,
+      })),
+    ]);
     const etRows = events.flatMap((e) =>
       tagIds.map((tid) => ({ event_id: e.id, tag_id: tid })),
     );
@@ -218,7 +229,8 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
         payment_method: d.finance!.paymentMethod ?? null,
         prepaid_account_id: d.finance!.prepaidAccountId ?? null,
         covered_by_prepaid: d.finance!.coveredByPrepaid ?? false,
-        contact_id: d.contactIds[0] ?? null,
+        // 費用掛「相關人物（收費老師）」，供依老師結月
+        contact_id: d.participantIds[0] ?? null,
         // occurred_on 取台北曆日（非 UTC 直接切片，避免凌晨行程日期偏移）
         occurred_on: new Date(e.starts_at)
           .toLocaleString("sv-SE", { timeZone: TIME_ZONE })
@@ -316,10 +328,20 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
     // 關聯與財務僅套用於被點擊的該筆（避免批次覆寫語意過重）
     await supabase.from("event_contacts").delete().eq("event_id", current.id);
     await supabase.from("event_tags").delete().eq("event_id", current.id);
-    if (d.contactIds.length) {
-      await supabase
-        .from("event_contacts")
-        .insert(d.contactIds.map((cid) => ({ event_id: current.id, contact_id: cid })));
+    const ecRows = [
+      ...d.subjectIds.map((cid) => ({
+        event_id: current.id,
+        contact_id: cid,
+        role: "subject" as const,
+      })),
+      ...d.participantIds.map((cid) => ({
+        event_id: current.id,
+        contact_id: cid,
+        role: "participant" as const,
+      })),
+    ];
+    if (ecRows.length) {
+      await supabase.from("event_contacts").insert(ecRows);
     }
     const tagIds = await resolveTagIds(supabase, user.id, d.tagNames);
     if (tagIds.length) {
@@ -350,7 +372,7 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
           payment_method: d.finance.paymentMethod ?? null,
           prepaid_account_id: d.finance.prepaidAccountId ?? null,
           covered_by_prepaid: d.finance.coveredByPrepaid ?? false,
-          contact_id: d.contactIds[0] ?? null,
+          contact_id: d.participantIds[0] ?? null,
           occurred_on: new Date(newStartUtc)
             .toLocaleString("sv-SE", { timeZone: TIME_ZONE })
             .slice(0, 10),

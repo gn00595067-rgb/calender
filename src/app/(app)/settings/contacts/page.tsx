@@ -10,6 +10,7 @@ import { EmptyState, ListSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -56,6 +57,7 @@ interface FullContact {
   role_label: string | null;
   phone: string | null;
   note: string | null;
+  is_family: boolean;
   billing_mode: "fixed" | "hourly" | null;
   default_rate: number | null;
   default_category_id: string | null;
@@ -76,7 +78,7 @@ function useContactsFull() {
       const { data, error } = await supabase
         .from("contacts")
         .select(
-          "id, name, role_label, phone, note, billing_mode, default_rate, default_category_id, default_direction, default_payment_method",
+          "id, name, role_label, phone, note, is_family, billing_mode, default_rate, default_category_id, default_direction, default_payment_method",
         )
         .order("name", { ascending: true });
       if (error) throw new Error(error.message);
@@ -139,7 +141,14 @@ export default function ContactsSettingsPage() {
                 {c.name.charAt(0)}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{c.name}</div>
+                <div className="flex items-center gap-1.5 truncate font-medium">
+                  {c.name}
+                  {c.is_family && (
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      家人
+                    </span>
+                  )}
+                </div>
                 <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                   {c.role_label && <span>{c.role_label}</span>}
                   {c.default_rate != null && (
@@ -241,6 +250,7 @@ function ContactFormDialog({
   const [defaultPaymentMethod, setDefaultPaymentMethod] = useState<
     PaymentMethod | ""
   >("");
+  const [isFamily, setIsFamily] = useState(false);
   const [pending, startTransition] = useTransition();
   const [init, setInit] = useState(false);
 
@@ -249,6 +259,7 @@ function ContactFormDialog({
     setRoleLabel(contact?.role_label ?? "");
     setPhone(contact?.phone ?? "");
     setNote(contact?.note ?? "");
+    setIsFamily(contact?.is_family ?? false);
     setBillingMode(contact?.billing_mode ?? "fixed");
     setDefaultRate(
       contact?.default_rate != null ? String(contact.default_rate) : "",
@@ -268,6 +279,7 @@ function ContactFormDialog({
         roleLabel: roleLabel || null,
         phone: phone || null,
         note: note || null,
+        isFamily,
         billingMode: rate != null ? billingMode : null,
         defaultRate: rate,
         defaultCategoryId: defaultCategoryId,
@@ -332,6 +344,21 @@ function ContactFormDialog({
               placeholder="選填"
             />
           </div>
+
+          {/* 家人：可當「主角（誰的行程）」，例如小孩、本人 */}
+          <label className="flex items-start gap-2 rounded-lg border p-3">
+            <Checkbox
+              checked={isFamily}
+              onCheckedChange={(c) => setIsFamily(!!c)}
+              className="mt-0.5"
+            />
+            <span className="text-sm">
+              家人／本人（可當「主角」）
+              <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                勾選後，此人會出現在行程的「主角（誰的行程）」欄與空檔聚焦，例如小孩、本人。
+              </span>
+            </span>
+          </label>
 
           {/* 預設收費：設一次，新增行程選到此人即自動帶入 */}
           <div className="space-y-3 rounded-lg border bg-muted/30 p-3">

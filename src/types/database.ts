@@ -137,6 +137,7 @@ export interface Database {
           phone: string | null;
           note: string | null;
           email: string | null;
+          is_family: boolean;
           billing_mode: "fixed" | "hourly" | null;
           default_rate: number | null;
           default_category_id: string | null;
@@ -156,6 +157,7 @@ export interface Database {
           phone?: string | null;
           note?: string | null;
           email?: string | null;
+          is_family?: boolean;
           billing_mode?: "fixed" | "hourly" | null;
           default_rate?: number | null;
           default_category_id?: string | null;
@@ -175,6 +177,7 @@ export interface Database {
           phone?: string | null;
           note?: string | null;
           email?: string | null;
+          is_family?: boolean;
           billing_mode?: "fixed" | "hourly" | null;
           default_rate?: number | null;
           default_category_id?: string | null;
@@ -261,9 +264,17 @@ export interface Database {
         Relationships: [];
       };
       event_contacts: {
-        Row: { event_id: string; contact_id: string };
-        Insert: { event_id: string; contact_id: string };
-        Update: { event_id?: string; contact_id?: string };
+        Row: { event_id: string; contact_id: string; role: "subject" | "participant" };
+        Insert: {
+          event_id: string;
+          contact_id: string;
+          role?: "subject" | "participant";
+        };
+        Update: {
+          event_id?: string;
+          contact_id?: string;
+          role?: "subject" | "participant";
+        };
         Relationships: [];
       };
       tags: {

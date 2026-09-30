@@ -18,9 +18,18 @@ import { useQueryClient } from "@tanstack/react-query";
 export function ContactMultiSelect({
   value,
   onChange,
+  placeholder = "選擇人物…",
+  preferFamily = false,
+  newIsFamily = false,
 }: {
   value: string[];
   onChange: (ids: string[]) => void;
+  /** 觸發鈕與清單為空時的提示文字 */
+  placeholder?: string;
+  /** 家人（可當主角）排在最前並標徽章 */
+  preferFamily?: boolean;
+  /** 快速新增的人物是否標記為家人（主角欄用） */
+  newIsFamily?: boolean;
 }) {
   const { data: contacts = [] } = useContacts();
   const qc = useQueryClient();
@@ -30,6 +39,12 @@ export function ContactMultiSelect({
   const [pending, startTransition] = useTransition();
 
   const selected = contacts.filter((c) => value.includes(c.id));
+  // 主角欄：家人優先排序，方便挑小孩/本人
+  const ordered = preferFamily
+    ? [...contacts].sort(
+        (a, b) => Number(b.is_family) - Number(a.is_family) || a.name.localeCompare(b.name),
+      )
+    : contacts;
 
   const toggle = (id: string) => {
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
@@ -41,6 +56,7 @@ export function ContactMultiSelect({
       const res = await createContactAction({
         name: newName.trim(),
         roleLabel: newRole.trim() || null,
+        isFamily: newIsFamily,
       });
       if (!res.ok) {
         toast.error(res.error);
@@ -64,7 +80,7 @@ export function ContactMultiSelect({
           className="w-full justify-between font-normal"
         >
           <span className="truncate">
-            {selected.length ? selected.map((c) => c.name).join("、") : "選擇人物…"}
+            {selected.length ? selected.map((c) => c.name).join("、") : placeholder}
           </span>
           <ChevronsUpDown className="size-4 opacity-50" />
         </Button>
@@ -76,7 +92,7 @@ export function ContactMultiSelect({
               尚無人物，於下方新增
             </p>
           )}
-          {contacts.map((c) => (
+          {ordered.map((c) => (
             <button
               key={c.id}
               type="button"
@@ -90,6 +106,11 @@ export function ContactMultiSelect({
                 )}
               />
               <span className="flex-1 truncate">{c.name}</span>
+              {preferFamily && c.is_family && (
+                <span className="rounded bg-primary/10 px-1 text-[10px] font-medium text-primary">
+                  家人
+                </span>
+              )}
               {c.role_label && (
                 <span className="text-xs text-muted-foreground">{c.role_label}</span>
               )}

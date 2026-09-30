@@ -9,6 +9,8 @@ const contactSchema = z.object({
   roleLabel: z.string().trim().max(40).optional().nullable(),
   phone: z.string().trim().max(40).optional().nullable(),
   note: z.string().trim().max(500).optional().nullable(),
+  // 家人／本人：可當「主角（誰的行程）」
+  isFamily: z.boolean().optional(),
   // 預設收費（選填）
   billingMode: z.enum(["fixed", "hourly"]).optional().nullable(),
   defaultRate: z.number().int().nonnegative().optional().nullable(),
@@ -46,6 +48,7 @@ export async function createContactAction(
         role_label: parsed.data.roleLabel ?? null,
         phone: parsed.data.phone ?? null,
         note: parsed.data.note ?? null,
+        is_family: parsed.data.isFamily ?? false,
         ...billingColumns(parsed.data),
       })
       .select("id, name, role_label")
@@ -74,6 +77,7 @@ export async function updateContactAction(
         role_label: parsed.data.roleLabel ?? null,
         phone: parsed.data.phone ?? null,
         note: parsed.data.note ?? null,
+        is_family: parsed.data.isFamily ?? false,
         ...billingColumns(parsed.data),
       })
       .eq("id", id);

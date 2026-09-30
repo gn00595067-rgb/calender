@@ -65,7 +65,8 @@ interface FormValues {
   recurrenceWeekdays: number[];
   reminderMinutes: number | null;
   scope: "this" | "following";
-  contactIds: string[];
+  subjectIds: string[];
+  participantIds: string[];
   tagNames: string[];
   financeEnabled: boolean;
   financeDirection: "expense" | "income";
@@ -149,7 +150,8 @@ export function EventModal({
       recurrenceWeekdays: [wallWeekday(start)],
       reminderMinutes: null,
       scope: "this",
-      contactIds: [],
+      subjectIds: [],
+      participantIds: [],
       tagNames: [],
       financeEnabled: false,
       financeDirection: "expense",
@@ -180,7 +182,8 @@ export function EventModal({
         recurrenceWeekdays: [],
         reminderMinutes: event.reminder_minutes ?? null,
         scope: "this",
-        contactIds: [],
+        subjectIds: [],
+        participantIds: [],
         tagNames: event.tagNames,
         financeEnabled: false,
         financeDirection: "expense",
@@ -200,7 +203,8 @@ export function EventModal({
   // 編輯：帶入既有人物與財務
   useEffect(() => {
     if (mode !== "edit" || !editData.data) return;
-    setValue("contactIds", editData.data.contactIds);
+    setValue("subjectIds", editData.data.subjectIds);
+    setValue("participantIds", editData.data.participantIds);
     if (editData.data.finance) {
       setValue("financeEnabled", true);
       setValue("financeDirection", editData.data.finance.direction);
@@ -225,7 +229,8 @@ export function EventModal({
   const calendarId = watch("calendarId");
   const startWall = watch("startWall");
   const endWall = watch("endWall");
-  const contactIds = watch("contactIds");
+  // 財務相關（自動帶入、預繳扣抵）一律看「相關人物」＝收費老師
+  const participantIds = watch("participantIds");
 
   const canFinance = useMemo(() => {
     const cal = calendarById.get(calendarId);
@@ -237,7 +242,7 @@ export function EventModal({
 
   // 目前選到、且有預設收費的老師（供顯示帶入提示）
   const autoBillingContact = (contactsBilling.data ?? []).find(
-    (b) => contactIds.includes(b.id) && b.default_rate != null,
+    (b) => participantIds.includes(b.id) && b.default_rate != null,
   );
 
   const financePaymentMethod = watch("financePaymentMethod");
@@ -245,7 +250,7 @@ export function EventModal({
     financePaymentMethod === "prepaid_deduct" ||
     financePaymentMethod === "prepaid_term";
   // 可扣抵帳戶：屬於所選老師或通用（未指定老師）者
-  const firstContactId = contactIds[0] ?? null;
+  const firstContactId = participantIds[0] ?? null;
   const prepaidChoices = (prepaid.data ?? []).filter(
     (a) =>
       !a.contact_id ||
@@ -259,7 +264,7 @@ export function EventModal({
   useEffect(() => {
     if (!canFinance) return;
     const billing = contactsBilling.data ?? [];
-    const c = contactIds
+    const c = participantIds
       .map((id) => billing.find((b) => b.id === id))
       .find((b) => b && b.default_rate != null);
     if (!c) return;
@@ -295,7 +300,7 @@ export function EventModal({
       if (meta) setValue("financeSettled", meta.defaultSettled);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contactIds, contactsBilling.data, canFinance]);
+  }, [participantIds, contactsBilling.data, canFinance]);
 
   const onSubmit = handleSubmit((v) => {
     if (v.endWall < v.startWall) {
@@ -341,7 +346,8 @@ export function EventModal({
                   ? v.recurrenceWeekdays
                   : null,
               reminderMinutes: v.reminderMinutes,
-              contactIds: v.contactIds,
+              subjectIds: v.subjectIds,
+              participantIds: v.participantIds,
               tagNames: v.tagNames,
               finance,
             })
@@ -357,7 +363,8 @@ export function EventModal({
               isImportant: v.isImportant,
               reminderMinutes: v.reminderMinutes,
               scope: v.scope,
-              contactIds: v.contactIds,
+              subjectIds: v.subjectIds,
+              participantIds: v.participantIds,
               tagNames: v.tagNames,
               finance,
             });
@@ -519,12 +526,43 @@ export function EventModal({
             </div>
 
             <div className="space-y-2">
-              <Label>人物</Label>
+              <Label>
+                主角
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  誰的行程（小孩／本人）
+                </span>
+              </Label>
               <Controller
                 control={control}
-                name="contactIds"
+                name="subjectIds"
                 render={({ field }) => (
-                  <ContactMultiSelect value={field.value} onChange={field.onChange} />
+                  <ContactMultiSelect
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="選擇主角…（誰的行程）"
+                    preferFamily
+                    newIsFamily
+                  />
+                )}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>
+                相關人物
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  拜訪／參與／對象（老師、客戶…）
+                </span>
+              </Label>
+              <Controller
+                control={control}
+                name="participantIds"
+                render={({ field }) => (
+                  <ContactMultiSelect
+                    value={field.value}
+                    onChange={field.onChange}
+                    placeholder="選擇相關人物…"
+                  />
                 )}
               />
             </div>

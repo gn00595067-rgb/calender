@@ -18,7 +18,12 @@ export interface CalEvent {
   recurrence_rule: string | null;
   recurrence_group_id: string | null;
   reminder_minutes: number | null;
+  /** 全部相關者（主角＋相關人物），供顯示與搜尋相容 */
   contactNames: string[];
+  /** 主角（誰的行程） */
+  subjectNames: string[];
+  /** 相關人物（拜訪／參與／對象） */
+  participantNames: string[];
   tagNames: string[];
   finance: { direction: "expense" | "income"; amount: number; is_settled: boolean }[];
   noteCount: number;
@@ -48,7 +53,10 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
   const ids = rows.map((e) => e.id);
 
   const [ecRes, etRes, finRes, noteRes] = await Promise.all([
-    supabase.from("event_contacts").select("event_id, contact_id").in("event_id", ids),
+    supabase
+      .from("event_contacts")
+      .select("event_id, contact_id, role")
+      .in("event_id", ids),
     supabase.from("event_tags").select("event_id, tag_id").in("event_id", ids),
     supabase
       .from("finance_records")
@@ -78,10 +86,13 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
     else map.set(key, [val]);
   }
 
-  const contactsByEvent = new Map<string, string[]>();
+  const subjectsByEvent = new Map<string, string[]>();
+  const participantsByEvent = new Map<string, string[]>();
   for (const r of ecRes.data ?? []) {
     const n = contactName.get(r.contact_id);
-    if (n) pushInto(contactsByEvent, r.event_id, n);
+    if (!n) continue;
+    if (r.role === "subject") pushInto(subjectsByEvent, r.event_id, n);
+    else pushInto(participantsByEvent, r.event_id, n);
   }
   const tagsByEvent = new Map<string, string[]>();
   for (const r of etRes.data ?? []) {
@@ -119,7 +130,12 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
     recurrence_rule: e.recurrence_rule,
     recurrence_group_id: e.recurrence_group_id,
     reminder_minutes: e.reminder_minutes,
-    contactNames: contactsByEvent.get(e.id) ?? [],
+    subjectNames: subjectsByEvent.get(e.id) ?? [],
+    participantNames: participantsByEvent.get(e.id) ?? [],
+    contactNames: [
+      ...(subjectsByEvent.get(e.id) ?? []),
+      ...(participantsByEvent.get(e.id) ?? []),
+    ],
     tagNames: tagsByEvent.get(e.id) ?? [],
     finance: finByEvent.get(e.id) ?? [],
     noteCount: noteCount.get(e.id) ?? 0,

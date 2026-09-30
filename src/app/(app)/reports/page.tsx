@@ -164,6 +164,30 @@ export default function ReportsPage() {
     return [...map.values()].sort((a, b) => b.total - a.total);
   }, [finance]);
 
+  // 依主角（誰的花費）：小孩／本人各自的支出與堂數。空主角＝本人。
+  interface SubjectGroup {
+    name: string;
+    total: number;
+    sessions: number;
+  }
+  const bySubject = useMemo<SubjectGroup[]>(() => {
+    const map = new Map<string, SubjectGroup>();
+    for (const f of finance) {
+      if (f.direction !== "expense") continue;
+      const names = f.subject_names.length > 0 ? f.subject_names : ["本人"];
+      for (const name of names) {
+        let g = map.get(name);
+        if (!g) {
+          g = { name, total: 0, sessions: 0 };
+          map.set(name, g);
+        }
+        g.total += spendOf(f);
+        if (isSession(f)) g.sessions += 1;
+      }
+    }
+    return [...map.values()].sort((a, b) => b.total - a.total);
+  }, [finance]);
+
   // 依類別（先分群，再分類別）
   interface CatRow {
     name: string;
@@ -249,6 +273,7 @@ export default function ReportsPage() {
       "分類",
       "費用類別",
       "人物",
+      "主角",
       "行程",
       "付款方式",
       "收支",
@@ -261,6 +286,7 @@ export default function ReportsPage() {
       calendarById.get(f.calendar_id ?? "")?.name ?? "",
       f.category_name ?? "",
       f.contact_name ?? "",
+      f.subject_names.join("、"),
       f.event_title ?? (f.is_prepaid_topup ? "（儲值）" : ""),
       f.payment_method ? PAYMENT_METHOD_LABEL[f.payment_method] : "",
       f.direction === "expense" ? "支出" : "收入",
@@ -406,6 +432,9 @@ export default function ReportsPage() {
             <h2 className="mb-2 flex items-center gap-1.5 text-lg font-semibold">
               <Users className="size-5" />
               依老師／對象
+              <span className="text-xs font-normal text-muted-foreground">
+                付給老師的月總額（跨大人小孩合計，可一次結清）
+              </span>
             </h2>
             <div className="divide-y overflow-hidden rounded-xl border bg-card">
               {byContact.map((g) => {
@@ -501,6 +530,30 @@ export default function ReportsPage() {
               })}
             </div>
           </section>
+
+          {/* 依主角（誰的花費）：大人／小孩分別的支出 */}
+          {bySubject.length > 0 && (
+            <section>
+              <h2 className="mb-2 flex items-center gap-1.5 text-lg font-semibold">
+                <Users className="size-5" />
+                依主角（誰的花費）
+              </h2>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {bySubject.map((g) => (
+                  <div
+                    key={g.name}
+                    className="flex items-center justify-between rounded-lg border bg-card px-3 py-2"
+                  >
+                    <div>
+                      <div className="text-sm font-medium">{g.name}</div>
+                      <div className="text-xs text-muted-foreground">{g.sessions} 堂</div>
+                    </div>
+                    <span className="font-semibold tabular-nums">{twd(g.total)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* 依類別（分群） */}
           <section>

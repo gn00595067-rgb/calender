@@ -36,6 +36,8 @@ export interface FinanceItem {
   event_title: string | null;
   contact_id: string | null;
   contact_name: string | null;
+  /** 這筆費用所屬行程的主角（誰的行程）；供「依主角」統計。空＝本人 */
+  subject_names: string[];
   note: string | null;
 }
 
@@ -97,6 +99,32 @@ export function useFinanceRange(
       const ctName = new Map((ctRes.data ?? []).map((c) => [c.id, c.name]));
       const catById = new Map((catRes.data ?? []).map((c) => [c.id, c]));
 
+      // 主角（誰的行程）：由費用所屬事件的 event_contacts(role=subject) 推導
+      const subjectsByEvent = new Map<string, string[]>();
+      if (eventIds.length) {
+        const { data: subjRows } = await supabase
+          .from("event_contacts")
+          .select("event_id, contact_id")
+          .eq("role", "subject")
+          .in("event_id", eventIds);
+        const subjIds = [...new Set((subjRows ?? []).map((r) => r.contact_id))];
+        const subjNameById = subjIds.length
+          ? new Map(
+              (
+                (await supabase.from("contacts").select("id, name").in("id", subjIds))
+                  .data ?? []
+              ).map((c) => [c.id, c.name]),
+            )
+          : new Map<string, string>();
+        for (const r of subjRows ?? []) {
+          const n = subjNameById.get(r.contact_id);
+          if (!n) continue;
+          const arr = subjectsByEvent.get(r.event_id);
+          if (arr) arr.push(n);
+          else subjectsByEvent.set(r.event_id, [n]);
+        }
+      }
+
       return rows.map((r) => {
         const cat = r.category_id ? catById.get(r.category_id) : null;
         return {
@@ -105,6 +133,9 @@ export function useFinanceRange(
           category_group: cat?.group_label ?? null,
           event_title: r.event_id ? (evTitle.get(r.event_id) ?? null) : null,
           contact_name: r.contact_id ? (ctName.get(r.contact_id) ?? null) : null,
+          subject_names: r.event_id
+            ? (subjectsByEvent.get(r.event_id) ?? [])
+            : [],
         };
       });
     },
