@@ -7,7 +7,7 @@ import { zoned } from "@/lib/calendar-utils";
 import { D } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import { freeOnDay, eventSegmentOnDay, minToHHMM } from "@/lib/availability";
-import { MonthChip, EventTwoLineCard } from "./event-card";
+import { MonthChip, MonthSpanBar, EventTwoLineCard } from "./event-card";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -62,6 +62,10 @@ type FreeLine = { start: number; end: number; label: string };
 function eventDays(event: CalEvent): string[] {
   const s = zoned(event.starts_at);
   const e = zoned(event.ends_at);
+  // 剛好結束在 00:00 的行程不算佔到隔天（如 22:00–00:00、整日行程存成隔天零點）
+  if (+e > +s && e.getHours() === 0 && e.getMinutes() === 0) {
+    e.setMinutes(-1);
+  }
   const startStr = format(s, "yyyy-MM-dd");
   const endStr = format(e, "yyyy-MM-dd");
   if (startStr === endStr) return [startStr];
@@ -75,6 +79,54 @@ function eventDays(event: CalEvent): string[] {
     cur.setDate(cur.getDate() + 1);
   }
   return days;
+}
+
+/** 一週內的一段跨日橫條：從第 startCol 欄畫到 endCol 欄（0–6），放在第 lane 層 */
+type SpanSeg = {
+  event: CalEvent;
+  startCol: number;
+  endCol: number;
+  lane: number;
+  continuesBefore: boolean;
+  continuesAfter: boolean;
+};
+
+/**
+ * 把一週內的跨日行程排成橫條：先開始、較長的排上層，
+ * 每段放進第一個不重疊的層（同 Google 日曆的排法）。
+ */
+function layoutSpans(
+  weekDs: string[],
+  multiDay: { event: CalEvent; days: string[] }[],
+): SpanSeg[] {
+  const segs: Omit<SpanSeg, "lane">[] = [];
+  for (const { event, days } of multiDay) {
+    const cols = weekDs
+      .map((ds, i) => (days.includes(ds) ? i : -1))
+      .filter((i) => i >= 0);
+    if (cols.length === 0) continue;
+    segs.push({
+      event,
+      startCol: cols[0],
+      endCol: cols[cols.length - 1],
+      continuesBefore: days[0] < weekDs[0],
+      continuesAfter: days[days.length - 1] > weekDs[6],
+    });
+  }
+  segs.sort(
+    (a, b) =>
+      a.startCol - b.startCol ||
+      b.endCol - b.startCol - (a.endCol - a.startCol) ||
+      +new Date(a.event.starts_at) - +new Date(b.event.starts_at),
+  );
+  // laneEnds[k]＝第 k 層目前佔到的最後一欄
+  const laneEnds: number[] = [];
+  return segs.map((s) => {
+    let lane = laneEnds.findIndex((end) => end < s.startCol);
+    if (lane === -1) lane = laneEnds.length;
+    laneEnds[lane] = s.endCol;
+    return { ...s, lane };
+  });
 }
 
 export function MonthView({
@@ -151,8 +203,16 @@ export function MonthView({
   const [peekDay, setPeekDay] = useState<string | null>(null);
 
   const byDay = new Map<string, CalEvent[]>();
+  // 跨日行程：月曆格上改畫成橫條，不在每天重複列 chip
+  const multiDay: { event: CalEvent; days: string[] }[] = [];
+  const multiDayIds = new Set<string>();
   for (const ev of events) {
-    for (const ds of eventDays(ev)) {
+    const evDays = eventDays(ev);
+    if (evDays.length > 1) {
+      multiDay.push({ event: ev, days: evDays });
+      multiDayIds.add(ev.id);
+    }
+    for (const ds of evDays) {
       const arr = byDay.get(ds);
       if (arr) arr.push(ev);
       else byDay.set(ds, [ev]);
@@ -189,168 +249,240 @@ export function MonthView({
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7">
-        {days.map((day) => {
-          const ds = format(day, "yyyy-MM-dd");
-          const dayEvents = (byDay.get(ds) ?? []).sort(
-            (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at),
-          );
-          const inMonth = isSameMonth(day, monthStart);
-          const today = isToday(day);
-          const shown = dayEvents.slice(0, 3);
-          const extra = dayEvents.length - shown.length;
-          // 聚焦模式：當天在工作時段內的真實標名空檔
-          const cellFree: FreeLine[] = focusOn
-            ? freeLinesFor(dayEvents, ds, FOCUS_MIN_GAP_CELL)
-            : [];
-
-          // 當天有時段（非整日）行程時，取最晚結束時間，做為「尾巴結束」提示。
-          const timed = dayEvents.filter((e) => !e.all_day);
-          const lastEndIso =
-            timed.length > 0
-              ? timed.reduce(
-                  (acc, e) =>
-                    new Date(e.ends_at) > new Date(acc) ? e.ends_at : acc,
-                  timed[0].ends_at,
-                )
-              : null;
-
-          return (
-            <div
-              key={ds}
-              onClick={() => setPeekDay(ds)}
-              className={cn(
-                "min-h-24 cursor-pointer border-b border-r p-1 last:border-r-0 [&:nth-child(7n)]:border-r-0",
-                !inMonth && "bg-muted/30 text-muted-foreground",
-                today &&
-                  "bg-amber-50 ring-2 ring-inset ring-amber-400 dark:bg-amber-950/30 dark:ring-amber-500/70",
-              )}
-            >
-              <div className="mb-1 flex items-center gap-1">
-                {canCreate && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onCreateAt(ds);
-                    }}
-                    aria-label={`在 ${format(day, "M月d日")} 新增行程`}
-                    title="新增行程"
-                    className="flex size-6 items-center justify-center rounded-full text-muted-foreground/50 transition hover:bg-accent hover:text-foreground touch:size-9"
-                  >
-                    <Plus className="size-3.5 touch:size-4" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPeekDay(ds);
-                  }}
-                  aria-label={`查看 ${format(day, "M月d日")} 整天`}
-                  title="查看整天"
+      {Array.from({ length: Math.ceil(days.length / 7) }, (_, w) => {
+        const week = days.slice(w * 7, w * 7 + 7);
+        const weekDs = week.map((d) => format(d, "yyyy-MM-dd"));
+        const spans = layoutSpans(weekDs, multiDay);
+        const laneCount = spans.reduce((m, s) => Math.max(m, s.lane + 1), 0);
+        // 列：日期列｜每層跨日橫條｜當天其他行程（撐滿剩餘高度）
+        const contentRow = laneCount + 2;
+        return (
+          <div
+            key={weekDs[0]}
+            className="grid min-h-24 grid-cols-7"
+            style={{
+              gridTemplateRows: `auto ${laneCount ? `repeat(${laneCount}, auto) ` : ""}1fr`,
+            }}
+          >
+            {week.map((day, i) => {
+              const ds = weekDs[i];
+              const inMonth = isSameMonth(day, monthStart);
+              const today = isToday(day);
+              // 格子底：整欄（跨所有列）負責框線、底色與「點空白處開當天面板」
+              return (
+                <div
+                  key={`bg-${ds}`}
+                  onClick={() => setPeekDay(ds)}
+                  style={{ gridColumn: i + 1, gridRow: "1 / -1" }}
                   className={cn(
-                    "ml-auto flex size-6 items-center justify-center rounded-full text-xs transition touch:size-9 touch:text-sm",
-                    today
-                      ? "bg-primary font-bold text-primary-foreground"
-                      : "hover:bg-accent",
-                    !today && !inMonth && "text-muted-foreground/60",
+                    "cursor-pointer border-b",
+                    i < 6 && "border-r",
+                    !inMonth && "bg-muted/30",
+                    today &&
+                      "bg-amber-50 ring-2 ring-inset ring-amber-400 dark:bg-amber-950/30 dark:ring-amber-500/70",
+                  )}
+                />
+              );
+            })}
+
+            {week.map((day, i) => {
+              const ds = weekDs[i];
+              const inMonth = isSameMonth(day, monthStart);
+              const today = isToday(day);
+              return (
+                <div
+                  key={`head-${ds}`}
+                  style={{ gridColumn: i + 1, gridRow: 1 }}
+                  className={cn(
+                    "pointer-events-none flex items-center gap-1 p-1 [&_button]:pointer-events-auto",
+                    !inMonth && "text-muted-foreground",
                   )}
                 >
-                  {format(day, "d")}
-                </button>
-              </div>
-              <div className="space-y-0.5">
-                {focusOn
-                  ? (() => {
-                      // 聚焦：標名空檔穿插於行程間；單一對象模式淡化非對象
-                      const nodes: React.ReactNode[] = [];
-                      let bi = 0;
-                      const flushBefore = (limit: number) => {
-                        while (bi < cellFree.length && cellFree[bi].start < limit) {
-                          const b = cellFree[bi++];
-                          nodes.push(
-                            <div
-                              key={`free-${ds}-${b.label}-${b.start}`}
-                              className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-primary/80"
-                            >
-                              <span className="h-px flex-1 bg-primary/25" />
-                              <span className="shrink-0 tabular-nums">
-                                {b.label} 空 {fmtDur(b.end - b.start)}
-                              </span>
-                              <span className="h-px flex-1 bg-primary/25" />
-                            </div>,
-                          );
-                        }
-                      };
-                      for (const ev of shown) {
-                        const segStart = eventSegmentOnDay(ev, ds)?.start ?? 0;
-                        flushBefore(segStart);
-                        nodes.push(
-                          <div
-                            key={ev.id + ds}
-                            className={cn(!isTarget(ev) && "opacity-40")}
-                          >
-                            <MonthChip
-                              event={ev}
-                              color={colorOf(ev.calendar_id)}
-                              conflict={conflicts.has(ev.id)}
-                              onClick={() => onSelectEvent(ev)}
-                            />
-                          </div>,
-                        );
-                      }
-                      flushBefore(Infinity);
-                      return nodes;
-                    })()
-                  : shown.map((ev, i) => {
-                      const prev = i > 0 ? shown[i - 1] : null;
-                      const gap =
-                        prev && !prev.all_day && !ev.all_day
-                          ? gapMinutes(prev, ev)
-                          : 0;
-                      return (
-                        <Fragment key={ev.id + ds}>
-                          {gap >= MIN_GAP_MINUTES && (
-                            <div className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-muted-foreground/70">
-                              <span className="h-px flex-1 bg-border" />
-                              <span className="shrink-0 tabular-nums">
-                                空 {fmtDur(gap)}
-                              </span>
-                              <span className="h-px flex-1 bg-border" />
-                            </div>
-                          )}
-                          <MonthChip
-                            event={ev}
-                            color={colorOf(ev.calendar_id)}
-                            conflict={conflicts.has(ev.id)}
-                            onClick={() => onSelectEvent(ev)}
-                          />
-                        </Fragment>
-                      );
-                    })}
-                {extra > 0 && (
+                  {canCreate && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCreateAt(ds);
+                      }}
+                      aria-label={`在 ${format(day, "M月d日")} 新增行程`}
+                      title="新增行程"
+                      className="flex size-6 items-center justify-center rounded-full text-muted-foreground/50 transition hover:bg-accent hover:text-foreground touch:size-9"
+                    >
+                      <Plus className="size-3.5 touch:size-4" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       setPeekDay(ds);
                     }}
-                    className="w-full rounded px-1 py-0.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-accent touch:py-2 touch:text-xs"
+                    aria-label={`查看 ${format(day, "M月d日")} 整天`}
+                    title="查看整天"
+                    className={cn(
+                      "ml-auto flex size-6 items-center justify-center rounded-full text-xs transition touch:size-9 touch:text-sm",
+                      today
+                        ? "bg-primary font-bold text-primary-foreground"
+                        : "hover:bg-accent",
+                      !today && !inMonth && "text-muted-foreground/60",
+                    )}
                   >
-                    +{extra} 筆 · 看整天
+                    {format(day, "d")}
                   </button>
+                </div>
+              );
+            })}
+
+            {spans.map((s) => (
+              <div
+                key={`span-${s.event.id}`}
+                style={{
+                  gridColumn: `${s.startCol + 1} / ${s.endCol + 2}`,
+                  gridRow: s.lane + 2,
+                }}
+                className={cn(
+                  "relative py-px",
+                  // 延續段貼齊格線，看起來才像同一條槓
+                  s.continuesBefore ? "pl-0" : "pl-1",
+                  s.continuesAfter ? "pr-0" : "pr-1",
+                  !isTarget(s.event) && "opacity-40",
                 )}
-                {lastEndIso && (
-                  <div className="pt-0.5 text-right text-[10px] font-medium leading-none text-muted-foreground/80 tabular-nums">
-                    結束 {D.time(lastEndIso)}
-                  </div>
-                )}
+              >
+                <MonthSpanBar
+                  event={s.event}
+                  color={colorOf(s.event.calendar_id)}
+                  conflict={conflicts.has(s.event.id)}
+                  showTime={!s.continuesBefore}
+                  continuesBefore={s.continuesBefore}
+                  continuesAfter={s.continuesAfter}
+                  onClick={() => onSelectEvent(s.event)}
+                />
               </div>
-            </div>
-          );
-        })}
-      </div>
+            ))}
+
+            {week.map((day, i) => {
+              const ds = weekDs[i];
+              const dayEvents = (byDay.get(ds) ?? []).sort(
+                (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at),
+              );
+              // 跨日行程已畫成上方橫條，格內只列當天的單日行程
+              const singleDay = dayEvents.filter((e) => !multiDayIds.has(e.id));
+              const shown = singleDay.slice(0, 3);
+              const extra = singleDay.length - shown.length;
+              // 空檔與「結束」提示仍以當天全部行程（含跨日）計算
+              const cellFree: FreeLine[] = focusOn
+                ? freeLinesFor(dayEvents, ds, FOCUS_MIN_GAP_CELL)
+                : [];
+
+              // 當天有時段（非整日）行程時，取最晚結束時間，做為「尾巴結束」提示。
+              const timed = dayEvents.filter((e) => !e.all_day);
+              const lastEndIso =
+                timed.length > 0
+                  ? timed.reduce(
+                      (acc, e) =>
+                        new Date(e.ends_at) > new Date(acc) ? e.ends_at : acc,
+                      timed[0].ends_at,
+                    )
+                  : null;
+
+              return (
+                <div
+                  key={`body-${ds}`}
+                  style={{ gridColumn: i + 1, gridRow: contentRow }}
+                  className="pointer-events-none space-y-0.5 p-1 pt-0.5 [&_button]:pointer-events-auto"
+                >
+                  {focusOn
+                    ? (() => {
+                        // 聚焦：標名空檔穿插於行程間；單一對象模式淡化非對象
+                        const nodes: React.ReactNode[] = [];
+                        let bi = 0;
+                        const flushBefore = (limit: number) => {
+                          while (bi < cellFree.length && cellFree[bi].start < limit) {
+                            const b = cellFree[bi++];
+                            nodes.push(
+                              <div
+                                key={`free-${ds}-${b.label}-${b.start}`}
+                                className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-primary/80"
+                              >
+                                <span className="h-px flex-1 bg-primary/25" />
+                                <span className="shrink-0 tabular-nums">
+                                  {b.label} 空 {fmtDur(b.end - b.start)}
+                                </span>
+                                <span className="h-px flex-1 bg-primary/25" />
+                              </div>,
+                            );
+                          }
+                        };
+                        for (const ev of shown) {
+                          const segStart = eventSegmentOnDay(ev, ds)?.start ?? 0;
+                          flushBefore(segStart);
+                          nodes.push(
+                            <div
+                              key={ev.id + ds}
+                              className={cn(!isTarget(ev) && "opacity-40")}
+                            >
+                              <MonthChip
+                                event={ev}
+                                color={colorOf(ev.calendar_id)}
+                                conflict={conflicts.has(ev.id)}
+                                onClick={() => onSelectEvent(ev)}
+                              />
+                            </div>,
+                          );
+                        }
+                        flushBefore(Infinity);
+                        return nodes;
+                      })()
+                    : shown.map((ev, i) => {
+                        const prev = i > 0 ? shown[i - 1] : null;
+                        const gap =
+                          prev && !prev.all_day && !ev.all_day
+                            ? gapMinutes(prev, ev)
+                            : 0;
+                        return (
+                          <Fragment key={ev.id + ds}>
+                            {gap >= MIN_GAP_MINUTES && (
+                              <div className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-muted-foreground/70">
+                                <span className="h-px flex-1 bg-border" />
+                                <span className="shrink-0 tabular-nums">
+                                  空 {fmtDur(gap)}
+                                </span>
+                                <span className="h-px flex-1 bg-border" />
+                              </div>
+                            )}
+                            <MonthChip
+                              event={ev}
+                              color={colorOf(ev.calendar_id)}
+                              conflict={conflicts.has(ev.id)}
+                              onClick={() => onSelectEvent(ev)}
+                            />
+                          </Fragment>
+                        );
+                      })}
+                  {extra > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPeekDay(ds);
+                      }}
+                      className="w-full rounded px-1 py-0.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-accent touch:py-2 touch:text-xs"
+                    >
+                      +{extra} 筆 · 看整天
+                    </button>
+                  )}
+                  {lastEndIso && (
+                    <div className="pt-0.5 text-right text-[10px] font-medium leading-none text-muted-foreground/80 tabular-nums">
+                      結束 {D.time(lastEndIso)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
 
       <Sheet

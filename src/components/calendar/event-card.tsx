@@ -95,6 +95,60 @@ export function EventTwoLineCard({
   );
 }
 
+/**
+ * 月視圖跨日橫條（像 Google 日曆一條槓橫跨多天）。
+ * 跨週時切成多段：從上週延續過來的段左側不圓角、延續到下週的段右側不圓角。
+ */
+export function MonthSpanBar({
+  event,
+  color,
+  conflict = false,
+  showTime,
+  continuesBefore,
+  continuesAfter,
+  onClick,
+}: {
+  event: CalEvent;
+  color: string;
+  conflict?: boolean;
+  /** 只有開始那段顯示開始時間 */
+  showTime: boolean;
+  continuesBefore: boolean;
+  continuesAfter: boolean;
+  onClick?: () => void;
+}) {
+  const unread = useUnreadDot(event);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      style={{
+        ...chipStyle(color, conflict),
+        ...(continuesBefore ? { borderLeftWidth: 0 } : {}),
+      }}
+      className={cn(
+        "flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[11px] leading-tight font-medium hover:brightness-95 touch:gap-1.5 touch:px-1.5 touch:py-2 touch:text-xs",
+        continuesBefore && "rounded-l-none",
+        continuesAfter && "rounded-r-none",
+      )}
+    >
+      {continuesBefore && <span className="shrink-0 text-muted-foreground">‹</span>}
+      {event.is_important && <Star className="size-2.5 shrink-0 fill-amber-400 text-amber-500" />}
+      {showTime && !event.all_day && (
+        <span className="shrink-0 font-semibold tabular-nums" style={{ color }}>
+          {D.time(event.starts_at)}
+        </span>
+      )}
+      <span className="truncate">{event.title}</span>
+      {unread && <span className="size-1.5 shrink-0 rounded-full bg-red-600" />}
+      {continuesAfter && <span className="ml-auto shrink-0 text-muted-foreground">›</span>}
+    </button>
+  );
+}
+
 /** 月視圖單行 chip */
 export function MonthChip({
   event,
