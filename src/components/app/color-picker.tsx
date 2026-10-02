@@ -11,9 +11,19 @@ export function ColorPicker({
   value: string;
   onChange: (color: string) => void;
 }) {
+  // 舊分類可能用了已移出色盤的顏色：放在最前面，編輯時仍看得到目前選中的是哪個
+  const inPalette = COLOR_PALETTE.some(
+    (c) => c.toLowerCase() === value.toLowerCase(),
+  );
+  const colors = value && !inPalette ? [value, ...COLOR_PALETTE] : COLOR_PALETTE;
+
   return (
-    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="選擇顏色">
-      {COLOR_PALETTE.map((color) => {
+    <div
+      className="grid w-fit grid-cols-5 gap-2"
+      role="radiogroup"
+      aria-label="選擇顏色"
+    >
+      {colors.map((color) => {
         const active = value.toLowerCase() === color.toLowerCase();
         return (
           <button
@@ -29,7 +39,7 @@ export function ColorPicker({
             )}
             style={{ backgroundColor: color }}
           >
-            {active && <Check className="size-4 text-white" />}
+            {active && <Check className="size-4 text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.6)]" />}
           </button>
         );
       })}
