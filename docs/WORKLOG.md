@@ -197,3 +197,8 @@ spec：`docs/specs/時間衝突提醒.md`。
 **驗證**：tsc、eslint、next build 綠；rate-plans 純邏輯以 tsx 斷言驗證。未在瀏覽器實測。
 
 **下一步**：在 Supabase SQL Editor 套 0008 → 設定陳老師 1對1/1對2 → 新增 1 位、2 位小孩的課看金額與報表。
+
+## 2026-10-03 — 線上庫已套 0008_rate_plans
+
+使用者於 Supabase SQL Editor 執行成功；驗證：15 位有舊費率的老師都已轉成「1對1」方案，finance_records 快照欄位可查。
+**下一步**：實測設定 1對2 方案 → 新增 1 位／2 位小孩的課 → 看報表。
