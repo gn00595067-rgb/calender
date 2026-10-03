@@ -34,6 +34,7 @@ import { useAppData } from "@/components/app/app-data";
 import {
   useEventEditData,
   useContactsBilling,
+  isLegacyPlanId,
   useCategories,
 } from "@/lib/client/lookups";
 import { usePrepaidAccounts } from "@/lib/client/prepaid";
@@ -51,6 +52,14 @@ import { utcToTaipeiWall, taipeiWallToUtcISO, twd } from "@/lib/date";
 import { addMinutesToWall, wallWeekday, diffMinutes } from "@/lib/wall-time";
 import { fetchEventsInRange, type CalEvent } from "@/lib/client/events";
 import { ConflictPrompt } from "./conflict-prompt";
+import {
+  pickPlan,
+  planAmount,
+  planSummary,
+  splitAmount,
+  type RatePlan,
+} from "@/lib/rate-plans";
+import { cn } from "@/lib/utils";
 
 interface FormValues {
   calendarId: string;
@@ -77,6 +86,8 @@ interface FormValues {
   financePaymentMethod: PaymentMethod | "";
   financePrepaidAccountId: string | null;
   financeSettled: boolean;
+  /** 收費方案（1對1／1對2…）；老師沒設方案時為 null */
+  financePlanId: string | null;
 }
 
 function plusMonths(dateStr: string, m: number): string {
@@ -127,6 +138,12 @@ export function EventModal({
   const [conflictList, setConflictList] = useState<CalEvent[] | null>(null);
   const [checking, setChecking] = useState(false);
   const pendingValues = useRef<FormValues | null>(null);
+  /** 使用者手動改過金額 → 不再自動覆蓋，改顯示［套用］ */
+  const amountTouchedRef = useRef(false);
+  /** 使用者手動選過方案 → 改主角人數時不自動換方案 */
+  const planManualRef = useRef(false);
+  /** 上一次處理過的收費老師（偵測換老師） */
+  const billingContactRef = useRef<string | null>(null);
 
   const editData = useEventEditData(mode === "edit" && open ? (event?.id ?? null) : null);
 
@@ -166,6 +183,7 @@ export function EventModal({
       financePaymentMethod: "",
       financePrepaidAccountId: null,
       financeSettled: false,
+      financePlanId: null,
     };
   }
 
@@ -174,6 +192,9 @@ export function EventModal({
     if (!open) return;
     setConflictList(null);
     pendingValues.current = null;
+    amountTouchedRef.current = false;
+    planManualRef.current = false;
+    billingContactRef.current = null;
     if (mode === "edit" && event) {
       reset({
         calendarId: event.calendar_id,
@@ -200,6 +221,7 @@ export function EventModal({
         financePaymentMethod: "",
         financePrepaidAccountId: null,
         financeSettled: false,
+        financePlanId: null,
       });
     } else {
       reset(buildDefaults());
@@ -227,6 +249,11 @@ export function EventModal({
         editData.data.finance.prepaid_account_id ?? null,
       );
       setValue("financeSettled", editData.data.finance.is_settled);
+      // 既有金額是使用者當時確認過的，不自動覆蓋；改了人數／時長只會出現［套用］提示
+      amountTouchedRef.current = true;
+      const planId = editData.data.finance.rate_plan_id ?? null;
+      setValue("financePlanId", planId);
+      planManualRef.current = !!planId;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editData.data]);
@@ -247,17 +274,27 @@ export function EventModal({
   const categories = useCategories();
   const prepaid = usePrepaidAccounts({ activeOnly: true });
 
-  // 目前選到、且有預設收費的老師（供顯示帶入提示）
-  const autoBillingContact = (contactsBilling.data ?? []).find(
-    (b) => participantIds.includes(b.id) && b.default_rate != null,
-  );
+  // 收費老師：相關人物中（依選取順序）第一位有收費方案者
+  const billingContact =
+    participantIds
+      .map((id) => (contactsBilling.data ?? []).find((b) => b.id === id))
+      .find((b) => b && b.plans.length > 0) ?? null;
+  const plans = billingContact?.plans ?? [];
+  const subjectIds = watch("subjectIds");
+  // 上課的小孩人數＝主角數（沒選主角視為 1 人）
+  const learners = Math.max(subjectIds.length, 1);
+  const financePlanId = watch("financePlanId");
+  const selectedPlan = plans.find((p) => p.id === financePlanId) ?? null;
+  const durationMin = Math.max(diffMinutes(startWall, endWall), 0);
+  const suggestedAmount = selectedPlan ? planAmount(selectedPlan, durationMin) : null;
+  const maxHeadcount = plans.reduce((m, p) => Math.max(m, p.headcount), 0);
 
   const financePaymentMethod = watch("financePaymentMethod");
   const usesPrepaid =
     financePaymentMethod === "prepaid_deduct" ||
     financePaymentMethod === "prepaid_term";
-  // 可扣抵帳戶：屬於所選老師或通用（未指定老師）者
-  const firstContactId = participantIds[0] ?? null;
+  // 可扣抵帳戶：屬於收費老師或通用（未指定老師）者
+  const firstContactId = billingContact?.id ?? participantIds[0] ?? null;
   const prepaidChoices = (prepaid.data ?? []).filter(
     (a) =>
       !a.contact_id ||
@@ -265,34 +302,23 @@ export function EventModal({
       a.id === watch("financePrepaidAccountId"),
   );
 
-  // 選到「有預設收費」的老師 → 自動帶入財務（金額/類別/付款方式）。
-  // 每位老師只自動套用一次，且不覆蓋使用者已輸入的金額。
-  const autoContactRef = useRef<string | null>(null);
+  // 選到「有收費方案」的老師 → 帶入財務預設（類別/方向/付款方式）。
+  // 每位老師只套用一次；使用者已自行輸入金額時不覆蓋。
   useEffect(() => {
     if (!canFinance) return;
-    const billing = contactsBilling.data ?? [];
-    const c = participantIds
-      .map((id) => billing.find((b) => b.id === id))
-      .find((b) => b && b.default_rate != null);
-    if (!c) return;
-    if (autoContactRef.current === c.id) return;
-    // 使用者已自行輸入金額 → 記住這位、但不覆蓋
+    const c = billingContact;
+    const prev = billingContactRef.current;
+    if (!c || c.id === prev) return;
+    billingContactRef.current = c.id;
+    // 從 A 老師換成 B 老師：方案要重挑
+    if (prev) planManualRef.current = false;
     if (getValues("financeEnabled") && getValues("financeAmount")) {
-      autoContactRef.current = c.id;
+      if (!prev) amountTouchedRef.current = true;
       return;
     }
-    autoContactRef.current = c.id;
-
-    const mins = diffMinutes(getValues("startWall"), getValues("endWall"));
-    const hours = Math.max(mins, 0) / 60;
-    const amount =
-      c.billing_mode === "hourly"
-        ? Math.round((c.default_rate ?? 0) * hours)
-        : (c.default_rate ?? 0);
-
+    amountTouchedRef.current = false;
     setValue("financeEnabled", true);
     setValue("financeDirection", c.default_direction ?? "expense");
-    setValue("financeAmount", String(amount));
     if (c.default_category_id) {
       setValue("financeCategoryId", c.default_category_id);
       const name = (categories.data ?? []).find(
@@ -307,7 +333,25 @@ export function EventModal({
       if (meta) setValue("financeSettled", meta.defaultSettled);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participantIds, contactsBilling.data, canFinance]);
+  }, [billingContact?.id, canFinance]);
+
+  // 依主角人數自動挑方案（1 位→1對1、2 位→1對2）；手動選過就不動
+  useEffect(() => {
+    if (!canFinance || plans.length === 0) return;
+    const current = plans.find((p) => p.id === getValues("financePlanId"));
+    if (planManualRef.current && current) return;
+    const next = pickPlan(plans, learners);
+    if (next && next.id !== current?.id) setValue("financePlanId", next.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billingContact?.id, learners, plans.length, canFinance]);
+
+  // 方案／時長變動 → 重算金額（使用者沒手動改過才覆蓋）
+  useEffect(() => {
+    if (suggestedAmount == null || amountTouchedRef.current) return;
+    if (!getValues("financeEnabled")) return;
+    setValue("financeAmount", String(suggestedAmount));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestedAmount]);
 
   /** 找出與此行程同時段的既有時段行程（全部可存取分類；排除自己與整日行程） */
   async function findConflicts(v: FormValues): Promise<CalEvent[]> {
@@ -365,6 +409,13 @@ export function EventModal({
             // 有實際扣抵帳戶才算「已由預繳支付」，否則當一般支出計入
             coveredByPrepaid: usesPrepaidMethod && !!prepaidAccountId,
             isSettled: v.financeSettled,
+            contactId: billingContact?.id ?? null,
+            // 方案快照：舊費率暫代的方案（未套 0008）沒有真正 id，只存名稱
+            ratePlanId:
+              selectedPlan && !isLegacyPlanId(selectedPlan.id) ? selectedPlan.id : null,
+            lessonLabel: selectedPlan?.label ?? null,
+            headcount: selectedPlan?.headcount ?? null,
+            learnerCount: v.subjectIds.length > 0 ? v.subjectIds.length : null,
           }
         : null;
 
@@ -798,10 +849,20 @@ export function EventModal({
                 </div>
                 {watch("financeEnabled") && (
                   <div className="mt-3 space-y-3">
-                    {autoBillingContact && (
-                      <p className="rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground">
-                        已依〔{autoBillingContact.name}〕預設收費帶入，可直接修改；不影響老師設定。
-                      </p>
+                    {billingContact && plans.length > 0 && (
+                      <LessonPlanPicker
+                        contactName={billingContact.name}
+                        plans={plans}
+                        selectedId={financePlanId}
+                        subjectCount={subjectIds.length}
+                        maxHeadcount={maxHeadcount}
+                        onSelect={(id) => {
+                          planManualRef.current = true;
+                          // 主動換方案＝要用新方案的價錢
+                          amountTouchedRef.current = false;
+                          setValue("financePlanId", id);
+                        }}
+                      />
                     )}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
@@ -831,11 +892,29 @@ export function EventModal({
                           type="number"
                           min={0}
                           step={1}
-                          {...register("financeAmount")}
+                          {...register("financeAmount", {
+                            onChange: () => {
+                              amountTouchedRef.current = true;
+                            },
+                          })}
                           placeholder="0"
                         />
                       </div>
                     </div>
+                    {selectedPlan && suggestedAmount != null && (
+                      <PlanAmountHint
+                        summary={planSummary(selectedPlan)}
+                        hourly={selectedPlan.billing_mode === "hourly"}
+                        minutes={durationMin}
+                        suggested={suggestedAmount}
+                        current={Math.round(Number(watch("financeAmount")) || 0)}
+                        subjectCount={subjectIds.length}
+                        onApply={() => {
+                          amountTouchedRef.current = false;
+                          setValue("financeAmount", String(suggestedAmount));
+                        }}
+                      />
+                    )}
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <Label className="text-xs">費用類別</Label>
@@ -974,4 +1053,109 @@ export function EventModal({
 
 function nowWall(): string {
   return utcToTaipeiWall(new Date().toISOString()).slice(0, 11) + "09:00";
+}
+
+/** 上課形式：老師的收費方案（1對1／1對2…）切換鈕，附人數不符提示 */
+function LessonPlanPicker({
+  contactName,
+  plans,
+  selectedId,
+  subjectCount,
+  maxHeadcount,
+  onSelect,
+}: {
+  contactName: string;
+  plans: RatePlan[];
+  selectedId: string | null;
+  subjectCount: number;
+  maxHeadcount: number;
+  onSelect: (id: string) => void;
+}) {
+  const selected = plans.find((p) => p.id === selectedId) ?? null;
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">上課形式（{contactName}）</Label>
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="上課形式">
+        {plans.map((p) => {
+          const active = p.id === selectedId;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onSelect(p.id)}
+              className={cn(
+                "rounded-full border px-3 py-1 text-sm transition touch:py-2",
+                active
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "hover:bg-accent",
+              )}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      {selected && selected.headcount > Math.max(subjectCount, 1) && (
+        <p className="text-xs text-amber-600">
+          {selected.label} 但主角只選了 {subjectCount} 位小孩，要不要補上另一位？
+        </p>
+      )}
+      {subjectCount > maxHeadcount && (
+        <p className="text-xs text-amber-600">
+          {contactName} 沒有 1對{subjectCount} 的方案，金額先用 {selected?.label ?? "現有方案"} 計算；
+          可到「設定 → 人物」新增。
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** 依方案算出的建議金額；與目前金額不同時提供［套用］ */
+function PlanAmountHint({
+  summary,
+  hourly,
+  minutes,
+  suggested,
+  current,
+  subjectCount,
+  onApply,
+}: {
+  summary: string;
+  hourly: boolean;
+  minutes: number;
+  suggested: number;
+  current: number;
+  subjectCount: number;
+  onApply: () => void;
+}) {
+  const hours = Math.round((minutes / 60) * 100) / 100;
+  const each = subjectCount >= 2 ? splitAmount(current || suggested, subjectCount) : null;
+  return (
+    <div className="space-y-0.5 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-2">
+        <span>
+          依方案：{summary}
+          {hourly ? ` × ${hours} 小時` : ""} = {twd(suggested)}
+        </span>
+        {current !== suggested && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={onApply}
+          >
+            套用 {twd(suggested)}
+          </Button>
+        )}
+      </div>
+      {each && (
+        <div>
+          統計時 {subjectCount} 位小孩各分 {each.map((n) => twd(n)).join("／")}
+        </div>
+      )}
+    </div>
+  );
 }

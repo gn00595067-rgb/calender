@@ -29,7 +29,8 @@ export function secondLine(event: CalEvent): string {
   if (event.finance.length) {
     const total = event.finance.reduce((a, f) => a + f.amount, 0);
     const dir = sum >= 0 ? "支" : "收";
-    parts.push(`${dir} ${twd(total)}`);
+    const lesson = event.finance.find((f) => f.lesson_label)?.lesson_label;
+    parts.push(`${lesson ? `${lesson} ` : ""}${dir} ${twd(total)}`);
   }
   return parts.join(" · ");
 }

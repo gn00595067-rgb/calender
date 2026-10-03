@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { defaultPlanLabel, type RatePlan } from "@/lib/rate-plans";
 
 export interface ContactLite {
   id: string;
@@ -38,9 +39,61 @@ export interface ContactBilling {
     | "prepaid_deduct"
     | "prepaid_term"
     | null;
+  /** 收費方案（1對1／1對2…），依 position 排序；沒設收費者為空陣列 */
+  plans: RatePlan[];
 }
 
-/** 含收費預設的人物清單（供新增行程時自動帶入財務） */
+type ContactPlanSource = {
+  id: string;
+  billing_mode: "fixed" | "hourly" | null;
+  default_rate: number | null;
+};
+
+/**
+ * 讀所有人物的收費方案（依 contact_id 分組）。
+ * 0008 migration 尚未套用（查無資料表）時，退回用舊的單一費率當作「1對1」方案，
+ * 讓線上庫還沒更新時功能照舊可用。
+ */
+export async function fetchPlansByContact(
+  contacts: ContactPlanSource[],
+): Promise<Map<string, RatePlan[]>> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("contact_rate_plans")
+    .select("id, contact_id, label, headcount, billing_mode, rate, position")
+    .order("position", { ascending: true });
+  const map = new Map<string, RatePlan[]>();
+  if (error) {
+    for (const c of contacts) {
+      if (c.default_rate == null) continue;
+      map.set(c.id, [
+        {
+          id: `legacy-${c.id}`,
+          contact_id: c.id,
+          label: defaultPlanLabel(1),
+          headcount: 1,
+          billing_mode: c.billing_mode ?? "fixed",
+          rate: c.default_rate,
+          position: 0,
+        },
+      ]);
+    }
+    return map;
+  }
+  for (const p of data ?? []) {
+    const arr = map.get(p.contact_id);
+    if (arr) arr.push(p);
+    else map.set(p.contact_id, [p]);
+  }
+  return map;
+}
+
+/** 方案 id 是否為「舊費率暫代」（尚未套 0008，不能存進 rate_plan_id） */
+export function isLegacyPlanId(id: string | null | undefined): boolean {
+  return !!id && id.startsWith("legacy-");
+}
+
+/** 含收費預設與方案的人物清單（供新增行程時自動帶入財務） */
 export function useContactsBilling() {
   return useQuery({
     queryKey: ["contacts", "billing"],
@@ -52,7 +105,9 @@ export function useContactsBilling() {
           "id, name, billing_mode, default_rate, default_category_id, default_direction, default_payment_method",
         );
       if (error) throw new Error(error.message);
-      return data ?? [];
+      const rows = data ?? [];
+      const plans = await fetchPlansByContact(rows);
+      return rows.map((c) => ({ ...c, plans: plans.get(c.id) ?? [] }));
     },
   });
 }
@@ -112,6 +167,8 @@ export interface EventEditData {
       | null;
     prepaid_account_id: string | null;
     is_settled: boolean;
+    /** 0008 前的庫沒有此欄位 */
+    rate_plan_id?: string | null;
   } | null;
 }
 
@@ -129,9 +186,8 @@ export function useEventEditData(eventId: string | null) {
           .eq("event_id", eventId!),
         supabase
           .from("finance_records")
-          .select(
-            "id, direction, amount, category_label, category_id, payment_method, prepaid_account_id, is_settled",
-          )
+          // 用 * 而非列欄位：0008 前的庫沒有 rate_plan_id，列出會查詢失敗
+          .select("*")
           .eq("event_id", eventId!)
           .order("created_at", { ascending: true })
           .limit(1),

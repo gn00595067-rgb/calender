@@ -25,7 +25,13 @@ export interface CalEvent {
   /** 相關人物（拜訪／參與／對象） */
   participantNames: string[];
   tagNames: string[];
-  finance: { direction: "expense" | "income"; amount: number; is_settled: boolean }[];
+  finance: {
+    direction: "expense" | "income";
+    amount: number;
+    is_settled: boolean;
+    /** 上課形式快照（1對1／1對2…）；未用收費方案為 null */
+    lesson_label: string | null;
+  }[];
   noteCount: number;
   noteAuthorIds: string[];
 }
@@ -60,7 +66,8 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
     supabase.from("event_tags").select("event_id, tag_id").in("event_id", ids),
     supabase
       .from("finance_records")
-      .select("event_id, direction, amount, is_settled")
+      // 用 * 而非列欄位：0008 前的庫沒有 lesson_label，列出會查詢失敗
+      .select("*")
       .in("event_id", ids),
     supabase.from("event_notes").select("event_id, author_id").in("event_id", ids),
   ]);
@@ -106,6 +113,7 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
       direction: r.direction,
       amount: r.amount,
       is_settled: r.is_settled,
+      lesson_label: r.lesson_label ?? null,
     });
   }
   const noteCount = new Map<string, number>();

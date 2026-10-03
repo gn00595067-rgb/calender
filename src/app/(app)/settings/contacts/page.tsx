@@ -45,6 +45,8 @@ import {
   type PaymentMethod,
 } from "@/lib/constants";
 import { twd } from "@/lib/date";
+import { fetchPlansByContact, isLegacyPlanId } from "@/lib/client/lookups";
+import { defaultPlanLabel, planSummary, type RatePlan } from "@/lib/rate-plans";
 import {
   createContactAction,
   updateContactAction,
@@ -68,6 +70,17 @@ interface FullContact {
     | "prepaid_deduct"
     | "prepaid_term"
     | null;
+  plans: RatePlan[];
+}
+
+/** 表單中的一列方案（金額以字串暫存，方便輸入） */
+interface PlanDraft {
+  key: string;
+  id: string | null;
+  label: string;
+  headcount: number;
+  billingMode: BillingMode;
+  rate: string;
 }
 
 function useContactsFull() {
@@ -82,7 +95,9 @@ function useContactsFull() {
         )
         .order("name", { ascending: true });
       if (error) throw new Error(error.message);
-      return data ?? [];
+      const rows = data ?? [];
+      const plans = await fetchPlansByContact(rows);
+      return rows.map((c) => ({ ...c, plans: plans.get(c.id) ?? [] }));
     },
   });
 }
@@ -151,14 +166,17 @@ export default function ContactsSettingsPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                   {c.role_label && <span>{c.role_label}</span>}
-                  {c.default_rate != null && (
-                    <span className="rounded bg-muted px-1.5 py-0.5 tabular-nums">
-                      {twd(c.default_rate)}
-                      {c.billing_mode === "hourly" ? "／時" : "／堂"}
-                      {c.default_payment_method
-                        ? ` · ${PAYMENT_METHOD_LABEL[c.default_payment_method]}`
-                        : ""}
+                  {c.plans.map((p) => (
+                    <span
+                      key={p.id}
+                      className="rounded bg-muted px-1.5 py-0.5 tabular-nums"
+                    >
+                      {p.label} {twd(p.rate)}
+                      {p.billing_mode === "hourly" ? "／時" : "／堂"}
                     </span>
+                  ))}
+                  {c.plans.length > 0 && c.default_payment_method && (
+                    <span>{PAYMENT_METHOD_LABEL[c.default_payment_method]}</span>
                   )}
                 </div>
               </div>
@@ -240,9 +258,8 @@ function ContactFormDialog({
   const [roleLabel, setRoleLabel] = useState("");
   const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
-  // 預設收費
-  const [billingMode, setBillingMode] = useState<BillingMode>("fixed");
-  const [defaultRate, setDefaultRate] = useState("");
+  // 收費方案（1對1／1對2…）
+  const [plans, setPlans] = useState<PlanDraft[]>([]);
   const [defaultCategoryId, setDefaultCategoryId] = useState<string | null>(null);
   const [defaultDirection, setDefaultDirection] = useState<"expense" | "income">(
     "expense",
@@ -260,9 +277,16 @@ function ContactFormDialog({
     setPhone(contact?.phone ?? "");
     setNote(contact?.note ?? "");
     setIsFamily(contact?.is_family ?? false);
-    setBillingMode(contact?.billing_mode ?? "fixed");
-    setDefaultRate(
-      contact?.default_rate != null ? String(contact.default_rate) : "",
+    setPlans(
+      (contact?.plans ?? []).map((p) => ({
+        key: p.id,
+        // 舊費率暫代的方案（尚未套 0008）沒有真正的 id，存檔時當新方案
+        id: isLegacyPlanId(p.id) ? null : p.id,
+        label: p.label,
+        headcount: p.headcount,
+        billingMode: p.billing_mode,
+        rate: String(p.rate),
+      })),
     );
     setDefaultCategoryId(contact?.default_category_id ?? null);
     setDefaultDirection(contact?.default_direction ?? "expense");
@@ -271,19 +295,30 @@ function ContactFormDialog({
   }
   if (!open && init) setInit(false);
 
+  // 金額沒填的方案視為未完成，不送出
+  const filledPlans = plans.filter((p) => p.rate.trim() !== "");
+  const dupHeadcount = filledPlans.some(
+    (p, i) => filledPlans.findIndex((q) => q.headcount === p.headcount) !== i,
+  );
+
   const submit = () => {
     startTransition(async () => {
-      const rate = defaultRate.trim() ? Math.round(Number(defaultRate)) : null;
+      const hasRate = filledPlans.length > 0;
       const payload = {
         name,
         roleLabel: roleLabel || null,
         phone: phone || null,
         note: note || null,
         isFamily,
-        billingMode: rate != null ? billingMode : null,
-        defaultRate: rate,
+        plans: filledPlans.map((p) => ({
+          id: p.id,
+          label: p.label.trim() || defaultPlanLabel(p.headcount),
+          headcount: p.headcount,
+          billingMode: p.billingMode,
+          rate: Math.round(Number(p.rate)),
+        })),
         defaultCategoryId: defaultCategoryId,
-        defaultDirection: rate != null ? defaultDirection : null,
+        defaultDirection: hasRate ? defaultDirection : null,
         defaultPaymentMethod: defaultPaymentMethod || null,
       };
       const res =
@@ -363,44 +398,17 @@ function ContactFormDialog({
           {/* 預設收費：設一次，新增行程選到此人即自動帶入 */}
           <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
             <div className="text-sm font-medium">
-              預設收費（選填）
+              收費方案（選填）
               <span className="ml-1 text-xs font-normal text-muted-foreground">
-                設定後，新增行程選到此人會自動帶入
+                新增行程選到此人，會依小孩人數自動挑 1對1／1對2 並帶入金額
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">計費方式</Label>
-                <Select
-                  value={billingMode}
-                  onValueChange={(v) => setBillingMode(v as BillingMode)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BILLING_MODES.map((m) => (
-                      <SelectItem key={m.value} value={m.value}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">
-                  {billingMode === "hourly" ? "時薪（每小時）" : "每堂金額"}
-                </Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={defaultRate}
-                  onChange={(e) => setDefaultRate(e.target.value)}
-                  placeholder="例：1600"
-                />
-              </div>
-            </div>
+            <PlanEditor plans={plans} onChange={setPlans} />
+            {dupHeadcount && (
+              <p className="text-xs text-amber-600">
+                有兩個方案人數相同，新增行程時會預設挑排在前面的那個。
+              </p>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs">預設費用類別</Label>
               <CategorySelect
@@ -461,5 +469,131 @@ function ContactFormDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 收費方案清單編輯：每列＝名稱、人數、計費方式、金額（整堂總價） */
+function PlanEditor({
+  plans,
+  onChange,
+}: {
+  plans: PlanDraft[];
+  onChange: (plans: PlanDraft[]) => void;
+}) {
+  const update = (key: string, patch: Partial<PlanDraft>) =>
+    onChange(plans.map((p) => (p.key === key ? { ...p, ...patch } : p)));
+
+  const add = () => {
+    // 新方案預設人數＝目前最大人數 + 1（第一個是 1對1，第二個是 1對2）
+    const headcount = plans.reduce((m, p) => Math.max(m, p.headcount), 0) + 1;
+    onChange([
+      ...plans,
+      {
+        key: crypto.randomUUID(),
+        id: null,
+        label: defaultPlanLabel(headcount),
+        headcount,
+        billingMode: plans.at(-1)?.billingMode ?? "hourly",
+        rate: "",
+      },
+    ]);
+  };
+
+  return (
+    <div className="space-y-2">
+      {plans.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          尚未設定。例：1對1 時薪 1,200、1對2 時薪 1,800（兩人一起的整堂價）。
+        </p>
+      )}
+      {plans.map((p) => (
+        <div key={p.key} className="space-y-2 rounded-md border bg-background p-2">
+          <div className="flex items-center gap-2">
+            <Input
+              value={p.label}
+              onChange={(e) => update(p.key, { label: e.target.value })}
+              className="h-8 flex-1"
+              placeholder="方案名稱"
+              aria-label="方案名稱"
+            />
+            <Select
+              value={String(p.headcount)}
+              onValueChange={(v) => {
+                const headcount = Number(v);
+                // 名稱還是預設格式時，跟著人數改
+                const auto =
+                  p.label === defaultPlanLabel(p.headcount) || !p.label.trim();
+                update(p.key, {
+                  headcount,
+                  ...(auto ? { label: defaultPlanLabel(headcount) } : {}),
+                });
+              }}
+            >
+              <SelectTrigger className="h-8 w-24" aria-label="上課人數">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n} 位學生
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={() => onChange(plans.filter((x) => x.key !== p.key))}
+              aria-label="刪除方案"
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Select
+              value={p.billingMode}
+              onValueChange={(v) => update(p.key, { billingMode: v as BillingMode })}
+            >
+              <SelectTrigger className="h-8 w-full" aria-label="計費方式">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BILLING_MODES.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              value={p.rate}
+              onChange={(e) => update(p.key, { rate: e.target.value })}
+              className="h-8"
+              placeholder={p.billingMode === "hourly" ? "每小時（整堂）" : "每堂（整堂）"}
+              aria-label="金額"
+            />
+          </div>
+          {p.headcount >= 2 && p.rate.trim() !== "" && (
+            <p className="text-[11px] text-muted-foreground">
+              {planSummary({
+                label: p.label || defaultPlanLabel(p.headcount),
+                billing_mode: p.billingMode,
+                rate: Number(p.rate) || 0,
+              })}
+              ，為 {p.headcount} 人一起的整堂價；統計時平均分給每位小孩。
+            </p>
+          )}
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" onClick={add}>
+        <Plus className="size-4" />
+        新增方案
+      </Button>
+    </div>
   );
 }

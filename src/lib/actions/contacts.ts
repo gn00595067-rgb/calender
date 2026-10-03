@@ -4,6 +4,15 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getAuthed, fail, type ActionResult } from "./helpers";
 
+const planSchema = z.object({
+  /** 既有方案的 id；新方案不給 */
+  id: z.uuid().optional().nullable(),
+  label: z.string().trim().min(1, { error: "請輸入方案名稱" }).max(30),
+  headcount: z.number().int().min(1).max(30),
+  billingMode: z.enum(["fixed", "hourly"]),
+  rate: z.number().int().nonnegative(),
+});
+
 const contactSchema = z.object({
   name: z.string().trim().min(1, { error: "請輸入姓名" }).max(60),
   roleLabel: z.string().trim().max(40).optional().nullable(),
@@ -11,9 +20,8 @@ const contactSchema = z.object({
   note: z.string().trim().max(500).optional().nullable(),
   // 家人／本人：可當「主角（誰的行程）」
   isFamily: z.boolean().optional(),
-  // 預設收費（選填）
-  billingMode: z.enum(["fixed", "hourly"]).optional().nullable(),
-  defaultRate: z.number().int().nonnegative().optional().nullable(),
+  // 收費方案（1對1／1對2…）；未提供＝不動既有方案
+  plans: z.array(planSchema).max(10).optional(),
   defaultCategoryId: z.uuid().optional().nullable(),
   defaultDirection: z.enum(["expense", "income"]).optional().nullable(),
   defaultPaymentMethod: z
@@ -22,15 +30,77 @@ const contactSchema = z.object({
     .nullable(),
 });
 
-/** 收費欄位 → DB 欄位（create/update 共用） */
+/**
+ * 收費欄位 → DB 欄位（create/update 共用）。
+ * contacts.billing_mode/default_rate 已由方案表取代，仍同步寫入「人數最少的方案」，
+ * 讓 0008 migration 前的庫與舊程式（seed 腳本等）照常運作。
+ */
 function billingColumns(d: z.infer<typeof contactSchema>) {
-  return {
-    billing_mode: d.billingMode ?? null,
-    default_rate: d.defaultRate ?? null,
+  const base = {
     default_category_id: d.defaultCategoryId ?? null,
     default_direction: d.defaultDirection ?? null,
     default_payment_method: d.defaultPaymentMethod ?? null,
   };
+  if (!d.plans) return base;
+  const first = [...d.plans].sort((a, b) => a.headcount - b.headcount)[0];
+  return {
+    ...base,
+    billing_mode: first?.billingMode ?? null,
+    default_rate: first?.rate ?? null,
+  };
+}
+
+type Supa = Awaited<ReturnType<typeof getAuthed>>["supabase"];
+
+/**
+ * 以表單內容為準同步某人的方案：刪掉不在清單的、更新既有的、新增新的。
+ * 刪方案不影響歷史財務（財務存有方案名稱快照，rate_plan_id 會 set null）。
+ * 回傳錯誤訊息（null＝成功）。
+ */
+async function syncPlans(
+  supabase: Supa,
+  ownerId: string,
+  contactId: string,
+  plans: z.infer<typeof planSchema>[],
+): Promise<string | null> {
+  const { data: existing, error } = await supabase
+    .from("contact_rate_plans")
+    .select("id")
+    .eq("contact_id", contactId);
+  if (error) {
+    // 0008 尚未套用：只有單一 1對1 方案時，舊欄位已足以表達，不算失敗
+    const onlySimple =
+      plans.length === 0 || (plans.length === 1 && plans[0].headcount === 1);
+    return onlySimple
+      ? null
+      : "人物已儲存，但 1對2 等多個方案需先套用資料庫更新（0008_rate_plans）才能保存";
+  }
+  const keepIds = new Set(plans.map((p) => p.id).filter(Boolean) as string[]);
+  const removeIds = (existing ?? []).map((r) => r.id).filter((id) => !keepIds.has(id));
+  if (removeIds.length) {
+    const { error: delErr } = await supabase
+      .from("contact_rate_plans")
+      .delete()
+      .in("id", removeIds);
+    if (delErr) return delErr.message;
+  }
+  for (const [i, p] of plans.entries()) {
+    const row = {
+      label: p.label,
+      headcount: p.headcount,
+      billing_mode: p.billingMode,
+      rate: p.rate,
+      position: i,
+    };
+    const { error: upErr } =
+      p.id && (existing ?? []).some((r) => r.id === p.id)
+        ? await supabase.from("contact_rate_plans").update(row).eq("id", p.id)
+        : await supabase
+            .from("contact_rate_plans")
+            .insert({ ...row, owner_id: ownerId, contact_id: contactId });
+    if (upErr) return upErr.message;
+  }
+  return null;
 }
 
 export async function createContactAction(
@@ -54,6 +124,10 @@ export async function createContactAction(
       .select("id, name, role_label")
       .single();
     if (error || !data) return fail(error?.message ?? "建立失敗");
+    if (parsed.data.plans) {
+      const planErr = await syncPlans(supabase, user.id, data.id, parsed.data.plans);
+      if (planErr) return fail(planErr);
+    }
     revalidatePath("/", "layout");
     return { ok: true, data };
   } catch (e) {
@@ -69,7 +143,7 @@ export async function updateContactAction(
   const parsed = contactSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "輸入有誤");
   try {
-    const { supabase } = await getAuthed();
+    const { supabase, user } = await getAuthed();
     const { error } = await supabase
       .from("contacts")
       .update({
@@ -82,6 +156,10 @@ export async function updateContactAction(
       })
       .eq("id", id);
     if (error) return fail(error.message);
+    if (parsed.data.plans) {
+      const planErr = await syncPlans(supabase, user.id, id, parsed.data.plans);
+      if (planErr) return fail(planErr);
+    }
     revalidatePath("/", "layout");
     return { ok: true, data: undefined };
   } catch (e) {

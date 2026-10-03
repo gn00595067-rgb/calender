@@ -38,6 +38,10 @@ export interface FinanceItem {
   contact_name: string | null;
   /** 這筆費用所屬行程的主角（誰的行程）；供「依主角」統計。空＝本人 */
   subject_names: string[];
+  /** 上課形式快照（1對1／1對2…）；0008 前或未用方案為 null */
+  lesson_label: string | null;
+  /** 班型人數快照 */
+  headcount: number | null;
   note: string | null;
 }
 
@@ -58,9 +62,8 @@ export function useFinanceRange(
       const supabase = createClient();
       const { data, error } = await supabase
         .from("finance_records")
-        .select(
-          "id, occurred_on, direction, amount, category_label, category_id, payment_method, is_prepaid_topup, covered_by_prepaid, is_settled, calendar_id, event_id, contact_id, note",
-        )
+        // 用 * 而非列欄位：0008 前的庫沒有 lesson_label 等快照欄位，列出會查詢失敗
+        .select("*")
         .gte("occurred_on", start)
         .lte("occurred_on", end)
         .in("calendar_id", ids)
@@ -128,7 +131,22 @@ export function useFinanceRange(
       return rows.map((r) => {
         const cat = r.category_id ? catById.get(r.category_id) : null;
         return {
-          ...r,
+          id: r.id,
+          occurred_on: r.occurred_on,
+          direction: r.direction,
+          amount: r.amount,
+          category_label: r.category_label,
+          category_id: r.category_id,
+          payment_method: r.payment_method,
+          is_prepaid_topup: r.is_prepaid_topup,
+          covered_by_prepaid: r.covered_by_prepaid,
+          is_settled: r.is_settled,
+          calendar_id: r.calendar_id,
+          event_id: r.event_id,
+          contact_id: r.contact_id,
+          note: r.note,
+          lesson_label: r.lesson_label ?? null,
+          headcount: r.headcount ?? null,
           category_name: cat?.name ?? r.category_label ?? null,
           category_group: cat?.group_label ?? null,
           event_title: r.event_id ? (evTitle.get(r.event_id) ?? null) : null,

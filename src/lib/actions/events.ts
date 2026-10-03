@@ -27,7 +27,44 @@ const financeSchema = z.object({
   prepaidAccountId: z.uuid().optional().nullable(),
   /** 這堂由預繳帳戶支付（計次數不重複計支出） */
   coveredByPrepaid: z.boolean().optional().default(false),
+  /** 收費對象（有收費方案的老師）；未給則取第一位相關人物 */
+  contactId: z.uuid().optional().nullable(),
+  /** 收費方案快照（1對1／1對2…）；未用方案則全為 null */
+  ratePlanId: z.uuid().optional().nullable(),
+  lessonLabel: z.string().trim().max(30).optional().nullable(),
+  headcount: z.number().int().min(1).max(30).optional().nullable(),
+  learnerCount: z.number().int().min(1).max(30).optional().nullable(),
 });
+
+type FinanceInput = z.infer<typeof financeSchema>;
+
+/** 收費方案快照欄位（0008 migration 新增） */
+function planSnapshot(f: FinanceInput) {
+  return {
+    rate_plan_id: f.ratePlanId ?? null,
+    lesson_label: f.lessonLabel ?? null,
+    headcount: f.headcount ?? null,
+    learner_count: f.learnerCount ?? null,
+  };
+}
+
+const SNAPSHOT_KEYS = ["rate_plan_id", "lesson_label", "headcount", "learner_count"] as const;
+
+/** 查無欄位（0008 尚未套用到此庫）的錯誤 */
+function isMissingColumn(err: { code?: string; message?: string } | null): boolean {
+  if (!err) return false;
+  return (
+    err.code === "PGRST204" ||
+    err.code === "42703" ||
+    SNAPSHOT_KEYS.some((k) => err.message?.includes(k))
+  );
+}
+
+function withoutSnapshot<T extends Record<string, unknown>>(row: T): T {
+  const copy: Record<string, unknown> = { ...row };
+  for (const k of SNAPSHOT_KEYS) delete copy[k];
+  return copy as T;
+}
 
 const baseEventSchema = z.object({
   calendarId: z.uuid(),
@@ -230,14 +267,21 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
         prepaid_account_id: d.finance!.prepaidAccountId ?? null,
         covered_by_prepaid: d.finance!.coveredByPrepaid ?? false,
         // 費用掛「相關人物（收費老師）」，供依老師結月
-        contact_id: d.participantIds[0] ?? null,
+        contact_id: d.finance!.contactId ?? d.participantIds[0] ?? null,
+        ...planSnapshot(d.finance!),
         // occurred_on 取台北曆日（非 UTC 直接切片，避免凌晨行程日期偏移）
         occurred_on: new Date(e.starts_at)
           .toLocaleString("sv-SE", { timeZone: TIME_ZONE })
           .slice(0, 10),
         is_settled: d.finance!.isSettled,
       }));
-      const { error: finErr } = await supabase.from("finance_records").insert(finRows);
+      let { error: finErr } = await supabase.from("finance_records").insert(finRows);
+      // 線上庫還沒套 0008：去掉方案快照欄位再存一次，財務本身不能因此存不進去
+      if (isMissingColumn(finErr)) {
+        ({ error: finErr } = await supabase
+          .from("finance_records")
+          .insert(finRows.map(withoutSnapshot)));
+      }
       if (finErr) return fail(finErr.message);
     }
 
@@ -372,17 +416,21 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
           payment_method: d.finance.paymentMethod ?? null,
           prepaid_account_id: d.finance.prepaidAccountId ?? null,
           covered_by_prepaid: d.finance.coveredByPrepaid ?? false,
-          contact_id: d.participantIds[0] ?? null,
+          contact_id: d.finance.contactId ?? d.participantIds[0] ?? null,
+          ...planSnapshot(d.finance),
           occurred_on: new Date(newStartUtc)
             .toLocaleString("sv-SE", { timeZone: TIME_ZONE })
             .slice(0, 10),
           is_settled: d.finance.isSettled,
         };
-        if (existingFin && existingFin.length) {
-          await supabase.from("finance_records").update(finPayload).eq("id", existingFin[0].id);
-        } else {
-          await supabase.from("finance_records").insert(finPayload);
-        }
+        const write = (payload: typeof finPayload) =>
+          existingFin && existingFin.length
+            ? supabase.from("finance_records").update(payload).eq("id", existingFin[0].id)
+            : supabase.from("finance_records").insert(payload);
+        let { error: finErr } = await write(finPayload);
+        // 線上庫還沒套 0008：去掉方案快照欄位再存一次
+        if (isMissingColumn(finErr)) ({ error: finErr } = await write(withoutSnapshot(finPayload)));
+        if (finErr) return fail(finErr.message);
       } else if (existingFin && existingFin.length) {
         await supabase.from("finance_records").delete().eq("id", existingFin[0].id);
       }

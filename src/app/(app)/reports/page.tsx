@@ -48,6 +48,7 @@ import { downloadCsv } from "@/lib/csv";
 import { twd, D, taipeiTodayStr } from "@/lib/date";
 import { PAYMENT_METHOD_LABEL, CATEGORY_GROUPS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { splitAmount } from "@/lib/rate-plans";
 
 type PeriodMode = "week" | "month" | "year";
 
@@ -147,6 +148,8 @@ export default function ReportsPage() {
     total: number;
     sessions: number;
     items: FinanceItem[];
+    /** 依上課形式（1對1／1對2…）的小計；沒有任何方案紀錄時為空 */
+    lessons: { label: string; sessions: number; total: number }[];
   }
   const byContact = useMemo<ContactGroup[]>(() => {
     const map = new Map<string, ContactGroup>();
@@ -154,17 +157,31 @@ export default function ReportsPage() {
       const name = f.contact_name ?? "未指定人物";
       let g = map.get(name);
       if (!g) {
-        g = { key: name, name, total: 0, sessions: 0, items: [] };
+        g = { key: name, name, total: 0, sessions: 0, items: [], lessons: [] };
         map.set(name, g);
       }
       g.total += spendOf(f);
       if (isSession(f)) g.sessions += 1;
       g.items.push(f);
     }
+    for (const g of map.values()) {
+      if (!g.items.some((i) => i.lesson_label)) continue;
+      const byLesson = new Map<string, { label: string; sessions: number; total: number }>();
+      for (const i of g.items) {
+        if (!isSession(i)) continue;
+        const label = i.lesson_label ?? "未指定";
+        const l = byLesson.get(label) ?? { label, sessions: 0, total: 0 };
+        l.sessions += 1;
+        l.total += spendOf(i);
+        byLesson.set(label, l);
+      }
+      g.lessons = [...byLesson.values()].sort((a, b) => a.label.localeCompare(b.label));
+    }
     return [...map.values()].sort((a, b) => b.total - a.total);
   }, [finance]);
 
   // 依主角（誰的花費）：小孩／本人各自的支出與堂數。空主角＝本人。
+  // 一筆有多位主角（如 1對2）時金額平均分攤，避免同一筆錢算給每個人而重複計算。
   interface SubjectGroup {
     name: string;
     total: number;
@@ -175,15 +192,16 @@ export default function ReportsPage() {
     for (const f of finance) {
       if (f.direction !== "expense") continue;
       const names = f.subject_names.length > 0 ? f.subject_names : ["本人"];
-      for (const name of names) {
+      const shares = splitAmount(spendOf(f), names.length);
+      names.forEach((name, i) => {
         let g = map.get(name);
         if (!g) {
           g = { name, total: 0, sessions: 0 };
           map.set(name, g);
         }
-        g.total += spendOf(f);
+        g.total += shares[i];
         if (isSession(f)) g.sessions += 1;
-      }
+      });
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
   }, [finance]);
@@ -274,6 +292,8 @@ export default function ReportsPage() {
       "費用類別",
       "人物",
       "主角",
+      "上課形式",
+      "每位主角分攤",
       "行程",
       "付款方式",
       "收支",
@@ -287,6 +307,10 @@ export default function ReportsPage() {
       f.category_name ?? "",
       f.contact_name ?? "",
       f.subject_names.join("、"),
+      f.lesson_label ?? "",
+      f.subject_names.length >= 2
+        ? splitAmount(f.amount, f.subject_names.length).join("／")
+        : "",
       f.event_title ?? (f.is_prepaid_topup ? "（儲值）" : ""),
       f.payment_method ? PAYMENT_METHOD_LABEL[f.payment_method] : "",
       f.direction === "expense" ? "支出" : "收入",
@@ -461,6 +485,18 @@ export default function ReportsPage() {
                             {g.sessions} 堂
                             {unsettledIds.length > 0 && ` · 未結清 ${unsettledIds.length}`}
                           </div>
+                          {g.lessons.length > 0 && (
+                            <div className="mt-0.5 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                              {g.lessons.map((l) => (
+                                <span
+                                  key={l.label}
+                                  className="rounded bg-muted px-1.5 py-0.5 tabular-nums"
+                                >
+                                  {l.label} {l.sessions} 堂 {twd(l.total)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <div className="shrink-0 text-right font-semibold tabular-nums">
                           {twd(g.total)}
@@ -498,6 +534,11 @@ export default function ReportsPage() {
                               <span className="min-w-0 flex-1 truncate">
                                 {item.event_title ??
                                   (item.is_prepaid_topup ? "儲值" : item.note ?? "（無關聯行程）")}
+                                {item.lesson_label && (
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    · {item.lesson_label}
+                                  </span>
+                                )}
                                 {item.category_name && (
                                   <span className="ml-1 text-xs text-muted-foreground">
                                     · {item.category_name}

@@ -221,6 +221,42 @@ export interface Database {
         };
         Relationships: [];
       };
+      contact_rate_plans: {
+        Row: {
+          id: string;
+          owner_id: string;
+          contact_id: string;
+          label: string;
+          headcount: number;
+          billing_mode: "fixed" | "hourly";
+          rate: number;
+          position: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          contact_id: string;
+          label: string;
+          headcount?: number;
+          billing_mode: "fixed" | "hourly";
+          rate: number;
+          position?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          owner_id?: string;
+          contact_id?: string;
+          label?: string;
+          headcount?: number;
+          billing_mode?: "fixed" | "hourly";
+          rate?: number;
+          position?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       prepaid_accounts: {
         Row: {
           id: string;
@@ -313,6 +349,11 @@ export interface Database {
           is_prepaid_topup: boolean;
           covered_by_prepaid: boolean;
           created_at: string;
+          // 0008 收費方案快照（套 migration 前查不到，故標為可選）
+          rate_plan_id?: string | null;
+          lesson_label?: string | null;
+          headcount?: number | null;
+          learner_count?: number | null;
         };
         Insert: {
           id?: string;
@@ -337,6 +378,10 @@ export interface Database {
           is_prepaid_topup?: boolean;
           covered_by_prepaid?: boolean;
           created_at?: string;
+          rate_plan_id?: string | null;
+          lesson_label?: string | null;
+          headcount?: number | null;
+          learner_count?: number | null;
         };
         Update: {
           id?: string;
@@ -361,6 +406,10 @@ export interface Database {
           is_prepaid_topup?: boolean;
           covered_by_prepaid?: boolean;
           created_at?: string;
+          rate_plan_id?: string | null;
+          lesson_label?: string | null;
+          headcount?: number | null;
+          learner_count?: number | null;
         };
         Relationships: [];
       };

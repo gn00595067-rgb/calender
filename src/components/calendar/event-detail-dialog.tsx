@@ -40,6 +40,7 @@ import { RECURRENCE_OPTIONS } from "@/lib/constants";
 import { deleteEventAction } from "@/lib/actions/events";
 import { NotesSection } from "./notes-section";
 import type { CalEvent } from "@/lib/client/events";
+import { splitAmount } from "@/lib/rate-plans";
 
 export function EventDetailDialog({
   open,
@@ -159,7 +160,25 @@ export function EventDetailDialog({
                 <div className="flex flex-wrap gap-x-3 gap-y-1">
                   {event.finance.map((f, i) => (
                     <span key={i}>
+                      {f.lesson_label && (
+                        <span className="mr-1 rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
+                          {f.lesson_label}
+                        </span>
+                      )}
                       {f.direction === "expense" ? "支出" : "收入"} {twd(f.amount)}
+                      {/* 多位主角（如 1對2）：顯示每位小孩分攤 */}
+                      {event.subjectNames.length >= 2 && (
+                        <span className="text-muted-foreground">
+                          （
+                          {event.subjectNames
+                            .map(
+                              (n, j) =>
+                                `${n} ${twd(splitAmount(f.amount, event.subjectNames.length)[j])}`,
+                            )
+                            .join("、")}
+                          ）
+                        </span>
+                      )}
                       <span
                         className={
                           f.is_settled ? "text-emerald-600" : "text-amber-600"
