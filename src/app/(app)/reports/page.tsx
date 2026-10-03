@@ -186,6 +186,8 @@ export default function ReportsPage() {
     name: string;
     total: number;
     sessions: number;
+    /** 明細：每筆費用與此主角分到的金額（多位主角時為平均分攤後的那份） */
+    items: { f: FinanceItem; share: number; sharedWith: number }[];
   }
   const bySubject = useMemo<SubjectGroup[]>(() => {
     const map = new Map<string, SubjectGroup>();
@@ -193,14 +195,17 @@ export default function ReportsPage() {
       if (f.direction !== "expense") continue;
       const names = f.subject_names.length > 0 ? f.subject_names : ["本人"];
       const shares = splitAmount(spendOf(f), names.length);
+      // 明細顯示用：預繳扣抵的那堂不計入支出，但仍列出它原本的分攤金額
+      const amountShares = splitAmount(f.amount, names.length);
       names.forEach((name, i) => {
         let g = map.get(name);
         if (!g) {
-          g = { name, total: 0, sessions: 0 };
+          g = { name, total: 0, sessions: 0, items: [] };
           map.set(name, g);
         }
         g.total += shares[i];
         if (isSession(f)) g.sessions += 1;
+        g.items.push({ f, share: amountShares[i], sharedWith: names.length });
       });
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
@@ -579,19 +584,87 @@ export default function ReportsPage() {
                 <Users className="size-5" />
                 依主角（誰的花費）
               </h2>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {bySubject.map((g) => (
-                  <div
-                    key={g.name}
-                    className="flex items-center justify-between rounded-lg border bg-card px-3 py-2"
-                  >
-                    <div>
-                      <div className="text-sm font-medium">{g.name}</div>
-                      <div className="text-xs text-muted-foreground">{g.sessions} 堂</div>
+              <div className="divide-y overflow-hidden rounded-xl border bg-card">
+                {bySubject.map((g) => {
+                  // 展開狀態與「依老師」共用，用前綴避免和老師同名衝突
+                  const key = `subject:${g.name}`;
+                  const open = expanded.has(key);
+                  return (
+                    <div key={g.name}>
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(key)}
+                        className="flex w-full items-center gap-2 p-3 text-left"
+                      >
+                        {open ? (
+                          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium">{g.name}</div>
+                          <div className="text-xs text-muted-foreground">{g.sessions} 堂</div>
+                        </div>
+                        <div className="shrink-0 text-right font-semibold tabular-nums">
+                          {twd(g.total)}
+                        </div>
+                      </button>
+                      {open && (
+                        <div className="border-t bg-muted/20">
+                          {g.items
+                            .slice()
+                            .sort((a, b) => a.f.occurred_on.localeCompare(b.f.occurred_on))
+                            .map(({ f, share, sharedWith }) => (
+                              <div
+                                key={f.id}
+                                className="flex items-center gap-3 border-b px-3 py-2 pl-9 text-sm last:border-b-0"
+                              >
+                                <span className="w-12 shrink-0 tabular-nums text-muted-foreground">
+                                  {f.occurred_on.slice(5)}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate">
+                                  {f.event_title ??
+                                    (f.is_prepaid_topup ? "儲值" : f.note ?? "（無關聯行程）")}
+                                  {f.contact_name && (
+                                    <span className="ml-1 text-xs text-muted-foreground">
+                                      · {f.contact_name}
+                                    </span>
+                                  )}
+                                  {f.lesson_label && (
+                                    <span className="ml-1 text-xs text-muted-foreground">
+                                      · {f.lesson_label}
+                                    </span>
+                                  )}
+                                  {sharedWith >= 2 && (
+                                    <span className="ml-1 text-xs text-muted-foreground">
+                                      · 整堂 {twd(f.amount)} ÷ {sharedWith}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="shrink-0 tabular-nums">{twd(share)}</span>
+                                <span
+                                  className={cn(
+                                    "w-16 shrink-0 text-right text-xs",
+                                    f.covered_by_prepaid
+                                      ? "text-sky-600"
+                                      : f.is_settled
+                                        ? "text-emerald-600"
+                                        : "text-amber-600",
+                                  )}
+                                >
+                                  {f.covered_by_prepaid
+                                    ? "預繳扣抵"
+                                    : f.is_settled
+                                      ? "已結清"
+                                      : "未結清"}
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      )}
                     </div>
-                    <span className="font-semibold tabular-nums">{twd(g.total)}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}
