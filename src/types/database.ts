@@ -87,6 +87,12 @@ export interface Database {
           reminder_email_sent_at: string | null;
           created_at: string;
           updated_at: string;
+          // 0009 司機接送（套 migration 前查不到，故標為可選）
+          needs_driver?: boolean;
+          driver_trip?: "to" | "from" | "round" | null;
+          driver_pickup_minutes?: number | null;
+          driver_pickup_location?: string | null;
+          driver_note?: string | null;
         };
         Insert: {
           id?: string;
@@ -106,6 +112,12 @@ export interface Database {
           reminder_email_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          // 0009 司機接送（套 migration 前查不到，故標為可選）
+          needs_driver?: boolean;
+          driver_trip?: "to" | "from" | "round" | null;
+          driver_pickup_minutes?: number | null;
+          driver_pickup_location?: string | null;
+          driver_note?: string | null;
         };
         Update: {
           id?: string;
@@ -125,6 +137,12 @@ export interface Database {
           reminder_email_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          // 0009 司機接送（套 migration 前查不到，故標為可選）
+          needs_driver?: boolean;
+          driver_trip?: "to" | "from" | "round" | null;
+          driver_pickup_minutes?: number | null;
+          driver_pickup_location?: string | null;
+          driver_note?: string | null;
         };
         Relationships: [];
       };

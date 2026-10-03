@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useAppData } from "@/components/app/app-data";
+import { driverFromRow, type DriverInfo, type DriverTrip } from "@/lib/driver";
 
 /** 視圖用行程（含精簡關聯） */
 export interface CalEvent {
@@ -34,6 +35,8 @@ export interface CalEvent {
   }[];
   noteCount: number;
   noteAuthorIds: string[];
+  /** 司機接送設定；不需要司機為 null */
+  driver: DriverInfo | null;
 }
 
 /** 行程原始列（events 表 Row） */
@@ -50,6 +53,12 @@ type EventRowLite = {
   recurrence_rule: string | null;
   recurrence_group_id: string | null;
   reminder_minutes: number | null;
+  // 0009 司機接送（套 migration 前查不到）
+  needs_driver?: boolean;
+  driver_trip?: DriverTrip | null;
+  driver_pickup_minutes?: number | null;
+  driver_pickup_location?: string | null;
+  driver_note?: string | null;
 };
 
 /** 將行程原始列補上人物／標籤／財務／回饋數等關聯 */
@@ -148,6 +157,7 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
     finance: finByEvent.get(e.id) ?? [],
     noteCount: noteCount.get(e.id) ?? 0,
     noteAuthorIds: [...(noteAuthors.get(e.id) ?? [])],
+    driver: driverFromRow(e),
   }));
 }
 

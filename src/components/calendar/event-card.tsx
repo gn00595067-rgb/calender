@@ -1,6 +1,6 @@
 "use client";
 
-import { Star, MessageSquare } from "lucide-react";
+import { Star, MessageSquare, Car } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { D, twd } from "@/lib/date";
 import { eventStyle, chipStyle } from "./event-visuals";
@@ -74,6 +74,9 @@ export function EventTwoLineCard({
         <div className={cn("flex items-baseline gap-2", big ? "text-[15px]" : "text-sm")}>
           <span className="font-bold tabular-nums">{timeLabel(event)}</span>
           <span className="truncate font-medium">{event.title}</span>
+          {event.driver && (
+            <Car className="size-3.5 shrink-0 text-muted-foreground" aria-label="需要司機" />
+          )}
           {unread && (
             <span
               className="size-2 shrink-0 rounded-full bg-red-600"
@@ -144,6 +147,7 @@ export function MonthSpanBar({
         </span>
       )}
       <span className="truncate">{event.title}</span>
+      {event.driver && <Car className="size-3 shrink-0 text-muted-foreground" aria-label="需要司機" />}
       {unread && <span className="size-1.5 shrink-0 rounded-full bg-red-600" />}
       {continuesAfter && <span className="ml-auto shrink-0 text-muted-foreground">›</span>}
     </button>
@@ -183,6 +187,7 @@ export function MonthChip({
         </span>
       )}
       <span className="truncate">{event.title}</span>
+      {event.driver && <Car className="size-3 shrink-0 text-muted-foreground" aria-label="需要司機" />}
       {unread && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-red-600" />}
     </button>
   );

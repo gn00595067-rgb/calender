@@ -60,6 +60,13 @@ import {
   type RatePlan,
 } from "@/lib/rate-plans";
 import { cn } from "@/lib/utils";
+import {
+  DRIVER_TRIPS,
+  DRIVER_PICKUP_OPTIONS,
+  DEFAULT_PICKUP_MINUTES,
+  DEFAULT_PICKUP_PLACE,
+  type DriverTrip,
+} from "@/lib/driver";
 
 interface FormValues {
   calendarId: string;
@@ -88,6 +95,12 @@ interface FormValues {
   financeSettled: boolean;
   /** 收費方案（1對1／1對2…）；老師沒設方案時為 null */
   financePlanId: string | null;
+  /** 司機接送 */
+  driverEnabled: boolean;
+  driverTrip: DriverTrip;
+  driverPickupMinutes: number;
+  driverPickupLocation: string;
+  driverNote: string;
 }
 
 function plusMonths(dateStr: string, m: number): string {
@@ -184,6 +197,11 @@ export function EventModal({
       financePrepaidAccountId: null,
       financeSettled: false,
       financePlanId: null,
+      driverEnabled: false,
+      driverTrip: "round",
+      driverPickupMinutes: DEFAULT_PICKUP_MINUTES,
+      driverPickupLocation: "",
+      driverNote: "",
     };
   }
 
@@ -222,6 +240,11 @@ export function EventModal({
         financePrepaidAccountId: null,
         financeSettled: false,
         financePlanId: null,
+        driverEnabled: !!event.driver,
+        driverTrip: event.driver?.trip ?? "round",
+        driverPickupMinutes: event.driver?.pickupMinutes ?? DEFAULT_PICKUP_MINUTES,
+        driverPickupLocation: event.driver?.pickupLocation ?? "",
+        driverNote: event.driver?.note ?? "",
       });
     } else {
       reset(buildDefaults());
@@ -392,6 +415,14 @@ export function EventModal({
 
   /** 實際儲存；成功後刪除使用者在衝突面板勾選的舊行程 */
   function save(v: FormValues, deleteIds: string[]) {
+    const driver = v.driverEnabled
+      ? {
+          trip: v.driverTrip,
+          pickupMinutes: v.driverPickupMinutes,
+          pickupLocation: v.driverPickupLocation.trim() || null,
+          note: v.driverNote.trim() || null,
+        }
+      : null;
     const pmMeta = PAYMENT_METHODS.find(
       (p) => p.value === v.financePaymentMethod,
     );
@@ -442,6 +473,7 @@ export function EventModal({
               participantIds: v.participantIds,
               tagNames: v.tagNames,
               finance,
+              driver,
             })
           : await updateEventAction({
               id: event!.id,
@@ -459,6 +491,7 @@ export function EventModal({
               participantIds: v.participantIds,
               tagNames: v.tagNames,
               finance,
+              driver,
             });
 
       if (!res.ok) {
@@ -828,6 +861,103 @@ export function EventModal({
               </div>
             )}
 
+            {/* 司機接送：勾選後會出現在「司機行程」時間表 */}
+            <div className="rounded-lg border p-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="ev-driver" className="font-medium">
+                  需要司機接送
+                </Label>
+                <Controller
+                  control={control}
+                  name="driverEnabled"
+                  render={({ field }) => (
+                    <Switch
+                      id="ev-driver"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
+                />
+              </div>
+              {watch("driverEnabled") && (
+                <div className="mt-3 space-y-3">
+                  <Controller
+                    control={control}
+                    name="driverTrip"
+                    render={({ field }) => (
+                      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="接送方式">
+                        {DRIVER_TRIPS.map((t) => (
+                          <button
+                            key={t.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={field.value === t.value}
+                            onClick={() => field.onChange(t.value)}
+                            className={cn(
+                              "rounded-full border px-3 py-1 text-sm transition touch:py-2",
+                              field.value === t.value
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "hover:bg-accent",
+                            )}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  />
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {watch("driverTrip") !== "from" && !allDay && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">去程提早上車</Label>
+                        <Controller
+                          control={control}
+                          name="driverPickupMinutes"
+                          render={({ field }) => (
+                            <Select
+                              value={String(field.value)}
+                              onValueChange={(v) => field.onChange(Number(v))}
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {DRIVER_PICKUP_OPTIONS.map((m) => (
+                                  <SelectItem key={m} value={String(m)}>
+                                    {m === 0 ? "準時（開始時間）" : `提早 ${m} 分鐘`}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">上車地點（空白＝{DEFAULT_PICKUP_PLACE}）</Label>
+                      <Input
+                        {...register("driverPickupLocation")}
+                        placeholder={`例：${DEFAULT_PICKUP_PLACE}、公司`}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">給司機的備註</Label>
+                    <Input {...register("driverNote")} placeholder="例：在 B1 停車場等、要帶輪椅" />
+                  </div>
+                  <DriverPreview
+                    trip={watch("driverTrip")}
+                    allDay={allDay}
+                    startWall={startWall}
+                    endWall={endWall}
+                    pickupMinutes={watch("driverPickupMinutes")}
+                    home={watch("driverPickupLocation").trim() || DEFAULT_PICKUP_PLACE}
+                    dest={watch("location").trim() || "（地點未填）"}
+                  />
+                </div>
+              )}
+            </div>
+
             {/* 財務區塊：僅 owner/editor 可見 */}
             {canFinance && (
               <div className="rounded-lg border p-3">
@@ -1156,6 +1286,42 @@ function PlanAmountHint({
           統計時 {subjectCount} 位小孩各分 {each.map((n) => twd(n)).join("／")}
         </div>
       )}
+    </div>
+  );
+}
+
+/** 司機接送預覽：讓使用者確認上車時間與起訖點 */
+function DriverPreview({
+  trip,
+  allDay,
+  startWall,
+  endWall,
+  pickupMinutes,
+  home,
+  dest,
+}: {
+  trip: DriverTrip;
+  allDay: boolean;
+  startWall: string;
+  endWall: string;
+  pickupMinutes: number;
+  home: string;
+  dest: string;
+}) {
+  const lines: string[] = [];
+  if (trip !== "from") {
+    const t = allDay ? "整日" : addMinutesToWall(startWall, -pickupMinutes).slice(11);
+    lines.push(`去程 ${t} 上車：${home} → ${dest}`);
+  }
+  if (trip !== "to") {
+    const t = allDay ? "整日" : endWall.slice(11);
+    lines.push(`回程 ${t} 上車：${dest} → ${home}`);
+  }
+  return (
+    <div className="rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground">
+      {lines.map((l) => (
+        <div key={l}>{l}</div>
+      ))}
     </div>
   );
 }

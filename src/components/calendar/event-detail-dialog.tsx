@@ -14,6 +14,7 @@ import {
   Pencil,
   Trash2,
   Wallet,
+  Car,
 } from "lucide-react";
 import {
   Dialog,
@@ -41,6 +42,7 @@ import { deleteEventAction } from "@/lib/actions/events";
 import { NotesSection } from "./notes-section";
 import type { CalEvent } from "@/lib/client/events";
 import { splitAmount } from "@/lib/rate-plans";
+import { driverLegs } from "@/lib/driver";
 
 export function EventDetailDialog({
   open,
@@ -127,6 +129,23 @@ export function EventDetailDialog({
               <Row icon={Repeat}>重複行程（{recurrenceLabel}）</Row>
             )}
             {event.location && <Row icon={MapPin}>{event.location}</Row>}
+            {event.driver && (
+              <Row icon={Car}>
+                <div className="space-y-0.5">
+                  {driverLegs(event).map((l) => (
+                    <div key={l.kind}>
+                      <span className="font-medium tabular-nums">
+                        {l.kind === "to" ? "去程" : "回程"} {l.allDay ? "整日" : D.time(l.at)}
+                      </span>{" "}
+                      {l.from} → {l.to}
+                    </div>
+                  ))}
+                  {event.driver.note && (
+                    <div className="text-muted-foreground">備註：{event.driver.note}</div>
+                  )}
+                </div>
+              </Row>
+            )}
             {event.subjectNames.length > 0 && (
               <Row icon={Users}>
                 <span className="text-muted-foreground">主角：</span>

@@ -50,13 +50,16 @@ function planSnapshot(f: FinanceInput) {
 
 const SNAPSHOT_KEYS = ["rate_plan_id", "lesson_label", "headcount", "learner_count"] as const;
 
-/** 查無欄位（0008 尚未套用到此庫）的錯誤 */
-function isMissingColumn(err: { code?: string; message?: string } | null): boolean {
+/** 查無欄位（migration 尚未套用到此庫）的錯誤；預設檢查 0008 方案快照欄位 */
+function isMissingColumn(
+  err: { code?: string; message?: string } | null,
+  keys: readonly string[] = SNAPSHOT_KEYS,
+): boolean {
   if (!err) return false;
   return (
     err.code === "PGRST204" ||
     err.code === "42703" ||
-    SNAPSHOT_KEYS.some((k) => err.message?.includes(k))
+    keys.some((k) => err.message?.includes(k))
   );
 }
 
@@ -86,7 +89,42 @@ const baseEventSchema = z.object({
   participantIds: z.array(z.uuid()).default([]),
   tagNames: z.array(z.string().trim().min(1).max(30)).default([]),
   finance: financeSchema.optional().nullable(),
+  // 司機接送；null＝不需要司機
+  driver: z
+    .object({
+      trip: z.enum(["to", "from", "round"]),
+      pickupMinutes: z.number().int().min(0).max(600),
+      pickupLocation: z.string().trim().max(200).optional().nullable(),
+      note: z.string().trim().max(500).optional().nullable(),
+    })
+    .optional()
+    .nullable(),
 });
+
+/** 司機接送 → events 欄位（0009 migration 新增） */
+function driverColumns(drv: z.infer<typeof baseEventSchema>["driver"]) {
+  return {
+    needs_driver: !!drv,
+    driver_trip: drv?.trip ?? null,
+    driver_pickup_minutes: drv?.pickupMinutes ?? null,
+    driver_pickup_location: drv?.pickupLocation || null,
+    driver_note: drv?.note || null,
+  };
+}
+
+const DRIVER_KEYS = [
+  "needs_driver",
+  "driver_trip",
+  "driver_pickup_minutes",
+  "driver_pickup_location",
+  "driver_note",
+] as const;
+
+function withoutDriver<T extends Record<string, unknown>>(row: T): T {
+  const copy: Record<string, unknown> = { ...row };
+  for (const k of DRIVER_KEYS) delete copy[k];
+  return copy as T;
+}
 
 function toUtc(wallStr: string): string {
   return fromZonedTime(wallStr, TIME_ZONE).toISOString();
@@ -219,13 +257,21 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
         recurrence_rule: d.recurrence === "none" ? null : d.recurrence,
         recurrence_group_id: groupId,
         reminder_minutes: d.reminderMinutes ?? null,
+        ...driverColumns(d.driver),
       };
     });
 
-    const { data: inserted, error } = await supabase
+    let { data: inserted, error } = await supabase
       .from("events")
       .insert(rows)
       .select("id, starts_at");
+    // 線上庫還沒套 0009：去掉司機欄位再存，行程本身不能因此存不進去
+    if (isMissingColumn(error, DRIVER_KEYS)) {
+      ({ data: inserted, error } = await supabase
+        .from("events")
+        .insert(rows.map(withoutDriver))
+        .select("id, starts_at"));
+    }
     if (error) return fail(error.message);
     const events = inserted ?? [];
 
@@ -328,6 +374,8 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
       reminder_minutes: d.reminderMinutes ?? null,
       // 改動後重置 Email 已寄旗標，讓提醒重新評估
       reminder_email_sent_at: null,
+      // 司機設定隨「之後全部」一起套用（例如每週上課都要接送）；沒帶＝不動
+      ...(d.driver !== undefined ? driverColumns(d.driver) : {}),
     };
 
     // 目標列：this = 僅此筆；following = 此筆與同群組之後全部
@@ -362,10 +410,15 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
         startsAt = toUtc(`${dateStr}T${newStartTime}`);
         endsAt = new Date(new Date(startsAt).getTime() + durationMs).toISOString();
       }
-      const { error: upErr } = await supabase
-        .from("events")
-        .update({ ...commonFields, starts_at: startsAt, ends_at: endsAt })
-        .eq("id", t.id);
+      const patch = { ...commonFields, starts_at: startsAt, ends_at: endsAt };
+      let { error: upErr } = await supabase.from("events").update(patch).eq("id", t.id);
+      // 線上庫還沒套 0009：去掉司機欄位再存
+      if (isMissingColumn(upErr, DRIVER_KEYS)) {
+        ({ error: upErr } = await supabase
+          .from("events")
+          .update(withoutDriver(patch))
+          .eq("id", t.id));
+      }
       if (upErr) return fail(upErr.message);
     }
 
