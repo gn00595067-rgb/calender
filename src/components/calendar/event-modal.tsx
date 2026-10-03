@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Star } from "lucide-react";
+import { Star, Mic, AlertTriangle, History, Info } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -118,6 +118,23 @@ export interface EventDraft {
   startWall?: string;
   endWall?: string;
   isImportant?: boolean;
+  subjectIds?: string[];
+  participantIds?: string[];
+  tagNames?: string[];
+  needsDriver?: boolean;
+  recurrence?: FormValues["recurrence"];
+  recurrenceWeekdays?: number[];
+  recurrenceUntil?: string;
+  /** 語音解析結果的說明（原句與提示），顯示在表單頂端供確認 */
+  voice?: VoiceHints;
+}
+
+/** 語音解析提示：待確認／依過去紀錄帶入／假設 */
+export interface VoiceHints {
+  transcript: string;
+  warnings: string[];
+  fromHabit: string[];
+  assumptions: string[];
 }
 
 export function EventModal({
@@ -180,14 +197,16 @@ export function EventModal({
       startWall: start,
       endWall: draft?.endWall ?? addMinutesToWall(start, 60),
       isImportant: draft?.isImportant ?? false,
-      recurrence: "none",
-      recurrenceUntil: plusMonths(start.slice(0, 10), 3),
-      recurrenceWeekdays: [wallWeekday(start)],
+      recurrence: draft?.recurrence ?? "none",
+      recurrenceUntil: draft?.recurrenceUntil ?? plusMonths(start.slice(0, 10), 3),
+      recurrenceWeekdays: draft?.recurrenceWeekdays?.length
+        ? draft.recurrenceWeekdays
+        : [wallWeekday(start)],
       reminderMinutes: null,
       scope: "this",
-      subjectIds: [],
-      participantIds: [],
-      tagNames: [],
+      subjectIds: draft?.subjectIds ?? [],
+      participantIds: draft?.participantIds ?? [],
+      tagNames: draft?.tagNames ?? [],
       financeEnabled: false,
       financeDirection: "expense",
       financeAmount: "",
@@ -197,7 +216,7 @@ export function EventModal({
       financePrepaidAccountId: null,
       financeSettled: false,
       financePlanId: null,
-      driverEnabled: false,
+      driverEnabled: draft?.needsDriver ?? false,
       driverTrip: "round",
       driverPickupMinutes: DEFAULT_PICKUP_MINUTES,
       driverPickupLocation: "",
@@ -546,6 +565,7 @@ export function EventModal({
           </p>
         ) : (
           <form onSubmit={onSubmit} className={conflictList ? "hidden" : "space-y-4"}>
+            {mode === "create" && draft?.voice && <VoicePanel hints={draft.voice} />}
             {isRecurringEdit && (
               <div className="rounded-lg border bg-muted/40 p-3">
                 <Label className="mb-2 block text-xs text-muted-foreground">
@@ -1322,6 +1342,54 @@ function DriverPreview({
       {lines.map((l) => (
         <div key={l}>{l}</div>
       ))}
+    </div>
+  );
+}
+
+const HABIT_FIELD_LABEL: Record<string, string> = {
+  time: "時間",
+  calendar: "分類",
+  subjects: "主角",
+  participants: "相關人物",
+  tags: "標籤",
+  location: "地點",
+  driver: "司機接送",
+};
+
+/** 語音解析面板：原句＋待確認／依過去紀錄帶入／假設，讓使用者一眼知道要補什麼 */
+function VoicePanel({ hints }: { hints: VoiceHints }) {
+  const habit = hints.fromHabit.map((f) => HABIT_FIELD_LABEL[f] ?? f);
+  return (
+    <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+      <div className="flex items-start gap-2">
+        <Mic className="mt-0.5 size-4 shrink-0 text-primary" />
+        <span className="text-muted-foreground">「{hints.transcript}」</span>
+      </div>
+      {hints.warnings.length > 0 && (
+        <ul className="space-y-1">
+          {hints.warnings.map((w) => (
+            <li key={w} className="flex items-start gap-1.5 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              {w}
+            </li>
+          ))}
+        </ul>
+      )}
+      {habit.length > 0 && (
+        <div className="flex items-start gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
+          <History className="mt-0.5 size-3.5 shrink-0" />
+          依過去紀錄帶入：{habit.join("、")}（請確認是否相同）
+        </div>
+      )}
+      {hints.assumptions.map((a) => (
+        <div key={a} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Info className="mt-0.5 size-3.5 shrink-0" />
+          {a}
+        </div>
+      ))}
+      {hints.warnings.length === 0 && (
+        <div className="text-xs text-muted-foreground">資訊看起來完整，確認無誤即可儲存。</div>
+      )}
     </div>
   );
 }

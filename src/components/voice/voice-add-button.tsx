@@ -81,20 +81,35 @@ export function VoiceAddButton({
         return;
       }
 
-      // 新增意圖：帶入「新增行程」對話框
+      // 新增意圖：帶入「新增行程」對話框；提示改顯示在表單頂端的語音面板
       setDraft({
         calendarId: data.calendarId,
         title: data.title,
         location: data.location ?? undefined,
         allDay: data.allDay,
-        startWall: data.startWall,
-        endWall: data.endWall,
+        startWall: data.startWall ?? undefined,
+        endWall: data.endWall ?? undefined,
         isImportant: data.isImportant,
+        subjectIds: data.subjectIds,
+        participantIds: data.participantIds,
+        tagNames: data.tagNames,
+        needsDriver: data.needsDriver,
+        recurrence: data.recurrence,
+        recurrenceWeekdays: data.weekdays,
+        recurrenceUntil: data.recurrenceUntil ?? undefined,
+        voice: {
+          transcript,
+          warnings: data.warnings ?? [],
+          fromHabit: data.fromHabit ?? [],
+          assumptions: [
+            ...(data.assumptions ?? []),
+            ...(data.note ? [data.note] : []),
+          ],
+        },
       });
       setOpen(false);
       setText("");
       setModalOpen(true);
-      if (data.note) toast.message(data.note);
     } catch {
       toast.error("網路錯誤，請再試一次");
     } finally {
@@ -135,8 +150,9 @@ export function VoiceAddButton({
               語音助理
             </DialogTitle>
             <DialogDescription>
-              說一句話即可，會自動判斷要「新增」還是「搜尋」。例如「明天下午三點跟客戶開會兩小時」會帶入新增行程；「幫我搜尋跟運動有關的行程」會直接帶你去搜尋。也可用鍵盤上的
-              🎤 聽寫或手動打字。
+              說一句話即可，會自動判斷要「新增」還是「搜尋」。講得越完整越準：誰、什麼時間、做什麼、跟誰、在哪、要不要司機。
+              例如「週二晚上六點哥哥桌球，郭老師，要司機接送」；沒講的部分會參考過去同類行程自動補上，並在確認畫面提醒你。
+              也可用鍵盤上的 🎤 聽寫或手動打字。
             </DialogDescription>
           </DialogHeader>
 
@@ -150,7 +166,7 @@ export function VoiceAddButton({
                   void submit();
                 }
               }}
-              placeholder="新增：下週一早上十點開產品會議一小時／搜尋：幫我找跟運動有關的行程"
+              placeholder="新增：週二晚上六點哥哥桌球，要司機接送／搜尋：幫我找跟運動有關的行程"
               rows={3}
               autoFocus
               className="pr-11"
