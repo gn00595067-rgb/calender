@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { defaultPlanLabel, type RatePlan } from "@/lib/rate-plans";
+import type { RoutineBlock } from "@/lib/availability";
 
 export interface ContactLite {
   id: string;
@@ -22,6 +23,27 @@ export function useContacts() {
         .order("name", { ascending: true });
       if (error) throw new Error(error.message);
       return data ?? [];
+    },
+  });
+}
+
+/**
+ * 家人的固定作息（名字 → 作息），供空檔計算排除上學等時段。
+ * 0014 migration 前沒有 routine 欄位：用 * 查詢，缺欄位時視為沒有作息。
+ */
+export function useRoutines() {
+  return useQuery({
+    queryKey: ["contacts", "routines"],
+    queryFn: async (): Promise<Map<string, RoutineBlock[]>> => {
+      const supabase = createClient();
+      const { data, error } = await supabase.from("contacts").select("*").eq("is_family", true);
+      const map = new Map<string, RoutineBlock[]>();
+      if (error) return map;
+      for (const c of data ?? []) {
+        const blocks = Array.isArray(c.routine) ? (c.routine as RoutineBlock[]) : [];
+        if (blocks.length) map.set(c.name, blocks);
+      }
+      return map;
     },
   });
 }

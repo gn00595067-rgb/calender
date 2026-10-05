@@ -35,6 +35,33 @@ export const WINDOW_PRESETS = [
 
 export type WindowKey = (typeof WINDOW_PRESETS)[number]["key"];
 
+/**
+ * 人物的固定作息（不算空檔），例如小孩平日上學。
+ * days 為 JS getDay（0=日..6=六）；時間為台北「HH:mm」；enabled=false 表示暫停（寒暑假）。
+ */
+export interface RoutineBlock {
+  label: string;
+  days: number[];
+  start: string;
+  end: string;
+  enabled: boolean;
+}
+
+/** "HH:mm" → 當日分鐘數 */
+function hhmmToMin(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/** 某日（yyyy-MM-dd）生效的固定作息區段 */
+export function routineSegments(blocks: RoutineBlock[], dayStr: string): Segment[] {
+  const weekday = new Date(`${dayStr}T12:00:00Z`).getUTCDay();
+  return blocks
+    .filter((b) => b.enabled && b.days.includes(weekday))
+    .map((b) => ({ start: hhmmToMin(b.start), end: hhmmToMin(b.end) }))
+    .filter((s) => s.end > s.start);
+}
+
 export function windowFromKey(key: WindowKey): WorkWindow {
   const p = WINDOW_PRESETS.find((w) => w.key === key) ?? WINDOW_PRESETS[0];
   return { start: p.start, end: p.end };
@@ -126,8 +153,13 @@ export function freeOnDay(
   dayStr: string,
   w: WorkWindow,
   minGap: number,
+  /** 額外的忙碌區段（如固定作息：上學），一併視為沒空 */
+  extraBusy: Segment[] = [],
 ): Segment[] {
-  const busy = busyOnDay(events, dayStr, w);
+  const clipped = extraBusy
+    .map((s) => ({ start: Math.max(s.start, w.start), end: Math.min(s.end, w.end) }))
+    .filter((s) => s.end > s.start);
+  const busy = mergeSegments([...busyOnDay(events, dayStr, w), ...clipped]);
   const free: Segment[] = [];
   let cursor = w.start;
   for (const b of busy) {

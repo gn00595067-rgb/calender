@@ -48,6 +48,7 @@ import { twd } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import { fetchPlansByContact, isLegacyPlanId, useContacts } from "@/lib/client/lookups";
 import { defaultPlanLabel, planSummary, type RatePlan } from "@/lib/rate-plans";
+import type { RoutineBlock } from "@/lib/availability";
 import {
   createContactAction,
   updateContactAction,
@@ -73,6 +74,8 @@ interface FullContact {
     | "prepaid_term"
     | null;
   plans: RatePlan[];
+  /** 固定作息（不算空檔） */
+  routine: RoutineBlock[];
 }
 
 /** 表單中的一列方案（金額以字串暫存，方便輸入） */
@@ -97,14 +100,27 @@ function useContactsFull() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("contacts")
-        .select(
-          "id, name, role_label, phone, note, is_family, billing_mode, default_rate, default_category_id, default_direction, default_payment_method",
-        )
+        // 用 * 而非列欄位：0014 前的庫沒有 routine，列出會查詢失敗
+        .select("*")
         .order("name", { ascending: true });
       if (error) throw new Error(error.message);
       const rows = data ?? [];
       const plans = await fetchPlansByContact(rows);
-      return rows.map((c) => ({ ...c, plans: plans.get(c.id) ?? [] }));
+      return rows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        role_label: c.role_label,
+        phone: c.phone,
+        note: c.note,
+        is_family: c.is_family,
+        billing_mode: c.billing_mode,
+        default_rate: c.default_rate,
+        default_category_id: c.default_category_id,
+        default_direction: c.default_direction,
+        default_payment_method: c.default_payment_method,
+        routine: Array.isArray(c.routine) ? (c.routine as RoutineBlock[]) : [],
+        plans: plans.get(c.id) ?? [],
+      }));
     },
   });
 }
@@ -280,6 +296,7 @@ function ContactFormDialog({
     PaymentMethod | ""
   >("");
   const [isFamily, setIsFamily] = useState(false);
+  const [routine, setRoutine] = useState<RoutineBlock[]>([]);
   const [pending, startTransition] = useTransition();
   const [init, setInit] = useState(false);
 
@@ -289,6 +306,7 @@ function ContactFormDialog({
     setPhone(contact?.phone ?? "");
     setNote(contact?.note ?? "");
     setIsFamily(contact?.is_family ?? false);
+    setRoutine(contact?.routine ?? []);
     setPlans(
       (contact?.plans ?? []).map((p) => ({
         key: p.id,
@@ -327,6 +345,8 @@ function ContactFormDialog({
         phone: phone || null,
         note: note || null,
         isFamily,
+        // 只有家人才有作息；非家人送空陣列清掉
+        routine: isFamily ? routine : [],
         plans: filledPlans.map((p) => ({
           id: p.id,
           label: p.label.trim() || defaultPlanLabel(p.headcount),
@@ -414,6 +434,8 @@ function ContactFormDialog({
               </span>
             </span>
           </label>
+
+          {isFamily && <RoutineEditor value={routine} onChange={setRoutine} />}
 
           {/* 預設收費：設一次，新增行程選到此人即自動帶入 */}
           <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
@@ -695,6 +717,110 @@ function PlanEditor({
       <Button type="button" variant="outline" size="sm" onClick={add}>
         <Plus className="size-4" />
         新增方案
+      </Button>
+    </div>
+  );
+}
+
+const WEEKDAY_ZH = ["日", "一", "二", "三", "四", "五", "六"];
+/** 週一起排列的 getDay 值 */
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+/** 固定作息編輯：如小孩平日上學，該時段在月曆不算空檔；寒暑假可暫停 */
+function RoutineEditor({
+  value,
+  onChange,
+}: {
+  value: RoutineBlock[];
+  onChange: (v: RoutineBlock[]) => void;
+}) {
+  const update = (i: number, patch: Partial<RoutineBlock>) =>
+    onChange(value.map((b, j) => (j === i ? { ...b, ...patch } : b)));
+  const addSchool = () =>
+    onChange([
+      ...value,
+      { label: "上學", days: [1, 2, 3, 4, 5], start: "08:00", end: "16:00", enabled: true },
+    ]);
+
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      <div className="text-sm font-medium">
+        固定作息（不算空檔）
+        <span className="ml-1 text-xs font-normal text-muted-foreground">
+          例如平日上學；這些時段在月曆不會被算成空檔
+        </span>
+      </div>
+      {value.map((b, i) => (
+        <div key={i} className="space-y-2 rounded-md border bg-background p-2">
+          <div className="flex items-center gap-2">
+            <Input
+              value={b.label}
+              onChange={(e) => update(i, { label: e.target.value })}
+              className="h-8 w-24"
+              aria-label="作息名稱"
+            />
+            <Input
+              type="time"
+              value={b.start}
+              onChange={(e) => update(i, { start: e.target.value })}
+              className="h-8 w-28"
+              aria-label="開始"
+            />
+            <span className="text-muted-foreground">–</span>
+            <Input
+              type="time"
+              value={b.end}
+              onChange={(e) => update(i, { end: e.target.value })}
+              className="h-8 w-28"
+              aria-label="結束"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="ml-auto size-8 shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={() => onChange(value.filter((_, j) => j !== i))}
+              aria-label="刪除作息"
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            {WEEK_ORDER.map((d) => {
+              const on = b.days.includes(d);
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() =>
+                    update(i, {
+                      days: on ? b.days.filter((x) => x !== d) : [...b.days, d],
+                    })
+                  }
+                  className={cn(
+                    "size-7 rounded-full border transition",
+                    on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
+                  )}
+                >
+                  {WEEKDAY_ZH[d]}
+                </button>
+              );
+            })}
+            <label className="ml-auto flex items-center gap-1.5">
+              <Checkbox
+                checked={b.enabled}
+                onCheckedChange={(c) => update(i, { enabled: !!c })}
+              />
+              啟用
+              <span className="text-muted-foreground">（寒暑假可取消）</span>
+            </label>
+          </div>
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" onClick={addSchool}>
+        <Plus className="size-4" />
+        新增作息（預設平日上學 08:00–16:00）
       </Button>
     </div>
   );

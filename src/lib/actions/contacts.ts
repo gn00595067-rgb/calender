@@ -25,6 +25,19 @@ const contactSchema = z.object({
   note: z.string().trim().max(500).optional().nullable(),
   // 家人／本人：可當「主角（誰的行程）」
   isFamily: z.boolean().optional(),
+  // 固定作息（不算空檔），例如平日上學；未提供＝不動
+  routine: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(20),
+        days: z.array(z.number().int().min(0).max(6)).min(1),
+        start: z.string().regex(/^\d{2}:\d{2}$/),
+        end: z.string().regex(/^\d{2}:\d{2}$/),
+        enabled: z.boolean(),
+      }),
+    )
+    .max(10)
+    .optional(),
   // 收費方案（1對1／1對2…）；未提供＝不動既有方案
   plans: z.array(planSchema).max(10).optional(),
   defaultCategoryId: z.uuid().optional().nullable(),
@@ -140,6 +153,26 @@ async function syncPlans(
   return null;
 }
 
+/**
+ * 0014 前的庫沒有 routine 欄位：沒設作息 → "retry"（去掉欄位重存）；
+ * 有設作息 → 提示先套 migration；其他錯誤 → null（交給呼叫端處理）。
+ */
+function routineColumnError(
+  error: { message: string } | null,
+  routine: unknown[] | undefined,
+): "retry" | string | null {
+  if (!error?.message.includes("routine")) return null;
+  return routine && routine.length > 0
+    ? "固定作息需先套用資料庫更新（0014_contact_routine）才能保存"
+    : "retry";
+}
+
+function withoutRoutine<T extends { routine?: unknown }>(row: T): T {
+  const { routine: _r, ...rest } = row;
+  void _r;
+  return rest as T;
+}
+
 export async function createContactAction(
   input: unknown,
 ): Promise<ActionResult<{ id: string; name: string; role_label: string | null }>> {
@@ -147,19 +180,22 @@ export async function createContactAction(
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "輸入有誤");
   try {
     const { supabase, user } = await getAuthed();
-    const { data, error } = await supabase
-      .from("contacts")
-      .insert({
-        owner_id: user.id,
-        name: parsed.data.name,
-        role_label: parsed.data.roleLabel ?? null,
-        phone: parsed.data.phone ?? null,
-        note: parsed.data.note ?? null,
-        is_family: parsed.data.isFamily ?? false,
-        ...billingColumns(parsed.data),
-      })
-      .select("id, name, role_label")
-      .single();
+    const row = {
+      owner_id: user.id,
+      name: parsed.data.name,
+      role_label: parsed.data.roleLabel ?? null,
+      phone: parsed.data.phone ?? null,
+      note: parsed.data.note ?? null,
+      is_family: parsed.data.isFamily ?? false,
+      ...(parsed.data.routine ? { routine: parsed.data.routine } : {}),
+      ...billingColumns(parsed.data),
+    };
+    const insert = (r: typeof row) =>
+      supabase.from("contacts").insert(r).select("id, name, role_label").single();
+    let { data, error } = await insert(row);
+    const routineErr = routineColumnError(error, parsed.data.routine);
+    if (routineErr === "retry") ({ data, error } = await insert(withoutRoutine(row)));
+    else if (routineErr) return fail(routineErr);
     if (error || !data) return fail(error?.message ?? "建立失敗");
     if (parsed.data.plans) {
       const planErr = await syncPlans(supabase, user.id, data.id, parsed.data.plans);
@@ -181,17 +217,20 @@ export async function updateContactAction(
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "輸入有誤");
   try {
     const { supabase, user } = await getAuthed();
-    const { error } = await supabase
-      .from("contacts")
-      .update({
-        name: parsed.data.name,
-        role_label: parsed.data.roleLabel ?? null,
-        phone: parsed.data.phone ?? null,
-        note: parsed.data.note ?? null,
-        is_family: parsed.data.isFamily ?? false,
-        ...billingColumns(parsed.data),
-      })
-      .eq("id", id);
+    const patch = {
+      name: parsed.data.name,
+      role_label: parsed.data.roleLabel ?? null,
+      phone: parsed.data.phone ?? null,
+      note: parsed.data.note ?? null,
+      is_family: parsed.data.isFamily ?? false,
+      ...(parsed.data.routine ? { routine: parsed.data.routine } : {}),
+      ...billingColumns(parsed.data),
+    };
+    const update = (r: typeof patch) => supabase.from("contacts").update(r).eq("id", id);
+    let { error } = await update(patch);
+    const routineErr = routineColumnError(error, parsed.data.routine);
+    if (routineErr === "retry") ({ error } = await update(withoutRoutine(patch)));
+    else if (routineErr) return fail(routineErr);
     if (error) return fail(error.message);
     if (parsed.data.plans) {
       const planErr = await syncPlans(supabase, user.id, id, parsed.data.plans);

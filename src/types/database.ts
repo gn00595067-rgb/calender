@@ -160,6 +160,8 @@ export interface Database {
           default_rate: number | null;
           default_category_id: string | null;
           default_direction: "expense" | "income" | null;
+          // 0014 固定作息（套 migration 前查不到）
+          routine?: unknown;
           default_payment_method:
             | "monthly"
             | "per_time"
@@ -181,6 +183,7 @@ export interface Database {
           default_rate?: number | null;
           default_category_id?: string | null;
           default_direction?: "expense" | "income" | null;
+          routine?: unknown;
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -202,6 +205,7 @@ export interface Database {
           default_rate?: number | null;
           default_category_id?: string | null;
           default_direction?: "expense" | "income" | null;
+          routine?: unknown;
           default_payment_method?:
             | "monthly"
             | "per_time"

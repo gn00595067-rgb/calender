@@ -6,7 +6,13 @@ import { CalendarRange, Plus } from "lucide-react";
 import { zoned } from "@/lib/calendar-utils";
 import { D } from "@/lib/date";
 import { cn } from "@/lib/utils";
-import { freeOnDay, eventSegmentOnDay, minToHHMM } from "@/lib/availability";
+import {
+  freeOnDay,
+  eventSegmentOnDay,
+  minToHHMM,
+  routineSegments,
+} from "@/lib/availability";
+import { useRoutines } from "@/lib/client/lookups";
 import { MonthChip, MonthSpanBar, EventTwoLineCard } from "./event-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -159,6 +165,8 @@ export function MonthView({
   // 只有「單一對象聚焦」才淡化非對象；家庭／全部視角不淡化
   const dimNonTarget = !!gapFilter && !familyFocus;
   const isTarget = (ev: CalEvent) => !dimNonTarget || gapFilter!.match(ev);
+  // 家人的固定作息（上學等）：該時段不算空檔
+  const { data: routines } = useRoutines();
 
   /**
    * 某日的標名空檔。通用規則：**當天有行程的人才列空檔**（含本人）；
@@ -193,7 +201,8 @@ export function MonthView({
       const evs = dayEvents.filter(g.match);
       // 當天要「有實際時段行程」才列此人的空檔
       if (!evs.some((e) => !e.all_day)) continue;
-      for (const b of freeOnDay(evs, ds, FOCUS_WINDOW, minGap)) {
+      const fixed = routineSegments(routines?.get(g.label) ?? [], ds);
+      for (const b of freeOnDay(evs, ds, FOCUS_WINDOW, minGap, fixed)) {
         lines.push({ ...b, label: g.label });
       }
     }
@@ -502,6 +511,17 @@ export function MonthView({
                   ? `${peekEvents.length} 筆行程`
                   : "這天沒有行程"}
             </p>
+            {peekDay && (() => {
+              // 當天生效的固定作息（上學等），說明為什麼那段不算空檔
+              const items = [...(routines?.entries() ?? [])].flatMap(([name, blocks]) =>
+                blocks
+                  .filter((b) => routineSegments([b], peekDay).length > 0)
+                  .map((b) => `${name}・${b.label} ${b.start}–${b.end}`),
+              );
+              return items.length > 0 ? (
+                <p className="text-xs text-muted-foreground">固定作息（不算空檔）：{items.join("　")}</p>
+              ) : null;
+            })()}
           </SheetHeader>
 
           <div className="flex-1 space-y-1 overflow-y-auto p-4">
