@@ -64,18 +64,22 @@ const SNAPSHOT_KEYS = [
   "extra_label",
 ] as const;
 
-/** 查無欄位（migration 尚未套用到此庫）的錯誤；預設檢查 0008 方案快照欄位 */
+/**
+ * 查無欄位（migration 尚未套用到此庫）的錯誤；預設檢查 0008 方案快照欄位。
+ * 必須同時是「查無欄位」錯誤碼且訊息提到該欄位，避免把檢查約束等其他錯誤誤判後默默略過。
+ */
 function isMissingColumn(
   err: { code?: string; message?: string } | null,
   keys: readonly string[] = SNAPSHOT_KEYS,
 ): boolean {
   if (!err) return false;
-  return (
-    err.code === "PGRST204" ||
-    err.code === "42703" ||
-    keys.some((k) => err.message?.includes(k))
-  );
+  const missing = err.code === "PGRST204" || err.code === "42703";
+  return missing && keys.some((k) => err.message?.includes(k));
 }
+
+/** 司機設定因資料庫未更新而沒存到時，回給前端的警告 */
+const DRIVER_NOT_SAVED =
+  "行程已儲存，但「需要司機接送」沒有存到：資料庫尚未更新（0009_driver），請通知管理者";
 
 function withoutSnapshot<T extends Record<string, unknown>>(row: T): T {
   const copy: Record<string, unknown> = { ...row };
@@ -229,7 +233,9 @@ async function resolveTagIds(
     .filter((id): id is string => !!id);
 }
 
-export async function createEventAction(input: unknown): Promise<ActionResult<{ groupId: string | null }>> {
+export async function createEventAction(
+  input: unknown,
+): Promise<ActionResult<{ groupId: string | null; warning?: string }>> {
   const parsed = baseEventSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "輸入有誤");
   const d = parsed.data;
@@ -279,12 +285,14 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
       .from("events")
       .insert(rows)
       .select("id, starts_at");
-    // 線上庫還沒套 0009：去掉司機欄位再存，行程本身不能因此存不進去
+    // 線上庫還沒套 0009：去掉司機欄位再存，行程本身不能因此存不進去（但要明確警告）
+    let warning: string | undefined;
     if (isMissingColumn(error, DRIVER_KEYS)) {
       ({ data: inserted, error } = await supabase
         .from("events")
         .insert(rows.map(withoutDriver))
         .select("id, starts_at"));
+      if (d.driver) warning = DRIVER_NOT_SAVED;
     }
     if (error) return fail(error.message);
     const events = inserted ?? [];
@@ -346,7 +354,7 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
     }
 
     revalidatePath("/", "layout");
-    return { ok: true, data: { groupId } };
+    return { ok: true, data: { groupId, warning } };
   } catch (e) {
     return fail(e instanceof Error ? e.message : "操作失敗");
   }
@@ -359,7 +367,9 @@ const updateSchema = baseEventSchema
     scope: z.enum(["this", "following"]),
   });
 
-export async function updateEventAction(input: unknown): Promise<ActionResult> {
+export async function updateEventAction(
+  input: unknown,
+): Promise<ActionResult<{ warning?: string }>> {
   const parsed = updateSchema.safeParse(input);
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "輸入有誤");
   const d = parsed.data;
@@ -410,6 +420,7 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
     const newStartTime = d.startWall.slice(11); // HH:mm
     const durationMs = new Date(newEndUtc).getTime() - new Date(newStartUtc).getTime();
 
+    let warning: string | undefined;
     for (const t of targets) {
       let startsAt = t.starts_at;
       let endsAt = t.ends_at;
@@ -426,12 +437,13 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
       }
       const patch = { ...commonFields, starts_at: startsAt, ends_at: endsAt };
       let { error: upErr } = await supabase.from("events").update(patch).eq("id", t.id);
-      // 線上庫還沒套 0009：去掉司機欄位再存
+      // 線上庫還沒套 0009：去掉司機欄位再存（但要明確警告）
       if (isMissingColumn(upErr, DRIVER_KEYS)) {
         ({ error: upErr } = await supabase
           .from("events")
           .update(withoutDriver(patch))
           .eq("id", t.id));
+        if (d.driver) warning = DRIVER_NOT_SAVED;
       }
       if (upErr) return fail(upErr.message);
     }
@@ -504,7 +516,7 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
     }
 
     revalidatePath("/", "layout");
-    return { ok: true, data: undefined };
+    return { ok: true, data: { warning } };
   } catch (e) {
     return fail(e instanceof Error ? e.message : "操作失敗");
   }

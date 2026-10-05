@@ -551,6 +551,8 @@ export function EventModal({
         toast.error(res.error);
         return;
       }
+      // 部分設定沒存到（如資料庫未更新）：明確提醒，不要讓人以為都存好了
+      if (res.data?.warning) toast.warning(res.data.warning, { duration: 10000 });
       let deleted = 0;
       for (const id of deleteIds) {
         const r = await deleteEventAction(id, "this");
