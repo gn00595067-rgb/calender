@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useForm, Controller } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -755,6 +756,13 @@ export function EventModal({
                   <TagInput value={field.value} onChange={field.onChange} />
                 )}
               />
+              <p className="text-xs text-muted-foreground">
+                用於報表「依標籤」統計次數與花費、搜尋篩選。不要的標籤到{" "}
+                <Link href="/settings/tags" className="underline underline-offset-2">
+                  設定 → 標籤管理
+                </Link>{" "}
+                刪除或合併。
+              </p>
             </div>
 
             <div className="space-y-2">
