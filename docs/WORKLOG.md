@@ -251,3 +251,6 @@ spec：`docs/specs/時間衝突提醒.md`。
 **驗證**：tsc、eslint、next build 綠。未在瀏覽器實測。
 
 **下一步**：使用者套 0010 → 把該老師方案改月薪 → 新增一堂課看 NT$0 → 報表記錄 10 月月薪。
+
+## 2026-10-05 — 線上庫已套 0010_monthly_salary
+使用者於 SQL Editor 執行成功；驗證 finance_records.salary_month 可查。
