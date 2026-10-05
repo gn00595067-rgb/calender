@@ -53,6 +53,7 @@ import { addMinutesToWall, wallWeekday, diffMinutes } from "@/lib/wall-time";
 import { fetchEventsInRange, type CalEvent } from "@/lib/client/events";
 import { ConflictPrompt } from "./conflict-prompt";
 import {
+  isMonthlyPlan,
   pickPlan,
   planAmount,
   planSummary,
@@ -392,6 +393,8 @@ export function EventModal({
     if (suggestedAmount == null || amountTouchedRef.current) return;
     if (!getValues("financeEnabled")) return;
     setValue("financeAmount", String(suggestedAmount));
+    // 月薪制：這堂不用另外付錢，直接算已結清（錢在月底的月薪那筆）
+    if (isMonthlyPlan(selectedPlan)) setValue("financeSettled", true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestedAmount]);
 
@@ -447,8 +450,10 @@ export function EventModal({
     );
     const usesPrepaidMethod = pmMeta?.usesPrepaid ?? false;
     const prepaidAccountId = usesPrepaidMethod ? v.financePrepaidAccountId : null;
+    // 月薪制的課金額為 0 仍要記一筆，報表才數得到堂數
+    const salaried = isMonthlyPlan(selectedPlan);
     const finance =
-      v.financeEnabled && canFinance && Number(v.financeAmount) > 0
+      v.financeEnabled && canFinance && (Number(v.financeAmount) > 0 || salaried)
         ? {
             direction: v.financeDirection,
             amount: Math.round(Number(v.financeAmount)),
@@ -466,6 +471,7 @@ export function EventModal({
             lessonLabel: selectedPlan?.label ?? null,
             headcount: selectedPlan?.headcount ?? null,
             learnerCount: v.subjectIds.length > 0 ? v.subjectIds.length : null,
+            salaried,
           }
         : null;
 
@@ -1051,7 +1057,13 @@ export function EventModal({
                         />
                       </div>
                     </div>
-                    {selectedPlan && suggestedAmount != null && (
+                    {selectedPlan && isMonthlyPlan(selectedPlan) && (
+                      <p className="text-xs text-muted-foreground">
+                        {planSummary(selectedPlan)}：這堂不另計費（記為 NT$0、已結清，報表照樣計堂數）；
+                        月底到「報表 → 月薪結算」記錄當月月薪。
+                      </p>
+                    )}
+                    {selectedPlan && !isMonthlyPlan(selectedPlan) && suggestedAmount != null && (
                       <PlanAmountHint
                         summary={planSummary(selectedPlan)}
                         hourly={selectedPlan.billing_mode === "hourly"}

@@ -246,7 +246,7 @@ export interface Database {
           contact_id: string;
           label: string;
           headcount: number;
-          billing_mode: "fixed" | "hourly";
+          billing_mode: "fixed" | "hourly" | "monthly";
           rate: number;
           position: number;
           created_at: string;
@@ -257,7 +257,7 @@ export interface Database {
           contact_id: string;
           label: string;
           headcount?: number;
-          billing_mode: "fixed" | "hourly";
+          billing_mode: "fixed" | "hourly" | "monthly";
           rate: number;
           position?: number;
           created_at?: string;
@@ -268,7 +268,7 @@ export interface Database {
           contact_id?: string;
           label?: string;
           headcount?: number;
-          billing_mode?: "fixed" | "hourly";
+          billing_mode?: "fixed" | "hourly" | "monthly";
           rate?: number;
           position?: number;
           created_at?: string;
@@ -372,6 +372,8 @@ export interface Database {
           lesson_label?: string | null;
           headcount?: number | null;
           learner_count?: number | null;
+          // 0010 月薪：這筆是某位老師某月（yyyy-MM）的月薪
+          salary_month?: string | null;
         };
         Insert: {
           id?: string;
@@ -400,6 +402,8 @@ export interface Database {
           lesson_label?: string | null;
           headcount?: number | null;
           learner_count?: number | null;
+          // 0010 月薪：這筆是某位老師某月（yyyy-MM）的月薪
+          salary_month?: string | null;
         };
         Update: {
           id?: string;
@@ -428,6 +432,8 @@ export interface Database {
           lesson_label?: string | null;
           headcount?: number | null;
           learner_count?: number | null;
+          // 0010 月薪：這筆是某位老師某月（yyyy-MM）的月薪
+          salary_month?: string | null;
         };
         Relationships: [];
       };

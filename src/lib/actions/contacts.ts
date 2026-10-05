@@ -9,7 +9,7 @@ const planSchema = z.object({
   id: z.uuid().optional().nullable(),
   label: z.string().trim().min(1, { error: "請輸入方案名稱" }).max(30),
   headcount: z.number().int().min(1).max(30),
-  billingMode: z.enum(["fixed", "hourly"]),
+  billingMode: z.enum(["fixed", "hourly", "monthly"]),
   rate: z.number().int().nonnegative(),
 });
 
@@ -42,10 +42,13 @@ function billingColumns(d: z.infer<typeof contactSchema>) {
     default_payment_method: d.defaultPaymentMethod ?? null,
   };
   if (!d.plans) return base;
-  const first = [...d.plans].sort((a, b) => a.headcount - b.headcount)[0];
+  // contacts 舊欄位只認固定／時薪；月薪方案不寫回（只存在方案表）
+  const first = [...d.plans]
+    .filter((p) => p.billingMode !== "monthly")
+    .sort((a, b) => a.headcount - b.headcount)[0];
   return {
     ...base,
-    billing_mode: first?.billingMode ?? null,
+    billing_mode: (first?.billingMode ?? null) as "fixed" | "hourly" | null,
     default_rate: first?.rate ?? null,
   };
 }
@@ -98,7 +101,11 @@ async function syncPlans(
         : await supabase
             .from("contact_rate_plans")
             .insert({ ...row, owner_id: ownerId, contact_id: contactId });
-    if (upErr) return upErr.message;
+    if (upErr) {
+      return p.billingMode === "monthly" && upErr.message.includes("billing_mode")
+        ? "月薪方案需先套用資料庫更新（0010_monthly_salary）才能保存"
+        : upErr.message;
+    }
   }
   return null;
 }

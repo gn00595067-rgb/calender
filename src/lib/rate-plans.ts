@@ -12,7 +12,7 @@ export interface RatePlan {
   /** 班型人數：1＝1對1、2＝1對2 */
   headcount: number;
   billing_mode: BillingMode;
-  /** 整堂總價（固定制＝每堂、時薪制＝每小時） */
+  /** 整堂總價（固定制＝每堂、時薪制＝每小時、月薪制＝每月） */
   rate: number;
   position: number;
 }
@@ -37,8 +37,14 @@ export function pickPlan(plans: RatePlan[], learners: number): RatePlan | null {
   return bigger ?? sorted[0];
 }
 
-/** 依方案算金額（時薪制 × 時數，四捨五入到元） */
+/** 月薪制：每堂不另計費，錢在月底記一筆月薪 */
+export function isMonthlyPlan(plan: Pick<RatePlan, "billing_mode"> | null | undefined): boolean {
+  return plan?.billing_mode === "monthly";
+}
+
+/** 依方案算「這一堂」的金額（時薪制 × 時數，四捨五入到元；月薪制每堂為 0） */
 export function planAmount(plan: RatePlan, minutes: number): number {
+  if (plan.billing_mode === "monthly") return 0;
   if (plan.billing_mode === "hourly") {
     return Math.round((plan.rate * Math.max(minutes, 0)) / 60);
   }
@@ -48,6 +54,7 @@ export function planAmount(plan: RatePlan, minutes: number): number {
 /** 方案摘要：「1對2 時薪 1,800」 */
 export function planSummary(plan: Pick<RatePlan, "label" | "billing_mode" | "rate">): string {
   const rate = plan.rate.toLocaleString("zh-TW");
+  if (plan.billing_mode === "monthly") return `${plan.label} 月薪 ${rate}`;
   return plan.billing_mode === "hourly"
     ? `${plan.label} 時薪 ${rate}`
     : `${plan.label} 每堂 ${rate}`;

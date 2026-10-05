@@ -171,8 +171,8 @@ export default function ContactsSettingsPage() {
                       key={p.id}
                       className="rounded bg-muted px-1.5 py-0.5 tabular-nums"
                     >
-                      {p.label} {twd(p.rate)}
-                      {p.billing_mode === "hourly" ? "／時" : "／堂"}
+                  {p.label} {twd(p.rate)}
+                      {p.billing_mode === "monthly" ? "／月" : p.billing_mode === "hourly" ? "／時" : "／堂"}
                     </span>
                   ))}
                   {c.plans.length > 0 && c.default_payment_method && (
@@ -574,11 +574,22 @@ function PlanEditor({
               value={p.rate}
               onChange={(e) => update(p.key, { rate: e.target.value })}
               className="h-8"
-              placeholder={p.billingMode === "hourly" ? "每小時（整堂）" : "每堂（整堂）"}
+              placeholder={
+                p.billingMode === "monthly"
+                  ? "每月金額"
+                  : p.billingMode === "hourly"
+                    ? "每小時（整堂）"
+                    : "每堂（整堂）"
+              }
               aria-label="金額"
             />
           </div>
-          {p.headcount >= 2 && p.rate.trim() !== "" && (
+          {p.billingMode === "monthly" && p.rate.trim() !== "" && (
+            <p className="text-[11px] text-muted-foreground">
+              每月固定 {twd(Number(p.rate) || 0)}，每堂課不另計費；月底到「報表 → 月薪結算」記一筆（請假可調整金額）。
+            </p>
+          )}
+          {p.billingMode !== "monthly" && p.headcount >= 2 && p.rate.trim() !== "" && (
             <p className="text-[11px] text-muted-foreground">
               {planSummary({
                 label: p.label || defaultPlanLabel(p.headcount),

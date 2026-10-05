@@ -49,6 +49,7 @@ import { twd, D, taipeiTodayStr } from "@/lib/date";
 import { PAYMENT_METHOD_LABEL, CATEGORY_GROUPS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { splitAmount } from "@/lib/rate-plans";
+import { SalarySection } from "@/components/reports/salary-section";
 
 type PeriodMode = "week" | "month" | "year";
 
@@ -187,26 +188,56 @@ export default function ReportsPage() {
     total: number;
     sessions: number;
     /** 明細：每筆費用與此主角分到的金額（多位主角時為平均分攤後的那份） */
-    items: { f: FinanceItem; share: number; sharedWith: number }[];
+    items: { f: FinanceItem; share: number; sharedWith: number; bySessions: boolean }[];
   }
   const bySubject = useMemo<SubjectGroup[]>(() => {
     const map = new Map<string, SubjectGroup>();
     for (const f of finance) {
       if (f.direction !== "expense") continue;
-      const names = f.subject_names.length > 0 ? f.subject_names : ["本人"];
+      // 月薪紀錄沒有關聯行程：改用當月這位老師各堂課的主角（依上課次數），分攤比例由名單重複次數決定
+      const salaryNames =
+        f.salary_month && f.contact_id
+          ? finance
+              .filter(
+                (x) =>
+                  x.contact_id === f.contact_id &&
+                  x.event_id &&
+                  x.occurred_on.startsWith(f.salary_month!),
+              )
+              .flatMap((x) => (x.subject_names.length ? x.subject_names : ["本人"]))
+          : [];
+      const names =
+        salaryNames.length > 0
+          ? salaryNames
+          : f.subject_names.length > 0
+            ? f.subject_names
+            : ["本人"];
       const shares = splitAmount(spendOf(f), names.length);
       // 明細顯示用：預繳扣抵的那堂不計入支出，但仍列出它原本的分攤金額
       const amountShares = splitAmount(f.amount, names.length);
+      // 同一人可能出現多次（月薪依上課次數），先合併再記
+      const agg = new Map<string, { share: number; amount: number }>();
       names.forEach((name, i) => {
+        const a = agg.get(name) ?? { share: 0, amount: 0 };
+        a.share += shares[i];
+        a.amount += amountShares[i];
+        agg.set(name, a);
+      });
+      for (const [name, a] of agg) {
         let g = map.get(name);
         if (!g) {
           g = { name, total: 0, sessions: 0, items: [] };
           map.set(name, g);
         }
-        g.total += shares[i];
+        g.total += a.share;
         if (isSession(f)) g.sessions += 1;
-        g.items.push({ f, share: amountShares[i], sharedWith: names.length });
-      });
+        g.items.push({
+          f,
+          share: a.amount,
+          sharedWith: agg.size,
+          bySessions: salaryNames.length > 0,
+        });
+      }
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
   }, [finance]);
@@ -456,6 +487,15 @@ export default function ReportsPage() {
         <EmptyState title="這段期間沒有財務紀錄" description="於行程中掛上收支後，會在此統整。" />
       ) : (
         <div className="space-y-8">
+          {/* 月薪結算：月薪制老師每月記一筆 */}
+          <SalarySection
+            finance={finance}
+            start={period.start}
+            end={period.end}
+            fallbackCalendarId={scopeIds[0] ?? null}
+            onDone={() => void refresh()}
+          />
+
           {/* 依老師 */}
           <section>
             <h2 className="mb-2 flex items-center gap-1.5 text-lg font-semibold">
@@ -614,7 +654,7 @@ export default function ReportsPage() {
                           {g.items
                             .slice()
                             .sort((a, b) => a.f.occurred_on.localeCompare(b.f.occurred_on))
-                            .map(({ f, share, sharedWith }) => (
+                            .map(({ f, share, sharedWith, bySessions }) => (
                               <div
                                 key={f.id}
                                 className="flex items-center gap-3 border-b px-3 py-2 pl-9 text-sm last:border-b-0"
@@ -637,7 +677,9 @@ export default function ReportsPage() {
                                   )}
                                   {sharedWith >= 2 && (
                                     <span className="ml-1 text-xs text-muted-foreground">
-                                      · 整堂 {twd(f.amount)} ÷ {sharedWith}
+                                      {bySessions
+                                        ? `· 月薪 ${twd(f.amount)} 依當月上課次數分攤`
+                                        : `· 整堂 ${twd(f.amount)} ÷ ${sharedWith}`}
                                     </span>
                                   )}
                                 </span>

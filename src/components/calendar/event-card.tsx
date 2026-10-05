@@ -30,7 +30,9 @@ export function secondLine(event: CalEvent): string {
     const total = event.finance.reduce((a, f) => a + f.amount, 0);
     const dir = sum >= 0 ? "支" : "收";
     const lesson = event.finance.find((f) => f.lesson_label)?.lesson_label;
-    parts.push(`${lesson ? `${lesson} ` : ""}${dir} ${twd(total)}`);
+    // 月薪制的課每堂為 0：只顯示上課形式，不顯示「支 NT$0」
+    if (total === 0 && lesson) parts.push(lesson);
+    else parts.push(`${lesson ? `${lesson} ` : ""}${dir} ${twd(total)}`);
   }
   return parts.join(" · ");
 }

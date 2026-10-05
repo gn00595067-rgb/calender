@@ -154,11 +154,12 @@ export const FINANCE_DIRECTIONS: { value: FinanceDirection; label: string }[] = 
 ];
 
 /** 老師收費：計費方式 */
-export type BillingMode = "fixed" | "hourly";
+export type BillingMode = "fixed" | "hourly" | "monthly";
 
 export const BILLING_MODES: { value: BillingMode; label: string; hint: string }[] = [
   { value: "fixed", label: "固定每堂", hint: "每堂固定金額" },
   { value: "hourly", label: "時薪 × 時數", hint: "依行程長度自動換算" },
+  { value: "monthly", label: "月薪（固定月費）", hint: "每月固定金額，每堂不另計；月底在報表記錄" },
 ];
 
 /** 付款方式 */

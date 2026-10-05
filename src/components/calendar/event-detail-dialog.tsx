@@ -184,9 +184,11 @@ export function EventDetailDialog({
                           {f.lesson_label}
                         </span>
                       )}
-                      {f.direction === "expense" ? "支出" : "收入"} {twd(f.amount)}
+                      {f.amount === 0 && f.lesson_label
+                        ? "月薪制，這堂不另計"
+                        : `${f.direction === "expense" ? "支出" : "收入"} ${twd(f.amount)}`}
                       {/* 多位主角（如 1對2）：顯示每位小孩分攤 */}
-                      {event.subjectNames.length >= 2 && (
+                      {event.subjectNames.length >= 2 && f.amount > 0 && (
                         <span className="text-muted-foreground">
                           （
                           {event.subjectNames

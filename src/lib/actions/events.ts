@@ -34,6 +34,8 @@ const financeSchema = z.object({
   lessonLabel: z.string().trim().max(30).optional().nullable(),
   headcount: z.number().int().min(1).max(30).optional().nullable(),
   learnerCount: z.number().int().min(1).max(30).optional().nullable(),
+  /** 月薪制老師的課：金額 0 仍記一筆（計堂數），錢在月底的月薪紀錄 */
+  salaried: z.boolean().optional().default(false),
 });
 
 type FinanceInput = z.infer<typeof financeSchema>;
@@ -297,7 +299,7 @@ export async function createEventAction(input: unknown): Promise<ActionResult<{ 
     if (etRows.length) await supabase.from("event_tags").insert(etRows);
 
     // 財務：每個 occurrence 各一筆
-    if (d.finance && d.finance.amount > 0) {
+    if (d.finance && (d.finance.amount > 0 || d.finance.salaried)) {
       const categoryId =
         d.finance.categoryId ??
         (await resolveCategoryId(supabase, user.id, d.finance.categoryLabel));
@@ -454,7 +456,7 @@ export async function updateEventAction(input: unknown): Promise<ActionResult> {
         .select("id")
         .eq("event_id", current.id)
         .limit(1);
-      if (d.finance.amount > 0) {
+      if (d.finance.amount > 0 || d.finance.salaried) {
         const categoryId =
           d.finance.categoryId ??
           (await resolveCategoryId(supabase, user.id, d.finance.categoryLabel));
