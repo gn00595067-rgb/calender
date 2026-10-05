@@ -38,6 +38,9 @@ const contactSchema = z.object({
     )
     .max(10)
     .optional(),
+  // 月曆空檔顯示方式、是否本人（0015）；未提供＝不動
+  gapMode: z.enum(["off", "always", "free_days"]).optional(),
+  isSelf: z.boolean().optional(),
   // 收費方案（1對1／1對2…）；未提供＝不動既有方案
   plans: z.array(planSchema).max(10).optional(),
   defaultCategoryId: z.uuid().optional().nullable(),
@@ -154,22 +157,32 @@ async function syncPlans(
 }
 
 /**
- * 0014 前的庫沒有 routine 欄位：沒設作息 → "retry"（去掉欄位重存）；
- * 有設作息 → 提示先套 migration；其他錯誤 → null（交給呼叫端處理）。
+ * 舊庫缺空檔相關欄位（0014 routine／0015 gap_mode、is_self）：
+ * 使用者沒用到這些設定 → "retry"（去掉欄位重存）；有用到 → 提示先套 migration；
+ * 其他錯誤 → null（交給呼叫端處理）。
  */
 function routineColumnError(
   error: { message: string } | null,
-  routine: unknown[] | undefined,
+  d: { routine?: unknown[]; gapMode?: string; isSelf?: boolean },
 ): "retry" | string | null {
-  if (!error?.message.includes("routine")) return null;
-  return routine && routine.length > 0
-    ? "固定作息需先套用資料庫更新（0014_contact_routine）才能保存"
-    : "retry";
+  if (!error || !/routine|gap_mode|is_self/.test(error.message)) return null;
+  if (error.message.includes("routine") && d.routine && d.routine.length > 0) {
+    return "固定作息需先套用資料庫更新（0014_contact_routine）才能保存";
+  }
+  if (/gap_mode|is_self/.test(error.message) && ((d.gapMode && d.gapMode !== "off") || d.isSelf)) {
+    return "月曆空檔設定需先套用資料庫更新（0015_gap_mode）才能保存";
+  }
+  return "retry";
 }
 
-function withoutRoutine<T extends { routine?: unknown }>(row: T): T {
-  const { routine: _r, ...rest } = row;
+/** 去掉空檔相關的新欄位（舊庫重存用） */
+function withoutRoutine<T extends { routine?: unknown; gap_mode?: unknown; is_self?: unknown }>(
+  row: T,
+): T {
+  const { routine: _r, gap_mode: _g, is_self: _s, ...rest } = row;
   void _r;
+  void _g;
+  void _s;
   return rest as T;
 }
 
@@ -188,12 +201,14 @@ export async function createContactAction(
       note: parsed.data.note ?? null,
       is_family: parsed.data.isFamily ?? false,
       ...(parsed.data.routine ? { routine: parsed.data.routine } : {}),
+      ...(parsed.data.gapMode ? { gap_mode: parsed.data.gapMode } : {}),
+      ...(parsed.data.isSelf !== undefined ? { is_self: parsed.data.isSelf } : {}),
       ...billingColumns(parsed.data),
     };
     const insert = (r: typeof row) =>
       supabase.from("contacts").insert(r).select("id, name, role_label").single();
     let { data, error } = await insert(row);
-    const routineErr = routineColumnError(error, parsed.data.routine);
+    const routineErr = routineColumnError(error, parsed.data);
     if (routineErr === "retry") ({ data, error } = await insert(withoutRoutine(row)));
     else if (routineErr) return fail(routineErr);
     if (error || !data) return fail(error?.message ?? "建立失敗");
@@ -224,11 +239,13 @@ export async function updateContactAction(
       note: parsed.data.note ?? null,
       is_family: parsed.data.isFamily ?? false,
       ...(parsed.data.routine ? { routine: parsed.data.routine } : {}),
+      ...(parsed.data.gapMode ? { gap_mode: parsed.data.gapMode } : {}),
+      ...(parsed.data.isSelf !== undefined ? { is_self: parsed.data.isSelf } : {}),
       ...billingColumns(parsed.data),
     };
     const update = (r: typeof patch) => supabase.from("contacts").update(r).eq("id", id);
     let { error } = await update(patch);
-    const routineErr = routineColumnError(error, parsed.data.routine);
+    const routineErr = routineColumnError(error, parsed.data);
     if (routineErr === "retry") ({ error } = await update(withoutRoutine(patch)));
     else if (routineErr) return fail(routineErr);
     if (error) return fail(error.message);

@@ -12,7 +12,7 @@ import {
   minToHHMM,
   routineSegments,
 } from "@/lib/availability";
-import { useRoutines } from "@/lib/client/lookups";
+import { useGapProfiles } from "@/lib/client/lookups";
 import { MonthChip, MonthSpanBar, EventTwoLineCard } from "./event-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -165,8 +165,21 @@ export function MonthView({
   // 只有「單一對象聚焦」才淡化非對象；家庭／全部視角不淡化
   const dimNonTarget = !!gapFilter && !familyFocus;
   const isTarget = (ev: CalEvent) => !dimNonTarget || gapFilter!.match(ev);
-  // 家人的固定作息（上學等）：該時段不算空檔
-  const { data: routines } = useRoutines();
+  // 家人的空檔設定：固定作息（上學等）不算空檔、只列指定的人、本人合併
+  const { data: gapProfiles } = useGapProfiles();
+  const routines = gapProfiles?.routines;
+  const selfName = gapProfiles?.selfName ?? null;
+  /** 未指定主角、或主角是本人（老闆）的行程＝本人的 */
+  const isSelfEvent = (e: CalEvent) =>
+    e.subjectNames.length === 0 || (!!selfName && e.subjectNames.includes(selfName));
+  /** 「全部／家庭」視角下，這個人這天要不要列空檔（主動聚焦單一對象時不受限） */
+  const showGapsFor = (name: string, ds: string) => {
+    if (!gapProfiles?.hasGapMode) return true; // 0015 前：沿用舊行為
+    const mode = gapProfiles.gapMode.get(name) ?? "off";
+    if (mode === "always") return true;
+    if (mode === "free_days") return routineSegments(routines?.get(name) ?? [], ds).length === 0;
+    return false;
+  };
 
   /**
    * 某日的標名空檔。通用規則：**當天有行程的人才列空檔**（含本人）；
@@ -176,20 +189,25 @@ export function MonthView({
    * - 全部行程：本人＋當天出現的每位主角
    */
   const freeLinesFor = (dayEvents: CalEvent[], ds: string, minGap: number): FreeLine[] => {
-    const self = { label: "本人", match: (e: CalEvent) => e.subjectNames.length === 0 };
+    const self = { label: "本人", match: isSelfEvent };
     const asGroup = (g: GapFilter) => ({ label: g.name, match: g.match });
+    // 家人群組：本人已合併，其餘依各自的「月曆空檔」設定決定要不要列
+    const memberOk = (name: string) => name !== selfName && showGapsFor(name, ds);
     let groups: { label: string; match: (e: CalEvent) => boolean }[];
-    if (gapFilter) {
+    if (gapFilter && !familyFocus) {
       groups = [asGroup(gapFilter)];
     } else if (familyFocus) {
-      groups = [asGroup(familyFocus.primary), ...familyFocus.members.map(asGroup)];
+      groups = [
+        { label: "本人", match: isSelfEvent },
+        ...familyFocus.members.filter((m) => memberOk(m.name)).map(asGroup),
+      ];
     } else {
-      // 全部行程：本人＋當天出現過的每位主角
+      // 全部行程：本人＋當天出現、且設定要列空檔的主角
       const names = new Set<string>();
       for (const e of dayEvents) for (const s of e.subjectNames) names.add(s);
       groups = [
         self,
-        ...[...names].map((name) => ({
+        ...[...names].filter(memberOk).map((name) => ({
           label: name,
           match: (e: CalEvent) => e.subjectNames.includes(name),
         })),

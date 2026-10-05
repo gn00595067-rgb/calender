@@ -162,6 +162,9 @@ export interface Database {
           default_direction: "expense" | "income" | null;
           // 0014 固定作息（套 migration 前查不到）
           routine?: unknown;
+          // 0015 空檔顯示方式、是否本人
+          gap_mode?: "off" | "always" | "free_days";
+          is_self?: boolean;
           default_payment_method:
             | "monthly"
             | "per_time"
@@ -184,6 +187,9 @@ export interface Database {
           default_category_id?: string | null;
           default_direction?: "expense" | "income" | null;
           routine?: unknown;
+          // 0015 空檔顯示方式、是否本人
+          gap_mode?: "off" | "always" | "free_days";
+          is_self?: boolean;
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -206,6 +212,9 @@ export interface Database {
           default_category_id?: string | null;
           default_direction?: "expense" | "income" | null;
           routine?: unknown;
+          // 0015 空檔顯示方式、是否本人
+          gap_mode?: "off" | "always" | "free_days";
+          is_self?: boolean;
           default_payment_method?:
             | "monthly"
             | "per_time"

@@ -46,7 +46,12 @@ import {
 } from "@/lib/constants";
 import { twd } from "@/lib/date";
 import { cn } from "@/lib/utils";
-import { fetchPlansByContact, isLegacyPlanId, useContacts } from "@/lib/client/lookups";
+import {
+  fetchPlansByContact,
+  isLegacyPlanId,
+  useContacts,
+  type GapMode,
+} from "@/lib/client/lookups";
 import { defaultPlanLabel, planSummary, type RatePlan } from "@/lib/rate-plans";
 import type { RoutineBlock } from "@/lib/availability";
 import {
@@ -76,6 +81,10 @@ interface FullContact {
   plans: RatePlan[];
   /** 固定作息（不算空檔） */
   routine: RoutineBlock[];
+  /** 月曆空檔顯示方式 */
+  gap_mode: GapMode;
+  /** 本人（老闆） */
+  is_self: boolean;
 }
 
 /** 表單中的一列方案（金額以字串暫存，方便輸入） */
@@ -119,6 +128,8 @@ function useContactsFull() {
         default_direction: c.default_direction,
         default_payment_method: c.default_payment_method,
         routine: Array.isArray(c.routine) ? (c.routine as RoutineBlock[]) : [],
+        gap_mode: c.gap_mode ?? "off",
+        is_self: c.is_self ?? false,
         plans: plans.get(c.id) ?? [],
       }));
     },
@@ -297,6 +308,8 @@ function ContactFormDialog({
   >("");
   const [isFamily, setIsFamily] = useState(false);
   const [routine, setRoutine] = useState<RoutineBlock[]>([]);
+  const [gapMode, setGapMode] = useState<GapMode>("off");
+  const [isSelf, setIsSelf] = useState(false);
   const [pending, startTransition] = useTransition();
   const [init, setInit] = useState(false);
 
@@ -307,6 +320,8 @@ function ContactFormDialog({
     setNote(contact?.note ?? "");
     setIsFamily(contact?.is_family ?? false);
     setRoutine(contact?.routine ?? []);
+    setGapMode(contact?.gap_mode ?? "off");
+    setIsSelf(contact?.is_self ?? false);
     setPlans(
       (contact?.plans ?? []).map((p) => ({
         key: p.id,
@@ -347,6 +362,8 @@ function ContactFormDialog({
         isFamily,
         // 只有家人才有作息；非家人送空陣列清掉
         routine: isFamily ? routine : [],
+        gapMode: isFamily ? gapMode : "off",
+        isSelf: isFamily ? isSelf : false,
         plans: filledPlans.map((p) => ({
           id: p.id,
           label: p.label.trim() || defaultPlanLabel(p.headcount),
@@ -435,6 +452,43 @@ function ContactFormDialog({
             </span>
           </label>
 
+          {isFamily && (
+            <div className="space-y-3 rounded-lg border p-3">
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={isSelf}
+                  onCheckedChange={(c) => setIsSelf(!!c)}
+                  className="mt-0.5"
+                />
+                <span>
+                  這位就是本人（老闆）
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    她的行程與「未指定主角」的行程合併成同一條「本人」空檔，不會重複列兩次。
+                  </span>
+                </span>
+              </label>
+              {!isSelf && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">月曆空檔</Label>
+                  <Select value={gapMode} onValueChange={(v) => setGapMode(v as GapMode)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="off">不顯示（如外佣、親戚）</SelectItem>
+                      <SelectItem value="always">每天顯示</SelectItem>
+                      <SelectItem value="free_days">
+                        只在沒有固定作息的日子（如小孩：只有假日）
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    控制月曆「全部行程／家庭視角」要不要列此人的空檔；在上方主動聚焦此人時一律顯示。
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
           {isFamily && <RoutineEditor value={routine} onChange={setRoutine} />}
 
           {/* 預設收費：設一次，新增行程選到此人即自動帶入 */}

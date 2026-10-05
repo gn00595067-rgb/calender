@@ -9,7 +9,7 @@ import { ErrorState, ListSkeleton } from "@/components/app/states";
 import { useAppData } from "@/components/app/app-data";
 import { can } from "@/lib/permissions";
 import { useCalendarEvents } from "@/lib/client/events";
-import { useContacts } from "@/lib/client/lookups";
+import { useContacts, useGapProfiles } from "@/lib/client/lookups";
 import {
   Select,
   SelectContent,
@@ -66,6 +66,9 @@ export function CalendarView() {
     range.endIso,
   );
   const { data: contacts = [] } = useContacts();
+  // 標記為「本人」的人物（老闆）：她的行程與未指定主角的行程都算本人的
+  const { data: gapProfiles } = useGapProfiles();
+  const selfName = gapProfiles?.selfName ?? null;
   const familyContacts = contacts.filter((c) => c.is_family);
   const otherContacts = contacts.filter((c) => !c.is_family);
 
@@ -96,7 +99,11 @@ export function CalendarView() {
     // 本人：未指定主角的行程即視為本人（Peggy）自己的
     // 家庭視角也以本人為主軸（週/日視圖與提示沿用）
     if (gapTarget === "self" || gapTarget === "family") {
-      return { name: "本人", match: (e) => e.subjectNames.length === 0 };
+      return {
+        name: "本人",
+        match: (e) =>
+          e.subjectNames.length === 0 || (!!selfName && e.subjectNames.includes(selfName)),
+      };
     }
     // 主角（誰的行程）：小孩／本人
     if (gapTarget.startsWith("subj:")) {
@@ -116,19 +123,25 @@ export function CalendarView() {
       return { name, match: (e) => e.participantNames.includes(name) };
     }
     return null;
-  }, [gapTarget, calendarById]);
+  }, [gapTarget, calendarById, selfName]);
 
   // 家庭視角：以本人為主軸，家人（小孩）只在「當天有活動」的日子才顯示其空檔
   const familyFocus = useMemo(() => {
     if (gapTarget !== "family") return null;
     return {
-      primary: { name: "本人", match: (e: CalEvent) => e.subjectNames.length === 0 },
-      members: familyContacts.map((c) => ({
+      primary: {
+        name: "本人",
+        match: (e: CalEvent) =>
+          e.subjectNames.length === 0 || (!!selfName && e.subjectNames.includes(selfName)),
+      },
+      members: familyContacts
+        .filter((c) => c.name !== selfName)
+        .map((c) => ({
         name: c.name,
         match: (e: CalEvent) => e.subjectNames.includes(c.name),
       })),
     };
-  }, [gapTarget, familyContacts]);
+  }, [gapTarget, familyContacts, selfName]);
 
   const conflicts = useMemo(() => conflictIds(events), [events]);
   const colorOf = (calendarId: string) =>

@@ -27,23 +27,47 @@ export function useContacts() {
   });
 }
 
+/** 月曆空檔顯示方式：不顯示／每天／只在沒有固定作息的日子（如小孩假日） */
+export type GapMode = "off" | "always" | "free_days";
+
+/** 空檔相關的人物設定（以名字對應，因月曆的空檔群組以名字標示） */
+export interface GapProfiles {
+  routines: Map<string, RoutineBlock[]>;
+  /** 0015 migration 前沒有此欄位 → 空 Map，月曆沿用舊行為（有行程就列） */
+  gapMode: Map<string, GapMode>;
+  /** 標記為本人（老闆）的人物名字；其行程併入「本人」空檔 */
+  selfName: string | null;
+  /** 是否已套用 0015（決定未設定者要不要列） */
+  hasGapMode: boolean;
+}
+
 /**
- * 家人的固定作息（名字 → 作息），供空檔計算排除上學等時段。
- * 0014 migration 前沒有 routine 欄位：用 * 查詢，缺欄位時視為沒有作息。
+ * 家人的空檔設定：固定作息（上學等）、空檔顯示方式、誰是本人。
+ * 用 * 查詢：0014／0015 前缺欄位時視為沒有設定，不影響月曆。
  */
-export function useRoutines() {
+export function useGapProfiles() {
   return useQuery({
-    queryKey: ["contacts", "routines"],
-    queryFn: async (): Promise<Map<string, RoutineBlock[]>> => {
+    queryKey: ["contacts", "gap-profiles"],
+    queryFn: async (): Promise<GapProfiles> => {
       const supabase = createClient();
       const { data, error } = await supabase.from("contacts").select("*").eq("is_family", true);
-      const map = new Map<string, RoutineBlock[]>();
-      if (error) return map;
+      const out: GapProfiles = {
+        routines: new Map(),
+        gapMode: new Map(),
+        selfName: null,
+        hasGapMode: false,
+      };
+      if (error) return out;
       for (const c of data ?? []) {
         const blocks = Array.isArray(c.routine) ? (c.routine as RoutineBlock[]) : [];
-        if (blocks.length) map.set(c.name, blocks);
+        if (blocks.length) out.routines.set(c.name, blocks);
+        if (c.gap_mode) {
+          out.hasGapMode = true;
+          out.gapMode.set(c.name, c.gap_mode as GapMode);
+        }
+        if (c.is_self) out.selfName = c.name;
       }
-      return map;
+      return out;
     },
   });
 }
