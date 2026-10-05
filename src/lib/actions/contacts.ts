@@ -27,7 +27,7 @@ const contactSchema = z.object({
   defaultCategoryId: z.uuid().optional().nullable(),
   defaultDirection: z.enum(["expense", "income"]).optional().nullable(),
   defaultPaymentMethod: z
-    .enum(["monthly", "per_time", "prepaid_deduct", "prepaid_term"])
+    .enum(["monthly", "per_time", "per_time_cash", "prepaid_deduct", "prepaid_term"])
     .optional()
     .nullable(),
 });

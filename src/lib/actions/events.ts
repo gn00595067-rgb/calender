@@ -21,7 +21,7 @@ const financeSchema = z.object({
   categoryId: z.uuid().optional().nullable(),
   isSettled: z.boolean(),
   paymentMethod: z
-    .enum(["monthly", "per_time", "prepaid_deduct", "prepaid_term"])
+    .enum(["monthly", "per_time", "per_time_cash", "prepaid_deduct", "prepaid_term"])
     .optional()
     .nullable(),
   prepaidAccountId: z.uuid().optional().nullable(),

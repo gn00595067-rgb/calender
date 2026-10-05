@@ -163,6 +163,7 @@ export interface Database {
           default_payment_method:
             | "monthly"
             | "per_time"
+            | "per_time_cash"
             | "prepaid_deduct"
             | "prepaid_term"
             | null;
@@ -183,6 +184,7 @@ export interface Database {
           default_payment_method?:
             | "monthly"
             | "per_time"
+            | "per_time_cash"
             | "prepaid_deduct"
             | "prepaid_term"
             | null;
@@ -203,6 +205,7 @@ export interface Database {
           default_payment_method?:
             | "monthly"
             | "per_time"
+            | "per_time_cash"
             | "prepaid_deduct"
             | "prepaid_term"
             | null;
@@ -364,6 +367,7 @@ export interface Database {
           payment_method:
             | "monthly"
             | "per_time"
+            | "per_time_cash"
             | "prepaid_deduct"
             | "prepaid_term"
             | null;
@@ -395,6 +399,7 @@ export interface Database {
           payment_method?:
             | "monthly"
             | "per_time"
+            | "per_time_cash"
             | "prepaid_deduct"
             | "prepaid_term"
             | null;
@@ -425,6 +430,7 @@ export interface Database {
           payment_method?:
             | "monthly"
             | "per_time"
+            | "per_time_cash"
             | "prepaid_deduct"
             | "prepaid_term"
             | null;

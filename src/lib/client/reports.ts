@@ -25,6 +25,7 @@ export interface FinanceItem {
   payment_method:
     | "monthly"
     | "per_time"
+    | "per_time_cash"
     | "prepaid_deduct"
     | "prepaid_term"
     | null;

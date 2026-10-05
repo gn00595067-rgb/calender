@@ -36,6 +36,7 @@ export interface ContactBilling {
   default_payment_method:
     | "monthly"
     | "per_time"
+    | "per_time_cash"
     | "prepaid_deduct"
     | "prepaid_term"
     | null;
@@ -174,6 +175,7 @@ export interface EventEditData {
     payment_method:
       | "monthly"
       | "per_time"
+      | "per_time_cash"
       | "prepaid_deduct"
       | "prepaid_term"
       | null;

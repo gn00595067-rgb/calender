@@ -166,6 +166,7 @@ export const BILLING_MODES: { value: BillingMode; label: string; hint: string }[
 export type PaymentMethod =
   | "monthly"
   | "per_time"
+  | "per_time_cash"
   | "prepaid_deduct"
   | "prepaid_term";
 
@@ -180,6 +181,7 @@ export const PAYMENT_METHODS: {
 }[] = [
   { value: "monthly", label: "月結", hint: "月底一次結清", defaultSettled: false, usesPrepaid: false },
   { value: "per_time", label: "每次（LINE Pay）", hint: "當次即付即結", defaultSettled: true, usesPrepaid: false },
+  { value: "per_time_cash", label: "每次付現", hint: "當次付現金即結", defaultSettled: true, usesPrepaid: false },
   { value: "prepaid_deduct", label: "預繳累扣", hint: "先儲值、每堂扣抵", defaultSettled: true, usesPrepaid: true },
   { value: "prepaid_term", label: "預付一學期", hint: "學期初付清、每堂扣抵", defaultSettled: true, usesPrepaid: true },
 ];
@@ -187,6 +189,7 @@ export const PAYMENT_METHODS: {
 export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   monthly: "月結",
   per_time: "每次（LINE Pay）",
+  per_time_cash: "每次付現",
   prepaid_deduct: "預繳累扣",
   prepaid_term: "預付一學期",
 };
