@@ -35,6 +35,7 @@ import { useAppData } from "@/components/app/app-data";
 import {
   useEventEditData,
   useContactsBilling,
+  useContacts,
   isLegacyPlanId,
   useCategories,
 } from "@/lib/client/lookups";
@@ -188,6 +189,9 @@ export function EventModal({
       defaultValues: buildDefaults(),
     });
   const contactsBilling = useContactsBilling();
+  const { data: allContacts = [] } = useContacts();
+  /** 使用者手動改過主角 → 換分類時不再自動帶入 */
+  const subjectsTouchedRef = useRef(false);
 
   function buildDefaults(): FormValues {
     const start = draft?.startWall ?? defaultStart;
@@ -235,6 +239,8 @@ export function EventModal({
     amountTouchedRef.current = false;
     planManualRef.current = false;
     billingContactRef.current = null;
+    // 語音已判斷出主角時以語音為準；編輯舊行程不自動改
+    subjectsTouchedRef.current = mode === "edit" || !!draft?.subjectIds?.length;
     if (mode === "edit" && event) {
       reset({
         calendarId: event.calendar_id,
@@ -306,6 +312,26 @@ export function EventModal({
   const allDay = watch("allDay");
   const recurrence = watch("recurrence");
   const calendarId = watch("calendarId");
+
+  // 依分類名稱自動帶入主角：「哥哥+妹妹」→ 哥哥、妹妹（名稱含家人名字者）
+  const inferredSubjects = useMemo(() => {
+    const calName = calendarById.get(calendarId)?.name ?? "";
+    return allContacts
+      .filter((c) => c.is_family && c.name && calName.includes(c.name))
+      .map((c) => c.id);
+  }, [calendarId, calendarById, allContacts]);
+  const [autoSubjectNote, setAutoSubjectNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || mode !== "create" || subjectsTouchedRef.current) return;
+    setValue("subjectIds", inferredSubjects);
+    const calName = calendarById.get(calendarId)?.name;
+    setAutoSubjectNote(
+      inferredSubjects.length && calName
+        ? `已依分類「${calName}」帶入主角；只有其中一人參加時，把另一位拿掉即可。`
+        : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, inferredSubjects.join(",")]);
   const startWall = watch("startWall");
   const endWall = watch("endWall");
   // 財務相關（自動帶入、預繳扣抵）一律看「相關人物」＝收費老師
@@ -718,13 +744,19 @@ export function EventModal({
                 render={({ field }) => (
                   <ContactMultiSelect
                     value={field.value}
-                    onChange={field.onChange}
+                    onChange={(ids) => {
+                      subjectsTouchedRef.current = true;
+                      field.onChange(ids);
+                    }}
                     placeholder="選擇主角…（誰的行程）"
                     preferFamily
                     newIsFamily
                   />
                 )}
               />
+              {autoSubjectNote && (
+                <p className="text-xs text-muted-foreground">{autoSubjectNote}</p>
+              )}
             </div>
 
             <div className="space-y-2">
