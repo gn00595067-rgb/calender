@@ -11,6 +11,8 @@ const planSchema = z.object({
   headcount: z.number().int().min(1).max(30),
   billingMode: z.enum(["fixed", "hourly", "monthly"]),
   rate: z.number().int().nonnegative(),
+  /** 適用小孩；空＝不限 */
+  subjectIds: z.array(z.uuid()).max(10).default([]),
 });
 
 const contactSchema = z.object({
@@ -94,17 +96,30 @@ async function syncPlans(
       billing_mode: p.billingMode,
       rate: p.rate,
       position: i,
+      subject_ids: p.subjectIds,
     };
-    const { error: upErr } =
-      p.id && (existing ?? []).some((r) => r.id === p.id)
-        ? await supabase.from("contact_rate_plans").update(row).eq("id", p.id)
-        : await supabase
+    const isUpdate = !!p.id && (existing ?? []).some((r) => r.id === p.id);
+    const write = (r: Partial<typeof row>) =>
+      isUpdate
+        ? supabase.from("contact_rate_plans").update(r).eq("id", p.id!)
+        : supabase
             .from("contact_rate_plans")
-            .insert({ ...row, owner_id: ownerId, contact_id: contactId });
+            .insert({ ...(r as typeof row), owner_id: ownerId, contact_id: contactId });
+    let { error: upErr } = await write(row);
+    // 0011 前的庫沒有 subject_ids：沒指定小孩的方案去掉該欄位重存
+    if (upErr?.message.includes("subject_ids") && p.subjectIds.length === 0) {
+      const { subject_ids: _omit, ...rest } = row;
+      void _omit;
+      ({ error: upErr } = await write(rest));
+    }
     if (upErr) {
-      return p.billingMode === "monthly" && upErr.message.includes("billing_mode")
-        ? "月薪方案需先套用資料庫更新（0010_monthly_salary）才能保存"
-        : upErr.message;
+      if (p.billingMode === "monthly" && upErr.message.includes("billing_mode")) {
+        return "月薪方案需先套用資料庫更新（0010_monthly_salary）才能保存";
+      }
+      if (upErr.message.includes("subject_ids")) {
+        return "指定適用小孩需先套用資料庫更新（0011_plan_subjects）才能保存";
+      }
+      return upErr.message;
     }
   }
   return null;

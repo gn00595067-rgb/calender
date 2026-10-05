@@ -45,7 +45,8 @@ import {
   type PaymentMethod,
 } from "@/lib/constants";
 import { twd } from "@/lib/date";
-import { fetchPlansByContact, isLegacyPlanId } from "@/lib/client/lookups";
+import { cn } from "@/lib/utils";
+import { fetchPlansByContact, isLegacyPlanId, useContacts } from "@/lib/client/lookups";
 import { defaultPlanLabel, planSummary, type RatePlan } from "@/lib/rate-plans";
 import {
   createContactAction,
@@ -81,6 +82,8 @@ interface PlanDraft {
   headcount: number;
   billingMode: BillingMode;
   rate: string;
+  /** 適用小孩；空＝不限 */
+  subjectIds: string[];
 }
 
 function useContactsFull() {
@@ -104,6 +107,7 @@ function useContactsFull() {
 
 export default function ContactsSettingsPage() {
   const { data: contacts = [], isLoading } = useContactsFull();
+  const nameById = new Map(contacts.map((c) => [c.id, c.name]));
   const qc = useQueryClient();
   const [editing, setEditing] = useState<FullContact | null>(null);
   const [creating, setCreating] = useState(false);
@@ -171,7 +175,10 @@ export default function ContactsSettingsPage() {
                       key={p.id}
                       className="rounded bg-muted px-1.5 py-0.5 tabular-nums"
                     >
-                  {p.label} {twd(p.rate)}
+                      {p.label}
+                      {p.subject_ids.length > 0 &&
+                        `（${p.subject_ids.map((id) => nameById.get(id) ?? "?").join("、")}）`}{" "}
+                      {twd(p.rate)}
                       {p.billing_mode === "monthly" ? "／月" : p.billing_mode === "hourly" ? "／時" : "／堂"}
                     </span>
                   ))}
@@ -286,6 +293,7 @@ function ContactFormDialog({
         headcount: p.headcount,
         billingMode: p.billing_mode,
         rate: String(p.rate),
+        subjectIds: p.subject_ids,
       })),
     );
     setDefaultCategoryId(contact?.default_category_id ?? null);
@@ -297,8 +305,10 @@ function ContactFormDialog({
 
   // 金額沒填的方案視為未完成，不送出
   const filledPlans = plans.filter((p) => p.rate.trim() !== "");
+  // 只有「適用小孩相同、人數也相同」才真的分不出要挑哪個
+  const planKey = (p: PlanDraft) => `${p.headcount}|${[...p.subjectIds].sort().join(",")}`;
   const dupHeadcount = filledPlans.some(
-    (p, i) => filledPlans.findIndex((q) => q.headcount === p.headcount) !== i,
+    (p, i) => filledPlans.findIndex((q) => planKey(q) === planKey(p)) !== i,
   );
 
   const submit = () => {
@@ -316,6 +326,7 @@ function ContactFormDialog({
           headcount: p.headcount,
           billingMode: p.billingMode,
           rate: Math.round(Number(p.rate)),
+          subjectIds: p.subjectIds,
         })),
         defaultCategoryId: defaultCategoryId,
         defaultDirection: hasRate ? defaultDirection : null,
@@ -406,7 +417,8 @@ function ContactFormDialog({
             <PlanEditor plans={plans} onChange={setPlans} />
             {dupHeadcount && (
               <p className="text-xs text-amber-600">
-                有兩個方案人數相同，新增行程時會預設挑排在前面的那個。
+                有兩個方案的人數與適用小孩都相同，新增行程時會挑排在前面的那個。
+                若是不同小孩不同價，請在各方案勾選「適用小孩」。
               </p>
             )}
             <div className="space-y-1.5">
@@ -480,6 +492,9 @@ function PlanEditor({
   plans: PlanDraft[];
   onChange: (plans: PlanDraft[]) => void;
 }) {
+  // 可指定的小孩：標記為家人的人物
+  const { data: allContacts = [] } = useContacts();
+  const family = allContacts.filter((c) => c.is_family);
   const update = (key: string, patch: Partial<PlanDraft>) =>
     onChange(plans.map((p) => (p.key === key ? { ...p, ...patch } : p)));
 
@@ -495,6 +510,7 @@ function PlanEditor({
         headcount,
         billingMode: plans.at(-1)?.billingMode ?? "hourly",
         rate: "",
+        subjectIds: [],
       },
     ]);
   };
@@ -584,6 +600,49 @@ function PlanEditor({
               aria-label="金額"
             />
           </div>
+          {family.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-muted-foreground">適用小孩：</span>
+              <button
+                type="button"
+                onClick={() => update(p.key, { subjectIds: [] })}
+                className={cn(
+                  "rounded-full border px-2.5 py-0.5 transition",
+                  p.subjectIds.length === 0
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "hover:bg-accent",
+                )}
+              >
+                不限
+              </button>
+              {family.map((f) => {
+                const on = p.subjectIds.includes(f.id);
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => {
+                      const subjectIds = on
+                        ? p.subjectIds.filter((id) => id !== f.id)
+                        : [...p.subjectIds, f.id];
+                      // 指定小孩時，人數跟著勾選的人數走
+                      update(p.key, {
+                        subjectIds,
+                        ...(subjectIds.length ? { headcount: subjectIds.length } : {}),
+                      });
+                    }}
+                    className={cn(
+                      "rounded-full border px-2.5 py-0.5 transition",
+                      on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
+                    )}
+                  >
+                    {f.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {p.billingMode === "monthly" && p.rate.trim() !== "" && (
             <p className="text-[11px] text-muted-foreground">
               每月固定 {twd(Number(p.rate) || 0)}，每堂課不另計費；月底到「報表 → 月薪結算」記一筆（請假可調整金額）。

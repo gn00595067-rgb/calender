@@ -250,6 +250,8 @@ export interface Database {
           rate: number;
           position: number;
           created_at: string;
+          // 0011 適用小孩（套 migration 前查不到）
+          subject_ids?: string[];
         };
         Insert: {
           id?: string;
@@ -261,6 +263,7 @@ export interface Database {
           rate: number;
           position?: number;
           created_at?: string;
+          subject_ids?: string[];
         };
         Update: {
           id?: string;
@@ -272,6 +275,7 @@ export interface Database {
           rate?: number;
           position?: number;
           created_at?: string;
+          subject_ids?: string[];
         };
         Relationships: [];
       };

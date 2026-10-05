@@ -324,8 +324,6 @@ export function EventModal({
       .find((b) => b && b.plans.length > 0) ?? null;
   const plans = billingContact?.plans ?? [];
   const subjectIds = watch("subjectIds");
-  // 上課的小孩人數＝主角數（沒選主角視為 1 人）
-  const learners = Math.max(subjectIds.length, 1);
   const financePlanId = watch("financePlanId");
   const selectedPlan = plans.find((p) => p.id === financePlanId) ?? null;
   const durationMin = Math.max(diffMinutes(startWall, endWall), 0);
@@ -383,10 +381,10 @@ export function EventModal({
     if (!canFinance || plans.length === 0) return;
     const current = plans.find((p) => p.id === getValues("financePlanId"));
     if (planManualRef.current && current) return;
-    const next = pickPlan(plans, learners);
+    const next = pickPlan(plans, getValues("subjectIds"));
     if (next && next.id !== current?.id) setValue("financePlanId", next.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [billingContact?.id, learners, plans.length, canFinance]);
+  }, [billingContact?.id, subjectIds.join(","), plans.length, canFinance]);
 
   // 方案／時長變動 → 重算金額（使用者沒手動改過才覆蓋）
   useEffect(() => {

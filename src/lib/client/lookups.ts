@@ -58,9 +58,10 @@ export async function fetchPlansByContact(
   contacts: ContactPlanSource[],
 ): Promise<Map<string, RatePlan[]>> {
   const supabase = createClient();
+  // 用 * 而非列欄位：0011 前的庫沒有 subject_ids，列出會查詢失敗而誤判成沒有方案表
   const { data, error } = await supabase
     .from("contact_rate_plans")
-    .select("id, contact_id, label, headcount, billing_mode, rate, position")
+    .select("*")
     .order("position", { ascending: true });
   const map = new Map<string, RatePlan[]>();
   if (error) {
@@ -75,12 +76,23 @@ export async function fetchPlansByContact(
           billing_mode: c.billing_mode ?? "fixed",
           rate: c.default_rate,
           position: 0,
+          subject_ids: [],
         },
       ]);
     }
     return map;
   }
-  for (const p of data ?? []) {
+  for (const row of data ?? []) {
+    const p: RatePlan = {
+      id: row.id,
+      contact_id: row.contact_id,
+      label: row.label,
+      headcount: row.headcount,
+      billing_mode: row.billing_mode,
+      rate: row.rate,
+      position: row.position,
+      subject_ids: row.subject_ids ?? [],
+    };
     const arr = map.get(p.contact_id);
     if (arr) arr.push(p);
     else map.set(p.contact_id, [p]);
