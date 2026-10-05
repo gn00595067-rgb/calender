@@ -72,6 +72,33 @@ export function useGapProfiles() {
   });
 }
 
+/**
+ * 每位人物以某角色（主角／相關人物）出現在行程的次數，供選單「常用的排前面」。
+ * 逐人用 count 查詢（人物數少），避免一次撈關聯列被 1000 筆上限截斷。
+ */
+export function useContactUsage(role: "subject" | "participant", contactIds: string[]) {
+  const ids = [...contactIds].sort();
+  return useQuery({
+    queryKey: ["contacts", "usage", role, ids],
+    enabled: ids.length > 0,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<Map<string, number>> => {
+      const supabase = createClient();
+      const counts = await Promise.all(
+        ids.map(async (id) => {
+          const { count } = await supabase
+            .from("event_contacts")
+            .select("event_id", { count: "exact", head: true })
+            .eq("contact_id", id)
+            .eq("role", role);
+          return [id, count ?? 0] as const;
+        }),
+      );
+      return new Map(counts);
+    },
+  });
+}
+
 export interface ContactBilling {
   id: string;
   name: string;

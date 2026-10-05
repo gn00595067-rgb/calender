@@ -11,7 +11,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { useContacts } from "@/lib/client/lookups";
+import { useContacts, useContactUsage } from "@/lib/client/lookups";
 import { createContactAction } from "@/lib/actions/contacts";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -21,6 +21,7 @@ export function ContactMultiSelect({
   placeholder = "選擇人物…",
   preferFamily = false,
   newIsFamily = false,
+  usageRole,
 }: {
   value: string[];
   onChange: (ids: string[]) => void;
@@ -30,6 +31,8 @@ export function ContactMultiSelect({
   preferFamily?: boolean;
   /** 快速新增的人物是否標記為家人（主角欄用） */
   newIsFamily?: boolean;
+  /** 依此角色的使用次數排序（常用的排前面） */
+  usageRole?: "subject" | "participant";
 }) {
   const { data: contacts = [] } = useContacts();
   const qc = useQueryClient();
@@ -39,12 +42,17 @@ export function ContactMultiSelect({
   const [pending, startTransition] = useTransition();
 
   const selected = contacts.filter((c) => value.includes(c.id));
-  // 主角欄：家人優先排序，方便挑小孩/本人
-  const ordered = preferFamily
-    ? [...contacts].sort(
-        (a, b) => Number(b.is_family) - Number(a.is_family) || a.name.localeCompare(b.name),
-      )
-    : contacts;
+  const { data: usage } = useContactUsage(
+    usageRole ?? "subject",
+    usageRole ? contacts.map((c) => c.id) : [],
+  );
+  // 排序：常用的（此角色出現次數多）排前面 → 主角欄家人優先 → 名字
+  const ordered = [...contacts].sort(
+    (a, b) =>
+      (usage?.get(b.id) ?? 0) - (usage?.get(a.id) ?? 0) ||
+      (preferFamily ? Number(b.is_family) - Number(a.is_family) : 0) ||
+      a.name.localeCompare(b.name),
+  );
 
   const toggle = (id: string) => {
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
@@ -106,6 +114,11 @@ export function ContactMultiSelect({
                 )}
               />
               <span className="flex-1 truncate">{c.name}</span>
+              {!!usage?.get(c.id) && (
+                <span className="text-[10px] tabular-nums text-muted-foreground/70">
+                  {usage.get(c.id)} 次
+                </span>
+              )}
               {preferFamily && c.is_family && (
                 <span className="rounded bg-primary/10 px-1 text-[10px] font-medium text-primary">
                   家人

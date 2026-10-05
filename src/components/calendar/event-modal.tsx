@@ -751,6 +751,7 @@ export function EventModal({
                     placeholder="選擇主角…（誰的行程）"
                     preferFamily
                     newIsFamily
+                    usageRole="subject"
                   />
                 )}
               />
@@ -774,6 +775,7 @@ export function EventModal({
                     value={field.value}
                     onChange={field.onChange}
                     placeholder="選擇相關人物…"
+                    usageRole="participant"
                   />
                 )}
               />
