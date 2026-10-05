@@ -529,6 +529,11 @@ export async function deleteEventAction(
   if (!z.uuid().safeParse(id).success) return fail("參數有誤");
   try {
     const { supabase } = await getAuthed();
+    // finance_records.event_id 是 on delete set null，不先刪會留下「（無關聯行程）」孤兒費用
+    const deleteFinance = async (eventIds: string[]) =>
+      eventIds.length === 0
+        ? null
+        : (await supabase.from("finance_records").delete().in("event_id", eventIds)).error;
     if (scope === "following") {
       const { data: current } = await supabase
         .from("events")
@@ -536,6 +541,13 @@ export async function deleteEventAction(
         .eq("id", id)
         .single();
       if (current?.recurrence_group_id) {
+        const { data: targets } = await supabase
+          .from("events")
+          .select("id")
+          .eq("recurrence_group_id", current.recurrence_group_id)
+          .gte("starts_at", current.starts_at);
+        const finErr = await deleteFinance((targets ?? []).map((t) => t.id));
+        if (finErr) return fail(finErr.message);
         const { error } = await supabase
           .from("events")
           .delete()
@@ -546,6 +558,8 @@ export async function deleteEventAction(
         return { ok: true, data: undefined };
       }
     }
+    const finErr = await deleteFinance([id]);
+    if (finErr) return fail(finErr.message);
     const { error } = await supabase.from("events").delete().eq("id", id);
     if (error) return fail(error.message);
     revalidatePath("/", "layout");
