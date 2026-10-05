@@ -85,6 +85,9 @@ interface PlanDraft {
   rate: string;
   /** 適用小孩；空＝不限 */
   subjectIds: string[];
+  /** 每次加收金額（字串暫存）與名稱 */
+  extraFee: string;
+  extraLabel: string;
 }
 
 function useContactsFull() {
@@ -181,6 +184,7 @@ export default function ContactsSettingsPage() {
                         `（${p.subject_ids.map((id) => nameById.get(id) ?? "?").join("、")}）`}{" "}
                       {twd(p.rate)}
                       {p.billing_mode === "monthly" ? "／月" : p.billing_mode === "hourly" ? "／時" : "／堂"}
+                      {p.extra_fee > 0 && ` ＋${p.extra_label?.trim() || "交通費"} ${twd(p.extra_fee)}／次`}
                     </span>
                   ))}
                   {c.plans.length > 0 && c.default_payment_method && (
@@ -295,6 +299,8 @@ function ContactFormDialog({
         billingMode: p.billing_mode,
         rate: String(p.rate),
         subjectIds: p.subject_ids,
+        extraFee: p.extra_fee ? String(p.extra_fee) : "",
+        extraLabel: p.extra_label ?? "",
       })),
     );
     setDefaultCategoryId(contact?.default_category_id ?? null);
@@ -328,6 +334,8 @@ function ContactFormDialog({
           billingMode: p.billingMode,
           rate: Math.round(Number(p.rate)),
           subjectIds: p.subjectIds,
+          extraFee: Math.max(0, Math.round(Number(p.extraFee) || 0)),
+          extraLabel: p.extraLabel.trim() || null,
         })),
         defaultCategoryId: defaultCategoryId,
         defaultDirection: hasRate ? defaultDirection : null,
@@ -512,6 +520,8 @@ function PlanEditor({
         billingMode: plans.at(-1)?.billingMode ?? "hourly",
         rate: "",
         subjectIds: [],
+        extraFee: "",
+        extraLabel: "",
       },
     ]);
   };
@@ -600,6 +610,27 @@ function PlanEditor({
               }
               aria-label="金額"
             />
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="shrink-0 text-muted-foreground">每次加收：</span>
+            <Input
+              value={p.extraLabel}
+              onChange={(e) => update(p.key, { extraLabel: e.target.value })}
+              className="h-8 w-24"
+              placeholder="交通費"
+              aria-label="加收名稱"
+            />
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              value={p.extraFee}
+              onChange={(e) => update(p.key, { extraFee: e.target.value })}
+              className="h-8 w-24"
+              placeholder="0"
+              aria-label="加收金額"
+            />
+            <span className="text-muted-foreground">元／次（選填）</span>
           </div>
           {family.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 text-xs">

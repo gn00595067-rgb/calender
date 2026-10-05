@@ -32,6 +32,9 @@ export interface CalEvent {
     is_settled: boolean;
     /** 上課形式快照（1對1／1對2…）；未用收費方案為 null */
     lesson_label: string | null;
+    /** 這堂含的加收（如交通費）；無則 null */
+    extra_fee: number | null;
+    extra_label: string | null;
   }[];
   noteCount: number;
   noteAuthorIds: string[];
@@ -123,6 +126,8 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
       amount: r.amount,
       is_settled: r.is_settled,
       lesson_label: r.lesson_label ?? null,
+      extra_fee: r.extra_fee ?? null,
+      extra_label: r.extra_label ?? null,
     });
   }
   const noteCount = new Map<string, number>();

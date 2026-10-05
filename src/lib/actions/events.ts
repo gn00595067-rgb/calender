@@ -34,6 +34,9 @@ const financeSchema = z.object({
   lessonLabel: z.string().trim().max(30).optional().nullable(),
   headcount: z.number().int().min(1).max(30).optional().nullable(),
   learnerCount: z.number().int().min(1).max(30).optional().nullable(),
+  /** 這堂含的加收（如交通費）快照 */
+  extraFee: z.number().int().nonnegative().optional().nullable(),
+  extraLabel: z.string().trim().max(20).optional().nullable(),
   /** 月薪制老師的課：金額 0 仍記一筆（計堂數），錢在月底的月薪紀錄 */
   salaried: z.boolean().optional().default(false),
 });
@@ -47,10 +50,19 @@ function planSnapshot(f: FinanceInput) {
     lesson_label: f.lessonLabel ?? null,
     headcount: f.headcount ?? null,
     learner_count: f.learnerCount ?? null,
+    extra_fee: f.extraFee || null,
+    extra_label: f.extraFee ? f.extraLabel ?? null : null,
   };
 }
 
-const SNAPSHOT_KEYS = ["rate_plan_id", "lesson_label", "headcount", "learner_count"] as const;
+const SNAPSHOT_KEYS = [
+  "rate_plan_id",
+  "lesson_label",
+  "headcount",
+  "learner_count",
+  "extra_fee",
+  "extra_label",
+] as const;
 
 /** 查無欄位（migration 尚未套用到此庫）的錯誤；預設檢查 0008 方案快照欄位 */
 function isMissingColumn(

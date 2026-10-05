@@ -329,6 +329,7 @@ export default function ReportsPage() {
       "人物",
       "主角",
       "上課形式",
+      "加收（交通費等）",
       "每位主角分攤",
       "行程",
       "付款方式",
@@ -344,6 +345,7 @@ export default function ReportsPage() {
       f.contact_name ?? "",
       f.subject_names.join("、"),
       f.lesson_label ?? "",
+      f.extra_fee ? `${f.extra_label || "交通費"} ${f.extra_fee}` : "",
       f.subject_names.length >= 2
         ? splitAmount(f.amount, f.subject_names.length).join("／")
         : "",
@@ -582,6 +584,11 @@ export default function ReportsPage() {
                                 {item.lesson_label && (
                                   <span className="ml-1 text-xs text-muted-foreground">
                                     · {item.lesson_label}
+                                  </span>
+                                )}
+                                {!!item.extra_fee && (
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    · 含{item.extra_label || "交通費"} {twd(item.extra_fee)}
                                   </span>
                                 )}
                                 {item.category_name && (

@@ -13,6 +13,9 @@ const planSchema = z.object({
   rate: z.number().int().nonnegative(),
   /** 適用小孩；空＝不限 */
   subjectIds: z.array(z.uuid()).max(10).default([]),
+  /** 每次加收（如交通費） */
+  extraFee: z.number().int().nonnegative().default(0),
+  extraLabel: z.string().trim().max(20).optional().nullable(),
 });
 
 const contactSchema = z.object({
@@ -97,6 +100,8 @@ async function syncPlans(
       rate: p.rate,
       position: i,
       subject_ids: p.subjectIds,
+      extra_fee: p.extraFee,
+      extra_label: p.extraLabel || null,
     };
     const isUpdate = !!p.id && (existing ?? []).some((r) => r.id === p.id);
     const write = (r: Partial<typeof row>) =>
@@ -106,15 +111,25 @@ async function syncPlans(
             .from("contact_rate_plans")
             .insert({ ...(r as typeof row), owner_id: ownerId, contact_id: contactId });
     let { error: upErr } = await write(row);
-    // 0011 前的庫沒有 subject_ids：沒指定小孩的方案去掉該欄位重存
-    if (upErr?.message.includes("subject_ids") && p.subjectIds.length === 0) {
-      const { subject_ids: _omit, ...rest } = row;
-      void _omit;
+    // 舊庫缺新欄位（0011 subject_ids／0013 extra_fee）：沒用到的欄位去掉重存
+    if (
+      upErr &&
+      /subject_ids|extra_fee|extra_label/.test(upErr.message) &&
+      p.subjectIds.length === 0 &&
+      p.extraFee === 0
+    ) {
+      const { subject_ids: _s, extra_fee: _f, extra_label: _l, ...rest } = row;
+      void _s;
+      void _f;
+      void _l;
       ({ error: upErr } = await write(rest));
     }
     if (upErr) {
       if (p.billingMode === "monthly" && upErr.message.includes("billing_mode")) {
         return "月薪方案需先套用資料庫更新（0010_monthly_salary）才能保存";
+      }
+      if (/extra_fee|extra_label/.test(upErr.message)) {
+        return "每次加收需先套用資料庫更新（0013_plan_extra_fee）才能保存";
       }
       if (upErr.message.includes("subject_ids")) {
         return "指定適用小孩需先套用資料庫更新（0011_plan_subjects）才能保存";

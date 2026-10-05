@@ -45,6 +45,9 @@ export interface FinanceItem {
   headcount: number | null;
   /** 月薪紀錄的月份（yyyy-MM）；一般費用為 null */
   salary_month: string | null;
+  /** 這堂含的加收（如交通費） */
+  extra_fee: number | null;
+  extra_label: string | null;
   note: string | null;
 }
 
@@ -151,6 +154,8 @@ export function useFinanceRange(
           lesson_label: r.lesson_label ?? null,
           headcount: r.headcount ?? null,
           salary_month: r.salary_month ?? null,
+          extra_fee: r.extra_fee ?? null,
+          extra_label: r.extra_label ?? null,
           category_name: cat?.name ?? r.category_label ?? null,
           category_group: cat?.group_label ?? null,
           event_title: r.event_id ? (evTitle.get(r.event_id) ?? null) : null,

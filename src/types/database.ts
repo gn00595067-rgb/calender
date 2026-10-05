@@ -255,6 +255,9 @@ export interface Database {
           created_at: string;
           // 0011 適用小孩（套 migration 前查不到）
           subject_ids?: string[];
+          // 0013 每次加收
+          extra_fee?: number;
+          extra_label?: string | null;
         };
         Insert: {
           id?: string;
@@ -267,6 +270,8 @@ export interface Database {
           position?: number;
           created_at?: string;
           subject_ids?: string[];
+          extra_fee?: number;
+          extra_label?: string | null;
         };
         Update: {
           id?: string;
@@ -279,6 +284,8 @@ export interface Database {
           position?: number;
           created_at?: string;
           subject_ids?: string[];
+          extra_fee?: number;
+          extra_label?: string | null;
         };
         Relationships: [];
       };
@@ -382,6 +389,9 @@ export interface Database {
           learner_count?: number | null;
           // 0010 月薪：這筆是某位老師某月（yyyy-MM）的月薪
           salary_month?: string | null;
+          // 0013 這堂含的加收（如交通費）
+          extra_fee?: number | null;
+          extra_label?: string | null;
         };
         Insert: {
           id?: string;
@@ -413,6 +423,9 @@ export interface Database {
           learner_count?: number | null;
           // 0010 月薪：這筆是某位老師某月（yyyy-MM）的月薪
           salary_month?: string | null;
+          // 0013 這堂含的加收（如交通費）
+          extra_fee?: number | null;
+          extra_label?: string | null;
         };
         Update: {
           id?: string;
@@ -444,6 +457,9 @@ export interface Database {
           learner_count?: number | null;
           // 0010 月薪：這筆是某位老師某月（yyyy-MM）的月薪
           salary_month?: string | null;
+          // 0013 這堂含的加收（如交通費）
+          extra_fee?: number | null;
+          extra_label?: string | null;
         };
         Relationships: [];
       };

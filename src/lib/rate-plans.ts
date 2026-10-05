@@ -17,6 +17,17 @@ export interface RatePlan {
   position: number;
   /** 適用小孩（主角 contact id）；空陣列＝不限，只依人數挑 */
   subject_ids: string[];
+  /** 每次加收（如交通費）；0＝無 */
+  extra_fee: number;
+  /** 加收名稱，空＝「交通費」 */
+  extra_label: string | null;
+}
+
+export const DEFAULT_EXTRA_LABEL = "交通費";
+
+/** 加收名稱（未填用預設） */
+export function extraLabel(plan: Pick<RatePlan, "extra_label">): string {
+  return plan.extra_label?.trim() || DEFAULT_EXTRA_LABEL;
 }
 
 /** 依人數給的預設方案名稱：1 → 1對1、2 → 1對2 */
@@ -65,13 +76,18 @@ export function isMonthlyPlan(plan: Pick<RatePlan, "billing_mode"> | null | unde
   return plan?.billing_mode === "monthly";
 }
 
-/** 依方案算「這一堂」的金額（時薪制 × 時數，四捨五入到元；月薪制每堂為 0） */
-export function planAmount(plan: RatePlan, minutes: number): number {
+/** 方案本身的這堂金額（不含加收）：時薪制 × 時數、四捨五入；月薪制每堂為 0 */
+export function planBaseAmount(plan: RatePlan, minutes: number): number {
   if (plan.billing_mode === "monthly") return 0;
   if (plan.billing_mode === "hourly") {
     return Math.round((plan.rate * Math.max(minutes, 0)) / 60);
   }
   return plan.rate;
+}
+
+/** 這一堂應付的總額＝方案金額＋每次加收（如交通費） */
+export function planAmount(plan: RatePlan, minutes: number): number {
+  return planBaseAmount(plan, minutes) + (plan.extra_fee || 0);
 }
 
 /** 方案摘要：「1對2 時薪 1,800」 */

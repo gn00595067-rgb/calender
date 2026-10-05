@@ -78,6 +78,8 @@ export async function fetchPlansByContact(
           rate: c.default_rate,
           position: 0,
           subject_ids: [],
+          extra_fee: 0,
+          extra_label: null,
         },
       ]);
     }
@@ -93,6 +95,8 @@ export async function fetchPlansByContact(
       rate: row.rate,
       position: row.position,
       subject_ids: row.subject_ids ?? [],
+      extra_fee: row.extra_fee ?? 0,
+      extra_label: row.extra_label ?? null,
     };
     const arr = map.get(p.contact_id);
     if (arr) arr.push(p);

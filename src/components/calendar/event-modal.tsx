@@ -53,6 +53,7 @@ import { addMinutesToWall, wallWeekday, diffMinutes } from "@/lib/wall-time";
 import { fetchEventsInRange, type CalEvent } from "@/lib/client/events";
 import { ConflictPrompt } from "./conflict-prompt";
 import {
+  extraLabel,
   isMonthlyPlan,
   pickPlan,
   planAmount,
@@ -392,7 +393,7 @@ export function EventModal({
     if (!getValues("financeEnabled")) return;
     setValue("financeAmount", String(suggestedAmount));
     // 月薪制：這堂不用另外付錢，直接算已結清（錢在月底的月薪那筆）
-    if (isMonthlyPlan(selectedPlan)) setValue("financeSettled", true);
+    if (isMonthlyPlan(selectedPlan) && !selectedPlan?.extra_fee) setValue("financeSettled", true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestedAmount]);
 
@@ -470,6 +471,8 @@ export function EventModal({
             headcount: selectedPlan?.headcount ?? null,
             learnerCount: v.subjectIds.length > 0 ? v.subjectIds.length : null,
             salaried,
+            extraFee: selectedPlan?.extra_fee || null,
+            extraLabel: selectedPlan?.extra_fee ? extraLabel(selectedPlan) : null,
           }
         : null;
 
@@ -1057,7 +1060,10 @@ export function EventModal({
                     </div>
                     {selectedPlan && isMonthlyPlan(selectedPlan) && (
                       <p className="text-xs text-muted-foreground">
-                        {planSummary(selectedPlan)}：這堂不另計費（記為 NT$0、已結清，報表照樣計堂數）；
+                        {planSummary(selectedPlan)}：
+                        {selectedPlan.extra_fee
+                          ? `這堂只付${extraLabel(selectedPlan)} ${twd(selectedPlan.extra_fee)}；`
+                          : "這堂不另計費（記為 NT$0、已結清，報表照樣計堂數）；"}
                         月底到「報表 → 月薪結算」記錄當月月薪。
                       </p>
                     )}
@@ -1067,6 +1073,11 @@ export function EventModal({
                         hourly={selectedPlan.billing_mode === "hourly"}
                         minutes={durationMin}
                         suggested={suggestedAmount}
+                        extra={
+                          selectedPlan.extra_fee
+                            ? { label: extraLabel(selectedPlan), fee: selectedPlan.extra_fee }
+                            : null
+                        }
                         current={Math.round(Number(watch("financeAmount")) || 0)}
                         subjectCount={subjectIds.length}
                         onApply={() => {
@@ -1278,6 +1289,7 @@ function PlanAmountHint({
   hourly,
   minutes,
   suggested,
+  extra,
   current,
   subjectCount,
   onApply,
@@ -1286,6 +1298,8 @@ function PlanAmountHint({
   hourly: boolean;
   minutes: number;
   suggested: number;
+  /** 每次加收（如交通費 100） */
+  extra: { label: string; fee: number } | null;
   current: number;
   subjectCount: number;
   onApply: () => void;
@@ -1297,7 +1311,8 @@ function PlanAmountHint({
       <div className="flex flex-wrap items-center gap-x-2">
         <span>
           依方案：{summary}
-          {hourly ? ` × ${hours} 小時` : ""} = {twd(suggested)}
+          {hourly ? ` × ${hours} 小時` : ""}
+          {extra ? ` ＋ ${extra.label} ${twd(extra.fee)}` : ""} = {twd(suggested)}
         </span>
         {current !== suggested && (
           <Button
