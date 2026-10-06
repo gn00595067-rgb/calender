@@ -374,3 +374,13 @@ spec：`docs/specs/時間衝突提醒.md`。
 **為什麼**：Peggy 希望提醒都預設 10 分鐘前，不是 10 分鐘才去改；整日行程若也套 10 分鐘，會在前一晚 23:50 跳通知，故排除。
 
 **下一步**：回覆 Peggy「手機跳通知」現況（目前只有網頁開著時的瀏覽器通知＋Email）；待決定是否做 Web Push（PWA）。
+
+---
+
+## 2026-10-06 — 手機推播提醒（Web Push，免費方案）
+
+**做了什麼**：新增「設定 → 手機通知」：每台裝置開啟後，提醒時間到即使網頁關著也會跳通知（iPhone 需加入主畫面）。後端 `/api/cron/reminders` 加推播（`src/lib/push.ts`），每筆只推一次、失效裝置自動清掉；新增 manifest、圖示、`public/sw.js`；proxy 放行 `/api/cron`、`/sw.js`、manifest。順手把「標題加主角名」的本人判斷改用人物的 `is_self` 標記（原本用名字比對）。spec：`docs/specs/手機推播提醒.md`。
+
+**為什麼**：Peggy 要像 Google 行事曆一樣在手機跳提醒；限定免費資源，故用 Web Push＋Supabase pg_cron（Vercel 免費排程一天一次不夠）。過程發現 Email 提醒其實從沒寄出：排程端點被登入攔截、擁有者信箱是假的。
+
+**下一步**：套 0016、Vercel 設 4 個環境變數並 Redeploy、建 pg_cron 排程；Peggy 手機加入主畫面→開啟通知→測試通知。

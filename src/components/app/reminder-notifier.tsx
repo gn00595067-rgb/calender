@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Bell } from "lucide-react";
 import { useUpcomingReminders } from "@/lib/client/reminders";
 
@@ -33,6 +35,7 @@ export function ReminderNotifier() {
   // 只有授權後才需要輪詢資料
   const { data: reminders = [] } = useUpcomingReminders(perm === "granted");
   const notified = useRef<Set<string>>(new Set());
+  const pathname = usePathname();
 
   useEffect(() => {
     notified.current = loadNotified();
@@ -43,10 +46,6 @@ export function ReminderNotifier() {
     }
   }, []);
 
-  const enable = useCallback(() => {
-    if (typeof Notification === "undefined") return;
-    Notification.requestPermission().then((p) => setPerm(p));
-  }, []);
 
   useEffect(() => {
     if (perm !== "granted") return;
@@ -78,16 +77,15 @@ export function ReminderNotifier() {
     return () => clearInterval(iv);
   }, [reminders, perm]);
 
-  // 尚未決定權限 → 顯示邀請按鈕（授權後消失）
-  if (perm !== "default") return null;
+  // 尚未決定權限 → 顯示邀請按鈕，導到「手機通知」一併開啟推播（授權後消失）
+  if (perm !== "default" || pathname === "/settings/notifications") return null;
   return (
-    <button
-      type="button"
-      onClick={enable}
+    <Link
+      href="/settings/notifications"
       className="fixed bottom-4 right-4 z-50 inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-2 text-sm shadow-lg hover:bg-accent"
     >
       <Bell className="size-4 text-primary" />
-      開啟桌面提醒
-    </button>
+      開啟提醒通知
+    </Link>
   );
 }

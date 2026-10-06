@@ -3,14 +3,12 @@
  * 手動新增、編輯、語音、批次補名共用。spec：docs/specs/語音新增-標題加主角名.md
  */
 
-/** 本人（Peggy）也可能被設成主角；她的行程不加名字 */
-export function isSelfName(name: string): boolean {
-  return /peggy|本人/i.test(name);
-}
-
-/** 標題後加主角名（本人除外）；標題已含該名字就不重複加 */
+/**
+ * 標題後加主角名；標題已含該名字就不重複加。
+ * 本人（人物管理勾「本人」＝is_self）由呼叫端先排除，不加名字。
+ */
 export function withSubjectSuffix(title: string, subjectNames: string[]): string {
-  const missing = subjectNames.filter((n) => n && !isSelfName(n) && !title.includes(n));
+  const missing = subjectNames.filter((n) => n && !title.includes(n));
   return missing.length ? `${title}-${missing.join("、")}` : title;
 }
 

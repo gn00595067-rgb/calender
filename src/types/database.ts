@@ -85,6 +85,7 @@ export interface Database {
           source_uid: string | null;
           reminder_minutes: number | null;
           reminder_email_sent_at: string | null;
+          reminder_push_sent_at?: string | null;
           created_at: string;
           updated_at: string;
           // 0009 司機接送（套 migration 前查不到，故標為可選）
@@ -110,6 +111,7 @@ export interface Database {
           source_uid?: string | null;
           reminder_minutes?: number | null;
           reminder_email_sent_at?: string | null;
+          reminder_push_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
           // 0009 司機接送（套 migration 前查不到，故標為可選）
@@ -135,6 +137,7 @@ export interface Database {
           source_uid?: string | null;
           reminder_minutes?: number | null;
           reminder_email_sent_at?: string | null;
+          reminder_push_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
           // 0009 司機接送（套 migration 前查不到，故標為可選）
@@ -356,6 +359,27 @@ export interface Database {
           contact_id?: string;
           role?: "subject" | "participant";
         };
+        Relationships: [];
+      };
+      push_subscriptions: {
+        Row: {
+          id: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          endpoint: string;
+          p256dh: string;
+          auth: string;
+          user_agent?: string | null;
+        };
+        Update: { p256dh?: string; auth?: string; user_agent?: string | null; user_id?: string };
         Relationships: [];
       };
       tags: {

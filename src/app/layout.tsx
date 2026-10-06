@@ -13,6 +13,9 @@ const notoSansTC = Noto_Sans_TC({
 export const metadata: Metadata = {
   title: `${APP_NAME}｜${APP_TAGLINE}`,
   description: "給高階主管的一眼看懂行事曆：分類、區間總覽、細緻權限與財務結算。",
+  // iPhone「加入主畫面」後像 App 一樣全螢幕開啟（推播的前提）
+  appleWebApp: { capable: true, title: APP_NAME, statusBarStyle: "default" },
+  icons: { icon: "/icon.svg", apple: "/apple-touch-icon.png" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

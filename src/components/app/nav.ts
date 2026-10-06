@@ -10,6 +10,7 @@ import {
   Coins,
   Wallet,
   Car,
+  BellRing,
   Hash,
   type LucideIcon,
 } from "lucide-react";
@@ -29,6 +30,7 @@ export const MAIN_NAV: NavItem[] = [
 ];
 
 export const SETTINGS_NAV: NavItem[] = [
+  { href: "/settings/notifications", label: "手機通知", icon: BellRing },
   { href: "/settings/calendars", label: "分類管理", icon: FolderCog },
   { href: "/settings/shares", label: "分享與權限", icon: Share2 },
   { href: "/settings/contacts", label: "人物管理", icon: Users },

@@ -2,8 +2,11 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database";
 
-/** 不需登入即可存取的公開路徑前綴 */
-const PUBLIC_PATHS = ["/login", "/auth"];
+/**
+ * 不需登入即可存取的公開路徑前綴。
+ * /api/cron：排程呼叫（自帶 CRON_SECRET 驗證）；/sw.js、/manifest：手機安裝與推播要能直接抓。
+ */
+const PUBLIC_PATHS = ["/login", "/auth", "/api/cron", "/sw.js", "/manifest.webmanifest"];
 
 /**
  * 在每個請求刷新 Supabase session（寫回 cookie），並保護需登入的路由。

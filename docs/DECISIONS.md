@@ -151,3 +151,8 @@
 
 **選**：表單預設 10 分鐘前，整日自動改不提醒；既有行程不批次補。
 **不選**：資料庫欄位預設 10（匯入等其他入口也會被套上、整日會半夜跳）；批次把既有未來行程補成 10 分鐘（Email 提醒會一次多出大量信件，先看新行程的感受）。
+
+## 2026-10-06 — 手機提醒用 Web Push＋Supabase pg_cron
+
+**選**：Web Push（免費、iOS 16.4+ 主畫面 App 也支援）；排程用 Supabase pg_cron＋pg_net 每分鐘呼叫，免外部帳號。
+**不選**：LINE 通知（LINE Notify 已停止服務，Messaging API 超過免費額度要付費）；Vercel Cron（免費方案一天一次）；cron-job.org（要另外註冊帳號）；訂閱 ICS 到 Google 行事曆（Google 對訂閱的行事曆不跳提醒、更新要數小時）。

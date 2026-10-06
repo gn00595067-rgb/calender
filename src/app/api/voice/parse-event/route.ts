@@ -65,7 +65,7 @@ export async function POST(req: Request) {
 
   // 3) 脈絡：人物、標籤、過去習慣（伺服器端查，RLS 只會給看得到的資料）
   const [ctRes, tagRes] = await Promise.all([
-    supabase.from("contacts").select("id, name, role_label, is_family").order("name"),
+    supabase.from("contacts").select("id, name, role_label, is_family, is_self").order("name"),
     supabase.from("tags").select("name").order("name"),
   ]);
   const contacts: ContactRow[] = ctRes.data ?? [];
@@ -137,7 +137,10 @@ export async function POST(req: Request) {
   // 非本人（有主角）的行程標題加主角名，月曆上一眼看出是誰的：打球-豪哥
   const title = withSubjectSuffix(
     result.title?.trim() || "（未命名行程）",
-    subjectIds.map((id) => contactById.get(id)!.name),
+    subjectIds
+      .map((id) => contactById.get(id)!)
+      .filter((c) => !c.is_self)
+      .map((c) => c.name),
   );
   const location = result.location?.trim() || null;
   const weekdays = [...new Set(result.weekdays)].filter((d) => d >= 0 && d <= 6);

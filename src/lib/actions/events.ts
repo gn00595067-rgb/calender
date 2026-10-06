@@ -240,11 +240,16 @@ async function titleWithSubjects(
   title: string,
   subjectIds: string[],
 ): Promise<string> {
-  const { data } = await supabase.from("contacts").select("id, name").eq("is_family", true);
+  const { data } = await supabase
+    .from("contacts")
+    .select("id, name, is_self")
+    .eq("is_family", true);
   const family = data ?? [];
+  // 本人（is_self）當主角時不加名字
   const subjectNames = subjectIds
-    .map((id) => family.find((c) => c.id === id)?.name)
-    .filter((n): n is string => !!n);
+    .map((id) => family.find((c) => c.id === id))
+    .filter((c) => !!c && !c.is_self)
+    .map((c) => c!.name);
   return applySubjectTitle(title, subjectNames, family.map((c) => c.name));
 }
 
@@ -463,6 +468,11 @@ export async function updateEventAction(
       }
       if (upErr) return fail(upErr.message);
     }
+    // 改過時間 → 推播也要重新提醒（欄位在 0016；未套用時這行失敗不影響存檔）
+    await supabase
+      .from("events")
+      .update({ reminder_push_sent_at: null })
+      .in("id", targets.map((t) => t.id));
 
     // 關聯與財務僅套用於被點擊的該筆（避免批次覆寫語意過重）
     await supabase.from("event_contacts").delete().eq("event_id", current.id);

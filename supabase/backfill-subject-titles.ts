@@ -41,9 +41,9 @@ async function readAll<T>(table: string, columns: string, eq: [string, unknown])
 }
 
 async function main() {
-  const family = await readAll<{ id: string; name: string; owner_id: string }>(
+  const family = await readAll<{ id: string; name: string; owner_id: string; is_self: boolean }>(
     "contacts",
-    "id, name, owner_id",
+    "id, name, owner_id, is_self",
     ["is_family", true],
   );
   const familyById = new Map(family.map((c) => [c.id, c]));
@@ -75,7 +75,8 @@ async function main() {
   const changes = events
     .map((e) => {
       const subjects = subjectIdsOf.get(e.id)!.map((id) => familyById.get(id)!);
-      const names = subjects.map((c) => c.name).sort();
+      // 本人（is_self）不加名字
+      const names = subjects.filter((c) => !c.is_self).map((c) => c.name).sort();
       const owner = subjects[0].owner_id;
       const next = applySubjectTitle(e.title, names, familyNamesByOwner.get(owner) ?? []);
       return { id: e.id, from: e.title, to: next };

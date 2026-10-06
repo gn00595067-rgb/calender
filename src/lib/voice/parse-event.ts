@@ -56,7 +56,13 @@ export const outputSchema = z.object({
 export type Output = z.infer<typeof outputSchema>;
 
 type Supa = SupabaseClient<Database>;
-export type ContactRow = { id: string; name: string; role_label: string | null; is_family: boolean };
+export type ContactRow = {
+  id: string;
+  name: string;
+  role_label: string | null;
+  is_family: boolean;
+  is_self?: boolean;
+};
 
 /** 出現最多次的值 */
 function mode<T>(values: T[]): T | null {
