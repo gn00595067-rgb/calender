@@ -386,3 +386,6 @@ spec：`docs/specs/時間衝突提醒.md`。
 **下一步**：套 0016、Vercel 設 4 個環境變數並 Redeploy、建 pg_cron 排程；Peggy 手機加入主畫面→開啟通知→測試通知。
 
 **追加（同日）**：使用者已在 Supabase SQL Editor 套用 0016；驗證 `push_subscriptions` 表與 `events.reminder_push_sent_at` 欄位存在，未登入讀取被 RLS 擋下（0 筆）。剩 Vercel 環境變數＋Redeploy、pg_cron 排程。
+
+**追加 2（同日）**：Vercel 已設 VAPID 三個變數＋CRON_SECRET；原本的 `SUPABASE_SERVICE_ROLE_KEY` 在正式環境實際讀不到值（排程一直回 supabase not configured），使用者重填後 Redeploy。pg_cron 排程 `execcal-reminders`（id 1，每分鐘）已建立。驗證：不帶密碼回 401、帶密碼回 `{"sent":0,"pushed":0}`（尚無裝置訂閱）。
+**下一步**：Peggy 手機加入主畫面→設定→手機通知→開啟通知→傳送測試通知；再建一筆 15 分鐘後的行程確認自動提醒有跳。
