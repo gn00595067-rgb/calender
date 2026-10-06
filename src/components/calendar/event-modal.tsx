@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useForm, Controller } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Star, Mic, AlertTriangle, History, Info } from "lucide-react";
+import { Star, Mic, AlertTriangle, History, Info, Loader2 } from "lucide-react";
+import { MicButton } from "@/components/voice/mic-button";
 import {
   Dialog,
   DialogContent,
@@ -140,6 +141,10 @@ export interface VoiceHints {
   warnings: string[];
   fromHabit: string[];
   assumptions: string[];
+  /** 一句話拆成多筆時：目前第幾筆／共幾筆 */
+  position?: { index: number; total: number };
+  /** 用語音回答助理的問題：送出回答與表單現值，成功回 null、失敗回錯誤訊息 */
+  onAnswer?: (answer: string, current: Record<string, unknown>) => Promise<string | null>;
 }
 
 export function EventModal({
@@ -281,8 +286,9 @@ export function EventModal({
     } else {
       reset(buildDefaults());
     }
+    // draft：語音追問回答後會換一份新的 draft，要重新帶入
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, event?.id, mode]);
+  }, [open, event?.id, mode, draft]);
 
   // 編輯：帶入既有人物與財務
   useEffect(() => {
@@ -615,7 +621,29 @@ export function EventModal({
           </p>
         ) : (
           <form onSubmit={onSubmit} className={conflictList ? "hidden" : "space-y-4"}>
-            {mode === "create" && draft?.voice && <VoicePanel hints={draft.voice} />}
+            {mode === "create" && draft?.voice && (
+              <VoicePanel
+                hints={draft.voice}
+                getCurrent={() => {
+                  const v = getValues();
+                  return {
+                    title: v.title,
+                    calendarId: v.calendarId,
+                    allDay: v.allDay,
+                    startWall: v.startWall,
+                    endWall: v.endWall,
+                    location: v.location,
+                    isImportant: v.isImportant,
+                    subjectIds: v.subjectIds,
+                    participantIds: v.participantIds,
+                    tagNames: v.tagNames,
+                    needsDriver: v.driverEnabled,
+                    recurrence: v.recurrence,
+                    weekdays: v.recurrenceWeekdays,
+                  };
+                }}
+              />
+            )}
             {isRecurringEdit && (
               <div className="rounded-lg border bg-muted/40 p-3">
                 <Label className="mb-2 block text-xs text-muted-foreground">
@@ -1453,10 +1481,40 @@ const HABIT_FIELD_LABEL: Record<string, string> = {
 };
 
 /** 語音解析面板：原句＋待確認／依過去紀錄帶入／假設，讓使用者一眼知道要補什麼 */
-function VoicePanel({ hints }: { hints: VoiceHints }) {
+function VoicePanel({
+  hints,
+  getCurrent,
+}: {
+  hints: VoiceHints;
+  getCurrent: () => Record<string, unknown>;
+}) {
   const habit = hints.fromHabit.map((f) => HABIT_FIELD_LABEL[f] ?? f);
+  const [answering, setAnswering] = useState(false);
+  const [answer, setAnswer] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const send = async () => {
+    const text = answer.trim();
+    if (!text || !hints.onAnswer || sending) return;
+    setSending(true);
+    const err = await hints.onAnswer(text, getCurrent());
+    setSending(false);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+    setAnswer("");
+    setAnswering(false);
+    toast.success("已依你的回答更新，請再確認一次");
+  };
+
   return (
     <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+      {hints.position && hints.position.total > 1 && (
+        <div className="text-xs font-semibold text-primary">
+          第 {hints.position.index} / {hints.position.total} 筆（存好後自動帶下一筆）
+        </div>
+      )}
       <div className="flex items-start gap-2">
         <Mic className="mt-0.5 size-4 shrink-0 text-primary" />
         <span className="text-muted-foreground">「{hints.transcript}」</span>
@@ -1486,6 +1544,61 @@ function VoicePanel({ hints }: { hints: VoiceHints }) {
       {hints.warnings.length === 0 && (
         <div className="text-xs text-muted-foreground">資訊看起來完整，確認無誤即可儲存。</div>
       )}
+
+      {/* 用語音回答／補充：不必手動改選單 */}
+      {hints.onAnswer &&
+        (answering ? (
+          <div className="space-y-2 border-t border-primary/20 pt-2">
+            <div className="relative">
+              <Textarea
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                rows={2}
+                autoFocus
+                placeholder="例：是豪哥的，大概一個半小時，地點在信義區"
+                className="bg-background pr-11"
+              />
+              <div className="absolute right-2 top-2">
+                <MicButton
+                  title="用語音回答"
+                  onInterim={(t) => setAnswer(t)}
+                  onFinal={(t) => setAnswer(t)}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void send()}
+                disabled={sending || !answer.trim()}
+              >
+                {sending ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
+                {sending ? "更新中…" : "送出回答"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setAnswering(false)}
+                disabled={sending}
+              >
+                取消
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant={hints.warnings.length ? "default" : "outline"}
+            className="w-full"
+            onClick={() => setAnswering(true)}
+          >
+            <Mic className="size-4" />
+            {hints.warnings.length ? "用語音回答上面的問題" : "用語音補充或修改"}
+          </Button>
+        ))}
     </div>
   );
 }

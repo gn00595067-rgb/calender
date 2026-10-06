@@ -28,10 +28,8 @@ const HABIT_FIELDS = [
   "driver",
 ] as const;
 
-/** 模型輸出（結構化輸出保證符合；search 時新增欄位填空值） */
-export const outputSchema = z.object({
-  intent: z.enum(["create", "search"]),
-  query: z.string().nullable(),
+/** 單一行程的欄位 */
+export const eventSchema = z.object({
   calendarId: z.string().nullable(),
   title: z.string().nullable(),
   allDay: z.boolean(),
@@ -52,6 +50,14 @@ export const outputSchema = z.object({
   unknownNames: z.array(z.string()),
   confidence: z.number(),
   note: z.string(),
+});
+export type EventOutput = z.infer<typeof eventSchema>;
+
+/** 模型輸出（結構化輸出保證符合）：一句話可含多個行程；search 時 events 為空 */
+export const outputSchema = z.object({
+  intent: z.enum(["create", "search"]),
+  query: z.string().nullable(),
+  events: z.array(eventSchema),
 });
 export type Output = z.infer<typeof outputSchema>;
 
@@ -191,8 +197,12 @@ export function buildSystemPrompt(args: {
 「現在時間」會附在使用者訊息開頭。
 
 ## 意圖
-- "search"：想找已存在的行程（幫我搜尋…、找一下…、查…、有沒有…、上次那個…）。只填 query（精煉關鍵字，去掉贅語），其他欄位填空值（null、空陣列、false、"none"）。
+- "search"：想找已存在的行程（幫我搜尋…、找一下…、查…、有沒有…、上次那個…）。只填 query（精煉關鍵字，去掉贅語），events 給空陣列。
 - "create"：想新增／安排行程。兩者皆可時，只有明確出現搜尋動詞才判 search。
+
+## 一句話多個行程
+一句話可能講了好幾件事（例：「明天早上10點開會，下午3點去美甲」）。每一件各輸出一筆到 events，依時間先後排序，最多 5 筆。
+系統會讓使用者逐筆確認，所以**不要**在 questions 問「要不要一起建立」。
 
 ## 新增時的欄位規則
 分類（calendarId，從清單挑最合適的；沒把握時參考過去習慣）：
@@ -213,13 +223,13 @@ ${args.habits}
 - 時間一律台北時間、24 小時制「YYYY-MM-DDTHH:mm」。相對日期（明天、下週三…）依現在時間換算，星期不要算錯。
 - 沒講時長：有過去習慣用習慣的時長，否則 1 小時。只講日期沒講時間：有習慣用習慣時間（並寫進 assumptions），否則 allDay=true、00:00–23:59。
 - 只講幾點沒講上下午，依常識與習慣判斷。
-- title 簡潔，不含時間、地點、人名（「哥哥桌球」→ title="桌球"，哥哥放主角；主角名會由系統自動加在標題後面，你不用加）。若與過去習慣的標題是同一件事，沿用習慣的標題寫法。
+- title 簡潔，不含時間、地點、人名（「哥哥桌球」→ title="桌球"，哥哥放主角）。地點「(延吉街)」與主角名「-哥哥」會由系統自動加在標題後面，你不用加。若與過去習慣的標題是同一件事，沿用習慣的標題寫法。
 - subjectIds：句子提到的家人（哥哥、妹妹、小明…，含暱稱與稱謂對應）；沒提到但過去習慣固定是某位家人時可帶入（記入 fromHabit）。本人（使用者自己）的行程留空陣列。
 - participantIds：老師、醫師、客戶等；「郭老師」對到稱謂或名字相符者。沒提到但習慣固定是某人時可帶入（記入 fromHabit）。
 - tagNames：優先用既有標籤（含習慣中的標籤）；只有明顯需要時才新增，最多 3 個。
 - needsDriver：說到「司機、載、接送、送去、接回」或習慣「通常要司機」時 true。
 - recurrence／weekdays：說「每週二四」→ weekly、weekdays=[2,4]（0=日..6=六）；「每天」daily；「每兩週」biweekly；「每月」monthly；否則 none、[]。有講「到幾月」填 recurrenceUntil（YYYY-MM-DD），否則 null。
-- location：有講才填；沒講但習慣有固定地點可帶入（記入 fromHabit）。
+- location：有講才填（簡短，如「公司」「延吉街」「延吉街美甲店」）；沒講但習慣有固定地點可帶入（記入 fromHabit）。
 - isImportant：明確強調很重要／一定要／別忘了才 true。
 - fromHabit：列出「不是使用者說的、而是依過去習慣帶入」的欄位（time/calendar/subjects/participants/tags/location/driver）。
 - assumptions：你做的假設，每條一句中文（例：「沒講時間，先用平常的 18:15–19:15」）。沒有就空陣列。
@@ -232,4 +242,35 @@ ${args.habits}
 /** 使用者訊息：把會變動的「現在時間」放這裡，讓系統提示詞（人物＋習慣）可以被快取 */
 export function buildUserMessage(nowHuman: string, transcript: string): string {
   return `現在時間（台北）：${nowHuman}\n使用者說：「${transcript}」`;
+}
+
+/**
+ * 追問模式：使用者用語音回答助理的問題，請模型更新「目前這一筆」。
+ * current＝表單現值（使用者可能已手動改過），以它為基礎只改回答涉及的欄位。
+ */
+export function buildFollowUpMessage(args: {
+  nowHuman: string;
+  original: string;
+  current: Record<string, unknown>;
+  questions: string[];
+  answer: string;
+}): string {
+  return [
+    `現在時間（台北）：${args.nowHuman}`,
+    `這是「追問的回答」：intent 一律 "create"，events 只輸出 1 筆＝更新後的這一筆行程。`,
+    `原本使用者說：「${args.original}」`,
+    `目前這一筆行程（表單現值，JSON；title 若帶「(地點)」「-人名」後綴請去掉再輸出）：`,
+    JSON.stringify(args.current),
+    `助理先前的問題／提醒：`,
+    args.questions.map((q) => `- ${q}`).join("\n") || "（無）",
+    `使用者的回答：「${args.answer}」`,
+    `請以目前這一筆為基礎，只依回答修改相關欄位，其他欄位保持不變；回答已解決的問題不要再列在 questions。`,
+  ].join("\n");
+}
+
+/** 有講地點（非依習慣帶入）就在標題後加「(地點)」：與總經理開會 → 與總經理開會(公司) */
+export function withLocationSuffix(title: string, location: string | null): string {
+  const loc = location?.trim();
+  if (!loc || title.includes(loc)) return title;
+  return `${title}(${loc})`;
 }

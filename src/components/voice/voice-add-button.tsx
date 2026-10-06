@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Mic, Loader2, Sparkles } from "lucide-react";
@@ -21,10 +21,35 @@ import { EventModal, type EventDraft } from "@/components/calendar/event-modal";
 import { taipeiNowWall, taipeiNowHuman } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
+/** API 回傳的一筆行程（route.ts normalizeEvent） */
+interface ParsedEvent {
+  calendarId: string;
+  title: string;
+  allDay: boolean;
+  startWall: string | null;
+  endWall: string | null;
+  location: string | null;
+  isImportant: boolean;
+  subjectIds: string[];
+  participantIds: string[];
+  tagNames: string[];
+  needsDriver: boolean;
+  recurrence: NonNullable<EventDraft["recurrence"]>;
+  weekdays: number[];
+  recurrenceUntil: string | null;
+  fromHabit: string[];
+  assumptions: string[];
+  warnings: string[];
+  note: string;
+}
+
 /**
  * 語音助理：說（或用鍵盤麥克風／打字輸入）一句話，交給 Claude 先判斷意圖：
- *   - 新增：解析成結構化欄位，開啟「新增行程」對話框讓使用者確認後送出。
+ *   - 新增：解析成結構化欄位，開啟「新增行程」對話框讓使用者確認後送出；
+ *     一句話講了多件事會拆成多筆，存好一筆自動帶下一筆。
+ *     助理有疑問時，可在表單上「用語音回答」直接更新，不必手動改選單。
  *   - 搜尋：抽出關鍵字後導到搜尋頁。
+ * spec：docs/specs/語音-多筆行程與追問.md
  */
 export function VoiceAddButton({
   variant = "icon",
@@ -48,26 +73,113 @@ export function VoiceAddButton({
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState<EventDraft | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  /** 還沒帶入的後續幾筆 */
+  const [queue, setQueue] = useState<EventDraft[]>([]);
+  /** 這次關閉表單是因為存檔成功（表單先關閉、後呼叫 onSaved） */
+  const savedRef = useRef(false);
 
   if (!canCreate) return null;
+
+  const calendars = editable.map((c) => ({ id: c.id, name: c.name }));
+
+  async function callParse(body: Record<string, unknown>) {
+    const res = await fetch("/api/voice/parse-event", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        calendars,
+        nowWall: taipeiNowWall(),
+        nowHuman: taipeiNowHuman(),
+        ...body,
+      }),
+    });
+    const data = await res.json();
+    return { ok: res.ok, data };
+  }
+
+  /** API 的一筆 → 表單草稿；transcript 用原句，追問時也保留 */
+  function toDraft(
+    ev: ParsedEvent,
+    transcript: string,
+    position: { index: number; total: number },
+  ): EventDraft {
+    const d: EventDraft = {
+      calendarId: ev.calendarId,
+      title: ev.title,
+      location: ev.location ?? undefined,
+      allDay: ev.allDay,
+      startWall: ev.startWall ?? undefined,
+      endWall: ev.endWall ?? undefined,
+      isImportant: ev.isImportant,
+      subjectIds: ev.subjectIds,
+      participantIds: ev.participantIds,
+      tagNames: ev.tagNames,
+      needsDriver: ev.needsDriver,
+      recurrence: ev.recurrence,
+      recurrenceWeekdays: ev.weekdays,
+      recurrenceUntil: ev.recurrenceUntil ?? undefined,
+      voice: {
+        transcript,
+        warnings: ev.warnings ?? [],
+        fromHabit: ev.fromHabit ?? [],
+        assumptions: [...(ev.assumptions ?? []), ...(ev.note ? [ev.note] : [])],
+        position,
+      },
+    };
+    // 用語音回答問題：以表單現值＋回答請 AI 更新這一筆，換上新草稿（表單會重新帶入）
+    d.voice!.onAnswer = async (answer, current) => {
+      try {
+        const { ok, data } = await callParse({
+          transcript: answer,
+          followUp: { original: transcript, current, questions: d.voice!.warnings },
+        });
+        if (!ok) return data?.error ?? "更新失敗，請再說一次";
+        setDraft(toDraft(data.events[0], transcript, position));
+        return null;
+      } catch {
+        return "網路錯誤，請再試一次";
+      }
+    };
+    return d;
+  }
+
+  function openNext(list: EventDraft[]) {
+    const [next, ...rest] = list;
+    if (!next) return;
+    setDraft(next);
+    setQueue(rest);
+    setModalOpen(true);
+  }
+
+  function handleModalOpenChange(o: boolean) {
+    setModalOpen(o);
+    if (o) return;
+    // 等 onSaved（在關閉之後才被呼叫）再判斷
+    setTimeout(() => {
+      const saved = savedRef.current;
+      savedRef.current = false;
+      if (queue.length === 0) return;
+      if (saved) {
+        openNext(queue);
+        return;
+      }
+      // 沒存就關掉：不自動跳下一筆，但給一顆按鈕可以繼續
+      const rest = queue;
+      toast.message(`還有 ${rest.length} 筆語音行程沒建立`, {
+        description: rest.map((d) => d.title).join("、"),
+        duration: 15000,
+        action: { label: "建立下一筆", onClick: () => openNext(rest) },
+      });
+    }, 300);
+  }
 
   async function submit() {
     const transcript = text.trim();
     if (!transcript || loading) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/voice/parse-event", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          transcript,
-          calendars: editable.map((c) => ({ id: c.id, name: c.name })),
-          nowWall: taipeiNowWall(),
-          nowHuman: taipeiNowHuman(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
+      const { ok, data } = await callParse({ transcript });
+      if (!ok) {
         toast.error(data?.error ?? "解析失敗，請再試一次");
         return;
       }
@@ -81,35 +193,16 @@ export function VoiceAddButton({
         return;
       }
 
-      // 新增意圖：帶入「新增行程」對話框；提示改顯示在表單頂端的語音面板
-      setDraft({
-        calendarId: data.calendarId,
-        title: data.title,
-        location: data.location ?? undefined,
-        allDay: data.allDay,
-        startWall: data.startWall ?? undefined,
-        endWall: data.endWall ?? undefined,
-        isImportant: data.isImportant,
-        subjectIds: data.subjectIds,
-        participantIds: data.participantIds,
-        tagNames: data.tagNames,
-        needsDriver: data.needsDriver,
-        recurrence: data.recurrence,
-        recurrenceWeekdays: data.weekdays,
-        recurrenceUntil: data.recurrenceUntil ?? undefined,
-        voice: {
-          transcript,
-          warnings: data.warnings ?? [],
-          fromHabit: data.fromHabit ?? [],
-          assumptions: [
-            ...(data.assumptions ?? []),
-            ...(data.note ? [data.note] : []),
-          ],
-        },
-      });
+      // 新增意圖：逐筆帶入「新增行程」對話框；提示顯示在表單頂端的語音面板
+      const events: ParsedEvent[] = data.events ?? [];
+      const drafts = events.map((ev, i) =>
+        toDraft(ev, transcript, { index: i + 1, total: events.length }),
+      );
+      if (drafts.length > 1) toast.message(`聽到 ${drafts.length} 個行程，會一筆一筆讓你確認`);
       setOpen(false);
       setText("");
-      setModalOpen(true);
+      savedRef.current = false;
+      openNext(drafts);
     } catch {
       toast.error("網路錯誤，請再試一次");
     } finally {
@@ -201,10 +294,13 @@ export function VoiceAddButton({
       {/* 帶入解析結果的「新增行程」對話框，供確認後送出 */}
       <EventModal
         open={modalOpen}
-        onOpenChange={setModalOpen}
+        onOpenChange={handleModalOpenChange}
         mode="create"
         draft={draft ?? undefined}
-        onSaved={onSaved}
+        onSaved={() => {
+          savedRef.current = true;
+          onSaved?.();
+        }}
       />
     </>
   );
