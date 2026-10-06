@@ -201,6 +201,13 @@ function normalizeEvent(
     ev.recurrenceUntil && /^\d{4}-\d{2}-\d{2}$/.test(ev.recurrenceUntil)
       ? ev.recurrenceUntil
       : null;
+  // 指定日期：只留格式正確、不等於開始日的日期；沒有其他日期就退回不重複
+  const startDate = startWall?.slice(0, 10);
+  const extraDates = [...new Set(ev.extraDates)]
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d !== startDate)
+    .sort();
+  const recurrence =
+    ev.recurrence === "dates" && extraDates.length === 0 ? "none" : ev.recurrence;
 
   // 規則式提醒：不完全依賴模型，重要缺漏一定提醒
   const warnings = [...ev.questions.map((q) => q.trim()).filter(Boolean)];
@@ -234,9 +241,10 @@ function normalizeEvent(
     participantIds,
     tagNames: [...new Set(ev.tagNames.map((t) => t.trim()).filter(Boolean))].slice(0, 3),
     needsDriver: ev.needsDriver,
-    recurrence: ev.recurrence,
+    recurrence,
     weekdays,
     recurrenceUntil,
+    extraDates: recurrence === "dates" ? extraDates : [],
     fromHabit,
     assumptions: ev.assumptions.map((a) => a.trim()).filter(Boolean),
     warnings,

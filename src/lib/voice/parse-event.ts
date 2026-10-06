@@ -41,9 +41,11 @@ export const eventSchema = z.object({
   participantIds: z.array(z.string()),
   tagNames: z.array(z.string()),
   needsDriver: z.boolean(),
-  recurrence: z.enum(["none", "daily", "weekly", "biweekly", "monthly"]),
+  recurrence: z.enum(["none", "daily", "weekly", "biweekly", "monthly", "dates"]),
   weekdays: z.array(z.number().int()),
   recurrenceUntil: z.string().nullable(),
+  /** recurrence="dates" 時：開始日以外的其他日期（YYYY-MM-DD） */
+  extraDates: z.array(z.string()),
   fromHabit: z.array(z.enum(HABIT_FIELDS)),
   assumptions: z.array(z.string()),
   questions: z.array(z.string()),
@@ -203,6 +205,8 @@ export function buildSystemPrompt(args: {
 ## 一句話多個行程
 一句話可能講了好幾件事（例：「明天早上10點開會，下午3點去美甲」）。每一件各輸出一筆到 events，依時間先後排序，最多 5 筆。
 系統會讓使用者逐筆確認，所以**不要**在 questions 問「要不要一起建立」。
+例外：**同一件事、同一時間、只是日期不規則**（例：「小游 10/13、10/16、10/20、10/27、10/30 下午兩點」）→ 只輸出**一筆**：
+recurrence="dates"、startWall/endWall 用最早那天、extraDates 列出其餘日期（YYYY-MM-DD，依序）。各天時間不同就拆成多筆。
 
 ## 新增時的欄位規則
 分類（calendarId，從清單挑最合適的；沒把握時參考過去習慣）：
@@ -228,7 +232,7 @@ ${args.habits}
 - participantIds：老師、醫師、客戶等；「郭老師」對到稱謂或名字相符者。沒提到但習慣固定是某人時可帶入（記入 fromHabit）。
 - tagNames：優先用既有標籤（含習慣中的標籤）；只有明顯需要時才新增，最多 3 個。
 - needsDriver：說到「司機、載、接送、送去、接回」或習慣「通常要司機」時 true。
-- recurrence／weekdays：說「每週二四」→ weekly、weekdays=[2,4]（0=日..6=六）；「每天」daily；「每兩週」biweekly；「每月」monthly；否則 none、[]。有講「到幾月」填 recurrenceUntil（YYYY-MM-DD），否則 null。
+- recurrence／weekdays：說「每週二四」→ weekly、weekdays=[2,4]（0=日..6=六）；「每天」daily；「每兩週」biweekly；「每月」monthly；否則 none、[]。有講「到幾月」填 recurrenceUntil（YYYY-MM-DD），否則 null。不是 dates 時 extraDates 給空陣列。
 - location：有講才填（簡短，如「公司」「延吉街」「延吉街美甲店」）；沒講但習慣有固定地點可帶入（記入 fromHabit）。
 - isImportant：明確強調很重要／一定要／別忘了才 true。
 - fromHabit：列出「不是使用者說的、而是依過去習慣帶入」的欄位（time/calendar/subjects/participants/tags/location/driver）。

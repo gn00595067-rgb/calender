@@ -93,9 +93,10 @@ export function EventDetailDialog({
     });
   };
 
-  const recurrenceLabel = RECURRENCE_OPTIONS.find(
-    (o) => o.value === event.recurrence_rule,
-  )?.label;
+  // 指定日期（多選）建立的系列：有群組但沒有規則
+  const recurrenceLabel = event.recurrence_rule
+    ? RECURRENCE_OPTIONS.find((o) => o.value === event.recurrence_rule)?.label
+    : "指定日期";
 
   return (
     <>

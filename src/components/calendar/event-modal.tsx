@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useForm, Controller } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Star, Mic, AlertTriangle, History, Info, Loader2 } from "lucide-react";
+import { Star, Mic, AlertTriangle, History, Info, Loader2, Plus, X } from "lucide-react";
 import { MicButton } from "@/components/voice/mic-button";
 import {
   Dialog,
@@ -83,9 +83,11 @@ interface FormValues {
   startWall: string;
   endWall: string;
   isImportant: boolean;
-  recurrence: "none" | "daily" | "weekly" | "biweekly" | "monthly";
+  recurrence: "none" | "daily" | "weekly" | "biweekly" | "monthly" | "dates";
   recurrenceUntil: string;
   recurrenceWeekdays: number[];
+  /** 指定日期（多選）：開始日以外的其他日期 yyyy-MM-dd */
+  recurrenceDates: string[];
   reminderMinutes: number | null;
   scope: "this" | "following";
   subjectIds: string[];
@@ -131,6 +133,7 @@ export interface EventDraft {
   recurrence?: FormValues["recurrence"];
   recurrenceWeekdays?: number[];
   recurrenceUntil?: string;
+  recurrenceDates?: string[];
   /** 語音解析結果的說明（原句與提示），顯示在表單頂端供確認 */
   voice?: VoiceHints;
 }
@@ -217,6 +220,7 @@ export function EventModal({
       recurrenceWeekdays: draft?.recurrenceWeekdays?.length
         ? draft.recurrenceWeekdays
         : [wallWeekday(start)],
+      recurrenceDates: draft?.recurrenceDates ?? [],
       reminderMinutes: DEFAULT_REMINDER_MINUTES,
       scope: "this",
       subjectIds: draft?.subjectIds ?? [],
@@ -263,6 +267,7 @@ export function EventModal({
         recurrence: "none",
         recurrenceUntil: "",
         recurrenceWeekdays: [],
+        recurrenceDates: [],
         reminderMinutes: event.reminder_minutes ?? null,
         scope: "this",
         subjectIds: [],
@@ -531,7 +536,9 @@ export function EventModal({
               endWall: v.endWall,
               isImportant: v.isImportant,
               recurrence: v.recurrence,
-              recurrenceUntil: v.recurrence === "none" ? null : v.recurrenceUntil,
+              recurrenceUntil:
+                v.recurrence === "none" || v.recurrence === "dates" ? null : v.recurrenceUntil,
+              dates: v.recurrence === "dates" ? v.recurrenceDates : null,
               weekdays:
                 v.recurrence === "weekly" && v.recurrenceWeekdays.length
                   ? v.recurrenceWeekdays
@@ -640,6 +647,7 @@ export function EventModal({
                     needsDriver: v.driverEnabled,
                     recurrence: v.recurrence,
                     weekdays: v.recurrenceWeekdays,
+                    extraDates: v.recurrenceDates,
                   };
                 }}
               />
@@ -930,7 +938,23 @@ export function EventModal({
                     )}
                   />
                 </div>
-                {recurrence !== "none" && (
+                {recurrence === "dates" && (
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label>日期（同一時間，可加多個）</Label>
+                    <Controller
+                      control={control}
+                      name="recurrenceDates"
+                      render={({ field }) => (
+                        <RecurrenceDatesField
+                          startDate={startWall.slice(0, 10)}
+                          value={field.value}
+                          onChange={field.onChange}
+                        />
+                      )}
+                    />
+                  </div>
+                )}
+                {recurrence !== "none" && recurrence !== "dates" && (
                   <div className="space-y-2">
                     <Label htmlFor="ev-until">重複至</Label>
                     <Input id="ev-until" type="date" {...register("recurrenceUntil")} />
@@ -1291,7 +1315,7 @@ export function EventModal({
                     />
                     {recurrence !== "none" && mode === "create" && (
                       <p className="text-xs text-muted-foreground">
-                        重複行程：每一堂都會各自產生一筆此金額的財務紀錄。
+                        重複／多個日期：每一堂都會各自產生一筆此金額的財務紀錄。
                       </p>
                     )}
                   </div>
@@ -1599,6 +1623,76 @@ function VoicePanel({
             {hints.warnings.length ? "用語音回答上面的問題" : "用語音補充或修改"}
           </Button>
         ))}
+    </div>
+  );
+}
+
+const WEEKDAY_ZH = ["日", "一", "二", "三", "四", "五", "六"];
+
+/** yyyy-MM-dd → 10/13（二） */
+function shortDateLabel(ds: string): string {
+  const [, m, d] = ds.split("-").map(Number);
+  return `${m}/${d}（${WEEKDAY_ZH[wallWeekday(`${ds}T12:00`)]}）`;
+}
+
+/**
+ * 指定日期（多選）：日期不規則的同一件事（如 10/13、10/16、10/20 都 14:00）。
+ * 開始日永遠是第一個（改上面的開始日期即可換），其他日期點「＋ 加日期」挑選，可個別移除。
+ */
+function RecurrenceDatesField({
+  startDate,
+  value,
+  onChange,
+}: {
+  startDate: string;
+  value: string[];
+  onChange: (dates: string[]) => void;
+}) {
+  const extra = [...new Set(value)].filter((d) => d !== startDate).sort();
+  const add = (ds: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ds) || ds === startDate || extra.includes(ds)) return;
+    onChange([...extra, ds].sort());
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        <span className="inline-flex items-center rounded-full border border-primary bg-primary px-2.5 py-1 text-sm text-primary-foreground tabular-nums">
+          {shortDateLabel(startDate)}
+          <span className="ml-1 text-xs opacity-80">開始日</span>
+        </span>
+        {extra.map((ds) => (
+          <span
+            key={ds}
+            className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-sm tabular-nums"
+          >
+            {shortDateLabel(ds)}
+            <button
+              type="button"
+              onClick={() => onChange(extra.filter((d) => d !== ds))}
+              aria-label={`移除 ${ds}`}
+              className="-mr-1 p-0.5 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </span>
+        ))}
+        {/* 原生日期選擇器：選了就加入，並清空以便再選下一個 */}
+        <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-sm text-primary hover:bg-accent">
+          <Plus className="size-3.5" />
+          加日期
+          <input
+            type="date"
+            min={startDate}
+            value=""
+            onChange={(e) => add(e.target.value)}
+            className="absolute inset-0 cursor-pointer opacity-0"
+            aria-label="加一個日期"
+          />
+        </label>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        共 {extra.length + 1} 天、每天同一時間；之後可在任一筆選「此筆與之後全部」一起改或刪。
+      </p>
     </div>
   );
 }

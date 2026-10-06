@@ -37,6 +37,7 @@ interface ParsedEvent {
   recurrence: NonNullable<EventDraft["recurrence"]>;
   weekdays: number[];
   recurrenceUntil: string | null;
+  extraDates: string[];
   fromHabit: string[];
   assumptions: string[];
   warnings: string[];
@@ -118,6 +119,7 @@ export function VoiceAddButton({
       recurrence: ev.recurrence,
       recurrenceWeekdays: ev.weekdays,
       recurrenceUntil: ev.recurrenceUntil ?? undefined,
+      recurrenceDates: ev.extraDates ?? [],
       voice: {
         transcript,
         warnings: ev.warnings ?? [],

@@ -97,8 +97,10 @@ const baseEventSchema = z.object({
   startWall: wall,
   endWall: wall,
   isImportant: z.boolean(),
-  recurrence: z.enum(["none", "daily", "weekly", "biweekly", "monthly"]),
+  recurrence: z.enum(["none", "daily", "weekly", "biweekly", "monthly", "dates"]),
   recurrenceUntil: dateOnly.optional().nullable(),
+  // 「指定日期」：除了開始日以外的其他日期（同一時間、同一系列）
+  dates: z.array(dateOnly).max(100).optional().nullable(),
   // 「每週」時可指定重複的星期（0=日..6=六）；空／未給則每週同一天。
   weekdays: z.array(z.number().int().min(0).max(6)).optional().nullable(),
   // 提前幾分鐘提醒（null＝不提醒）
@@ -275,12 +277,14 @@ export async function createEventAction(
     let dates =
       d.recurrence === "none"
         ? [startDate]
-        : generateDates(startDate, d.recurrence, d.recurrenceUntil, d.weekdays);
+        : d.recurrence === "dates"
+          ? [...new Set([startDate, ...(d.dates ?? [])])].sort()
+          : generateDates(startDate, d.recurrence, d.recurrenceUntil, d.weekdays);
     // 保底：任何情況都至少建立起始日這一筆
     if (dates.length === 0) dates = [startDate];
 
     const groupId =
-      d.recurrence === "none" ? null : crypto.randomUUID();
+      d.recurrence === "none" || dates.length < 2 ? null : crypto.randomUUID();
 
     const rows = dates.map((date) => {
       const startsAt = toUtc(`${date}T${startTime}`);
@@ -295,7 +299,9 @@ export async function createEventAction(
         ends_at: endsAt,
         all_day: d.allDay,
         is_important: d.isImportant,
-        recurrence_rule: d.recurrence === "none" ? null : d.recurrence,
+        // 指定日期：資料庫的規則只允許 daily/weekly/…，留空但共用群組（可整批改／刪）
+        recurrence_rule:
+          d.recurrence === "none" || d.recurrence === "dates" ? null : d.recurrence,
         recurrence_group_id: groupId,
         reminder_minutes: d.reminderMinutes ?? null,
         ...driverColumns(d.driver),

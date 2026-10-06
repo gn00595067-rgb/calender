@@ -171,3 +171,8 @@
 
 **選**：回答時把目前表單值一起送出，請模型只改相關欄位。
 **不選**：只送原句＋回答重新解析——使用者手動改過的欄位會被蓋掉。
+
+## 2026-10-06 — 指定日期不加 migration，rule 存 null＋共用 group
+
+**選**：`recurrence_rule` 留 null、共用 `recurrence_group_id`，系列改／刪照舊可用。
+**不選**：改 check constraint 加 'dates'（要 migration，且規則值對這種系列沒有實際用途）；每個日期各自獨立不成系列（之後要一起改時間會很麻煩）。

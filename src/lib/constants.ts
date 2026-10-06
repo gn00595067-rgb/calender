@@ -104,8 +104,13 @@ export type EffectiveRole = "owner" | ShareRole;
 /** 重複規則 */
 export type RecurrenceRule = "daily" | "weekly" | "biweekly" | "monthly";
 
-export const RECURRENCE_OPTIONS: { value: RecurrenceRule | "none"; label: string }[] = [
+/** dates＝指定日期（多選）：日期不規則的同一件事，如 10/13、10/16、10/20 都是 14:00 */
+export const RECURRENCE_OPTIONS: {
+  value: RecurrenceRule | "none" | "dates";
+  label: string;
+}[] = [
   { value: "none", label: "不重複" },
+  { value: "dates", label: "指定日期（多選）" },
   { value: "daily", label: "每天" },
   { value: "weekly", label: "每週（可指定星期）" },
   { value: "biweekly", label: "每兩週" },
