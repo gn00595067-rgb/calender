@@ -8,6 +8,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { TIME_ZONE } from "@/lib/constants";
+import { stripSubjectSuffix } from "@/lib/subject-title";
 
 /** 可用 VOICE_MODEL 覆寫（例如想省成本改 claude-haiku-4-5） */
 export const MODEL = process.env.VOICE_MODEL || "claude-opus-5";
@@ -55,23 +56,6 @@ export const outputSchema = z.object({
 export type Output = z.infer<typeof outputSchema>;
 
 type Supa = SupabaseClient<Database>;
-
-/**
- * 非本人（有主角）的行程，標題後加「-主角名」，例：打球 → 打球-豪哥。
- * 標題已含該名字就不重複加。spec：docs/specs/語音新增-標題加主角名.md
- */
-export function withSubjectSuffix(title: string, subjectNames: string[]): string {
-  const missing = subjectNames.filter((n) => n && !title.includes(n));
-  return missing.length ? `${title}-${missing.join("、")}` : title;
-}
-
-/** 去掉「-主角名」後綴，讓「打球」與「打球-豪哥」在習慣裡算同一種行程 */
-export function stripSubjectSuffix(title: string, subjectNames: string[]): string {
-  if (!subjectNames.length) return title;
-  const m = title.match(/^(.+)-([^-]+)$/);
-  if (m && m[2].split("、").every((n) => subjectNames.includes(n))) return m[1].trim();
-  return title;
-}
 export type ContactRow = { id: string; name: string; role_label: string | null; is_family: boolean };
 
 /** 出現最多次的值 */

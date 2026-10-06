@@ -10,10 +10,10 @@ import {
   buildHabits,
   buildSystemPrompt,
   buildUserMessage,
-  withSubjectSuffix,
   type Output,
   type ContactRow,
 } from "@/lib/voice/parse-event";
+import { withSubjectSuffix } from "@/lib/subject-title";
 
 /**
  * 語音助理：把一句口語交給 Claude 判斷「意圖」再解析：

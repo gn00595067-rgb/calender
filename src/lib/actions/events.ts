@@ -8,6 +8,7 @@ import { getAuthed, fail, type ActionResult } from "./helpers";
 import { resolveCategoryId } from "./categories";
 import { TIME_ZONE, RECURRENCE_MAX_MONTHS } from "@/lib/constants";
 import { tagKey } from "@/lib/tags";
+import { applySubjectTitle } from "@/lib/subject-title";
 
 const wall = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, {
   error: "時間格式有誤",
@@ -233,6 +234,20 @@ async function resolveTagIds(
     .filter((id): id is string => !!id);
 }
 
+/** 非本人（有主角）的行程標題加「-主角名」；主角改了或拿掉時舊後綴會被換掉 */
+async function titleWithSubjects(
+  supabase: Awaited<ReturnType<typeof getAuthed>>["supabase"],
+  title: string,
+  subjectIds: string[],
+): Promise<string> {
+  const { data } = await supabase.from("contacts").select("id, name").eq("is_family", true);
+  const family = data ?? [];
+  const subjectNames = subjectIds
+    .map((id) => family.find((c) => c.id === id)?.name)
+    .filter((n): n is string => !!n);
+  return applySubjectTitle(title, subjectNames, family.map((c) => c.name));
+}
+
 export async function createEventAction(
   input: unknown,
 ): Promise<ActionResult<{ groupId: string | null; warning?: string }>> {
@@ -244,6 +259,7 @@ export async function createEventAction(
 
   try {
     const { supabase, user } = await getAuthed();
+    const title = await titleWithSubjects(supabase, d.title, d.subjectIds);
 
     const startDate = d.startWall.slice(0, 10);
     const startTime = d.startWall.slice(11);
@@ -267,7 +283,7 @@ export async function createEventAction(
       return {
         calendar_id: d.calendarId,
         creator_id: user.id,
-        title: d.title,
+        title,
         description: d.description ?? null,
         location: d.location ?? null,
         starts_at: startsAt,
@@ -390,7 +406,7 @@ export async function updateEventAction(
 
     const commonFields = {
       calendar_id: d.calendarId,
-      title: d.title,
+      title: await titleWithSubjects(supabase, d.title, d.subjectIds),
       description: d.description ?? null,
       location: d.location ?? null,
       all_day: d.allDay,
