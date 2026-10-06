@@ -24,6 +24,22 @@ interface TimedLike {
   starts_at: string;
   ends_at: string;
   all_day: boolean;
+  /** 有司機接送時，車程也算沒空（見 travelPadding） */
+  driver?: { trip: "to" | "from" | "round"; pickupMinutes: number } | null;
+}
+
+/**
+ * 司機接送的車程（分鐘）：去程＝開始前、回程＝結束後，
+ * 單程車程沿用「去程提早上車」分鐘數（回程假設一樣久）。
+ * spec：docs/specs/司機接送-車程扣空檔.md
+ */
+export function travelPadding(e: Pick<TimedLike, "driver">): { before: number; after: number } {
+  const d = e.driver;
+  if (!d || d.pickupMinutes <= 0) return { before: 0, after: 0 };
+  return {
+    before: d.trip === "from" ? 0 : d.pickupMinutes,
+    after: d.trip === "to" ? 0 : d.pickupMinutes,
+  };
 }
 
 /** 工作時段預設：全天 / 08–22（早到晚）/ 09–18（上班） */
@@ -137,8 +153,9 @@ export function busyOnDay(
   for (const e of events) {
     const seg = eventSegmentOnDay(e, dayStr);
     if (!seg) continue;
-    const start = Math.max(seg.start, w.start);
-    const end = Math.min(seg.end, w.end);
+    const pad = travelPadding(e);
+    const start = Math.max(seg.start - pad.before, w.start, 0);
+    const end = Math.min(seg.end + pad.after, w.end, DAY_MINUTES);
     if (end > start) segs.push({ start, end });
   }
   return mergeSegments(segs);

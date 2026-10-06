@@ -978,9 +978,9 @@ export function EventModal({
                     )}
                   />
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {watch("driverTrip") !== "from" && !allDay && (
+                    {!allDay && (
                       <div className="space-y-1.5">
-                        <Label className="text-xs">去程提早上車</Label>
+                        <Label className="text-xs">單程車程（空檔會扣掉）</Label>
                         <Controller
                           control={control}
                           name="driverPickupMinutes"
@@ -995,7 +995,7 @@ export function EventModal({
                               <SelectContent>
                                 {DRIVER_PICKUP_OPTIONS.map((m) => (
                                   <SelectItem key={m} value={String(m)}>
-                                    {m === 0 ? "準時（開始時間）" : `提早 ${m} 分鐘`}
+                                    {m === 0 ? "不算車程" : `約 ${m} 分鐘`}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -1398,13 +1398,20 @@ function DriverPreview({
   dest: string;
 }) {
   const lines: string[] = [];
+  const leave = allDay ? "整日" : addMinutesToWall(startWall, -pickupMinutes).slice(11);
+  const back = allDay ? "整日" : addMinutesToWall(endWall, pickupMinutes).slice(11);
   if (trip !== "from") {
-    const t = allDay ? "整日" : addMinutesToWall(startWall, -pickupMinutes).slice(11);
-    lines.push(`去程 ${t} 上車：${home} → ${dest}`);
+    lines.push(`去程 ${leave} 上車：${home} → ${dest}`);
   }
   if (trip !== "to") {
     const t = allDay ? "整日" : endWall.slice(11);
-    lines.push(`回程 ${t} 上車：${dest} → ${home}`);
+    lines.push(`回程 ${t} 上車：${dest} → ${home}${pickupMinutes > 0 && !allDay ? `，約 ${back} 到` : ""}`);
+  }
+  // 車程也算沒空：讓使用者知道空檔會從哪裡算起
+  if (!allDay && pickupMinutes > 0) {
+    const from = trip === "from" ? startWall.slice(11) : leave;
+    const to = trip === "to" ? endWall.slice(11) : back;
+    lines.push(`含車程 ${from}–${to} 都不算空檔`);
   }
   return (
     <div className="rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground">
