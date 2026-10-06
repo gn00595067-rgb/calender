@@ -31,7 +31,12 @@ export async function GET(req: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
-    return NextResponse.json({ error: "supabase not configured" }, { status: 500 });
+    // 只列缺少的變數名稱（不含值），方便排查 Vercel 設定
+    const missing = [
+      !supabaseUrl && "NEXT_PUBLIC_SUPABASE_URL",
+      !serviceKey && "SUPABASE_SERVICE_ROLE_KEY",
+    ].filter(Boolean);
+    return NextResponse.json({ error: "supabase not configured", missing }, { status: 500 });
   }
   const resendKey = process.env.RESEND_API_KEY;
   const from = process.env.REMINDER_FROM_EMAIL || "ExecCal <onboarding@resend.dev>";
