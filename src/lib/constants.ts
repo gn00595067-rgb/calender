@@ -195,6 +195,9 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
 };
 
 /** 行程提醒：提前幾分鐘（null＝不提醒） */
+/** 新增行程的預設提醒（分鐘前）；整日行程不套用，避免前一晚 23:50 跳通知 */
+export const DEFAULT_REMINDER_MINUTES = 10;
+
 export const REMINDER_OPTIONS: { value: number | null; label: string }[] = [
   { value: null, label: "不提醒" },
   { value: 5, label: "5 分鐘前" },

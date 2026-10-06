@@ -47,6 +47,7 @@ import {
   WEEKDAY_CHIPS,
   PAYMENT_METHODS,
   REMINDER_OPTIONS,
+  DEFAULT_REMINDER_MINUTES,
   type PaymentMethod,
 } from "@/lib/constants";
 import { createEventAction, updateEventAction, deleteEventAction } from "@/lib/actions/events";
@@ -192,6 +193,8 @@ export function EventModal({
   const { data: allContacts = [] } = useContacts();
   /** 使用者手動改過主角 → 換分類時不再自動帶入 */
   const subjectsTouchedRef = useRef(false);
+  /** 使用者手動改過提醒 → 切整日時不再自動改 */
+  const reminderTouchedRef = useRef(false);
 
   function buildDefaults(): FormValues {
     const start = draft?.startWall ?? defaultStart;
@@ -209,7 +212,7 @@ export function EventModal({
       recurrenceWeekdays: draft?.recurrenceWeekdays?.length
         ? draft.recurrenceWeekdays
         : [wallWeekday(start)],
-      reminderMinutes: null,
+      reminderMinutes: DEFAULT_REMINDER_MINUTES,
       scope: "this",
       subjectIds: draft?.subjectIds ?? [],
       participantIds: draft?.participantIds ?? [],
@@ -237,6 +240,7 @@ export function EventModal({
     setConflictList(null);
     pendingValues.current = null;
     amountTouchedRef.current = false;
+    reminderTouchedRef.current = false;
     planManualRef.current = false;
     billingContactRef.current = null;
     // 語音已判斷出主角時以語音為準；編輯舊行程不自動改
@@ -320,6 +324,11 @@ export function EventModal({
       .filter((c) => c.is_family && c.name && calName.includes(c.name))
       .map((c) => c.id);
   }, [calendarId, calendarById, allContacts]);
+  // 新增時預設 10 分鐘前提醒；整日行程改為不提醒（否則前一晚 23:50 會跳通知）
+  useEffect(() => {
+    if (!open || mode !== "create" || reminderTouchedRef.current) return;
+    setValue("reminderMinutes", allDay ? null : DEFAULT_REMINDER_MINUTES);
+  }, [open, mode, allDay, setValue]);
   const [autoSubjectNote, setAutoSubjectNote] = useState<string | null>(null);
   useEffect(() => {
     if (!open || mode !== "create" || subjectsTouchedRef.current) return;
@@ -833,9 +842,10 @@ export function EventModal({
                   render={({ field }) => (
                     <Select
                       value={field.value == null ? "none" : String(field.value)}
-                      onValueChange={(v) =>
-                        field.onChange(v === "none" ? null : Number(v))
-                      }
+                      onValueChange={(v) => {
+                        reminderTouchedRef.current = true;
+                        field.onChange(v === "none" ? null : Number(v));
+                      }}
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue />
