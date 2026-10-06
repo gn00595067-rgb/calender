@@ -55,6 +55,23 @@ export const outputSchema = z.object({
 export type Output = z.infer<typeof outputSchema>;
 
 type Supa = SupabaseClient<Database>;
+
+/**
+ * 非本人（有主角）的行程，標題後加「-主角名」，例：打球 → 打球-豪哥。
+ * 標題已含該名字就不重複加。spec：docs/specs/語音新增-標題加主角名.md
+ */
+export function withSubjectSuffix(title: string, subjectNames: string[]): string {
+  const missing = subjectNames.filter((n) => n && !title.includes(n));
+  return missing.length ? `${title}-${missing.join("、")}` : title;
+}
+
+/** 去掉「-主角名」後綴，讓「打球」與「打球-豪哥」在習慣裡算同一種行程 */
+export function stripSubjectSuffix(title: string, subjectNames: string[]): string {
+  if (!subjectNames.length) return title;
+  const m = title.match(/^(.+)-([^-]+)$/);
+  if (m && m[2].split("、").every((n) => subjectNames.includes(n))) return m[1].trim();
+  return title;
+}
 export type ContactRow = { id: string; name: string; role_label: string | null; is_family: boolean };
 
 /** 出現最多次的值 */
@@ -118,10 +135,10 @@ export async function buildHabits(
     if (n) tagsOf.set(r.event_id, [...(tagsOf.get(r.event_id) ?? []), n]);
   }
 
-  // 依標題分組
+  // 依標題分組（去掉主角名後綴）
   const groups = new Map<string, typeof evs>();
   for (const e of evs) {
-    const key = e.title.trim();
+    const key = stripSubjectSuffix(e.title.trim(), subjectsOf.get(e.id) ?? []);
     if (!key) continue;
     groups.set(key, [...(groups.get(key) ?? []), e]);
   }
@@ -206,7 +223,7 @@ ${args.habits}
 - 時間一律台北時間、24 小時制「YYYY-MM-DDTHH:mm」。相對日期（明天、下週三…）依現在時間換算，星期不要算錯。
 - 沒講時長：有過去習慣用習慣的時長，否則 1 小時。只講日期沒講時間：有習慣用習慣時間（並寫進 assumptions），否則 allDay=true、00:00–23:59。
 - 只講幾點沒講上下午，依常識與習慣判斷。
-- title 簡潔，不含時間、地點、人名（「哥哥桌球」→ title="桌球"，哥哥放主角）。若與過去習慣的標題是同一件事，沿用習慣的標題寫法。
+- title 簡潔，不含時間、地點、人名（「哥哥桌球」→ title="桌球"，哥哥放主角；主角名會由系統自動加在標題後面，你不用加）。若與過去習慣的標題是同一件事，沿用習慣的標題寫法。
 - subjectIds：句子提到的家人（哥哥、妹妹、小明…，含暱稱與稱謂對應）；沒提到但過去習慣固定是某位家人時可帶入（記入 fromHabit）。本人（使用者自己）的行程留空陣列。
 - participantIds：老師、醫師、客戶等；「郭老師」對到稱謂或名字相符者。沒提到但習慣固定是某人時可帶入（記入 fromHabit）。
 - tagNames：優先用既有標籤（含習慣中的標籤）；只有明顯需要時才新增，最多 3 個。

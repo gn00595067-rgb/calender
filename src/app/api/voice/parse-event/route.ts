@@ -10,6 +10,7 @@ import {
   buildHabits,
   buildSystemPrompt,
   buildUserMessage,
+  withSubjectSuffix,
   type Output,
   type ContactRow,
 } from "@/lib/voice/parse-event";
@@ -133,7 +134,11 @@ export async function POST(req: Request) {
   );
   const startWall = result.startWall && WALL.test(result.startWall) ? result.startWall : null;
   const endWall = result.endWall && WALL.test(result.endWall) ? result.endWall : null;
-  const title = result.title?.trim() || "（未命名行程）";
+  // 非本人（有主角）的行程標題加主角名，月曆上一眼看出是誰的：打球-豪哥
+  const title = withSubjectSuffix(
+    result.title?.trim() || "（未命名行程）",
+    subjectIds.map((id) => contactById.get(id)!.name),
+  );
   const location = result.location?.trim() || null;
   const weekdays = [...new Set(result.weekdays)].filter((d) => d >= 0 && d <= 6);
   const recurrenceUntil =
