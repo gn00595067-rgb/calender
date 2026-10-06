@@ -384,3 +384,5 @@ spec：`docs/specs/時間衝突提醒.md`。
 **為什麼**：Peggy 要像 Google 行事曆一樣在手機跳提醒；限定免費資源，故用 Web Push＋Supabase pg_cron（Vercel 免費排程一天一次不夠）。過程發現 Email 提醒其實從沒寄出：排程端點被登入攔截、擁有者信箱是假的。
 
 **下一步**：套 0016、Vercel 設 4 個環境變數並 Redeploy、建 pg_cron 排程；Peggy 手機加入主畫面→開啟通知→測試通知。
+
+**追加（同日）**：使用者已在 Supabase SQL Editor 套用 0016；驗證 `push_subscriptions` 表與 `events.reminder_push_sent_at` 欄位存在，未登入讀取被 RLS 擋下（0 筆）。剩 Vercel 環境變數＋Redeploy、pg_cron 排程。
