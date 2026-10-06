@@ -828,6 +828,16 @@ export function EventModal({
                     onChange={field.onChange}
                     placeholder="選擇相關人物…"
                     usageRole="participant"
+                    // 依目前主角排「常一起的人」：本人→客戶同事、小孩→他的老師
+                    context={{
+                      subjectIds,
+                      label:
+                        subjectIds
+                          .map((id) => allContacts.find((c) => c.id === id))
+                          .filter((c) => c && !c.is_self)
+                          .map((c) => c!.name)
+                          .join("、") || "本人",
+                    }}
                   />
                 )}
               />

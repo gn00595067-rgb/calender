@@ -11,7 +11,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { useContacts, useContactUsage } from "@/lib/client/lookups";
+import {
+  useContacts,
+  useContactUsage,
+  useContactCooccurrence,
+  participantAffinity,
+  type ContactLite,
+} from "@/lib/client/lookups";
 import { createContactAction } from "@/lib/actions/contacts";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -22,6 +28,7 @@ export function ContactMultiSelect({
   preferFamily = false,
   newIsFamily = false,
   usageRole,
+  context,
 }: {
   value: string[];
   onChange: (ids: string[]) => void;
@@ -33,6 +40,11 @@ export function ContactMultiSelect({
   newIsFamily?: boolean;
   /** 依此角色的使用次數排序（常用的排前面） */
   usageRole?: "subject" | "participant";
+  /**
+   * 相關人物欄：依目前主角分區排序——「常和 ○○ 一起」在前、其他依名字。
+   * 不給則沿用整體使用次數排序（老師會因每週上課永遠排最前，不適合相關人物）。
+   */
+  context?: { subjectIds: string[]; label: string };
 }) {
   const { data: contacts = [] } = useContacts();
   const qc = useQueryClient();
@@ -40,19 +52,52 @@ export function ContactMultiSelect({
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("");
   const [pending, startTransition] = useTransition();
+  const [query, setQuery] = useState("");
 
   const selected = contacts.filter((c) => value.includes(c.id));
   const { data: usage } = useContactUsage(
     usageRole ?? "subject",
-    usageRole ? contacts.map((c) => c.id) : [],
+    usageRole && !context ? contacts.map((c) => c.id) : [],
   );
-  // 排序：常用的（此角色出現次數多）排前面 → 主角欄家人優先 → 名字
-  const ordered = [...contacts].sort(
-    (a, b) =>
-      (usage?.get(b.id) ?? 0) - (usage?.get(a.id) ?? 0) ||
-      (preferFamily ? Number(b.is_family) - Number(a.is_family) : 0) ||
-      a.name.localeCompare(b.name),
-  );
+  const { data: cooc } = useContactCooccurrence(!!context && open);
+  const affinity = cooc && context ? participantAffinity(cooc, context.subjectIds) : null;
+
+  const q = query.trim().toLowerCase();
+  const matches = (c: ContactLite) =>
+    !q || c.name.toLowerCase().includes(q) || (c.role_label ?? "").toLowerCase().includes(q);
+
+  // 分區：有情境時「常一起」（系列數多→次數多）在前，其他依名字；
+  // 沒情境時沿用：常用的（此角色出現次數多）→ 主角欄家人優先 → 名字
+  const byName = (a: ContactLite, b: ContactLite) => a.name.localeCompare(b.name, "zh-Hant");
+  const pool = contacts.filter(matches);
+  const sections: { title: string | null; items: ContactLite[] }[] = affinity
+    ? [
+        {
+          title: `常和 ${context!.label} 一起`,
+          items: pool
+            .filter((c) => affinity.has(c.id))
+            .sort(
+              (a, b) =>
+                affinity.get(b.id)!.series - affinity.get(a.id)!.series ||
+                affinity.get(b.id)!.count - affinity.get(a.id)!.count ||
+                byName(a, b),
+            ),
+        },
+        { title: "其他人物", items: pool.filter((c) => !affinity.has(c.id)).sort(byName) },
+      ]
+    : [
+        {
+          title: null,
+          items: [...pool].sort(
+            (a, b) =>
+              (usage?.get(b.id) ?? 0) - (usage?.get(a.id) ?? 0) ||
+              (preferFamily ? Number(b.is_family) - Number(a.is_family) : 0) ||
+              byName(a, b),
+          ),
+        },
+      ];
+  const countOf = (id: string) =>
+    affinity ? (affinity.get(id)?.count ?? 0) : (usage?.get(id) ?? 0);
 
   const toggle = (id: string) => {
     onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
@@ -93,14 +138,42 @@ export function ContactMultiSelect({
           <ChevronsUpDown className="size-4 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
-        <div className="max-h-56 overflow-y-auto p-1">
+      <PopoverContent
+        className="w-(--radix-popover-trigger-width) p-0"
+        align="start"
+        // 打開時不自動聚焦搜尋框，免得手機鍵盤一直跳出來蓋住清單
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        {contacts.length > 8 && (
+          <div className="border-b p-2">
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜尋名字或稱謂（如：老師、客戶）"
+              className="h-8"
+            />
+          </div>
+        )}
+        <div className="max-h-64 overflow-y-auto p-1">
           {contacts.length === 0 && (
             <p className="px-2 py-3 text-center text-sm text-muted-foreground">
               尚無人物，於下方新增
             </p>
           )}
-          {ordered.map((c) => (
+          {contacts.length > 0 && pool.length === 0 && (
+            <p className="px-2 py-3 text-center text-sm text-muted-foreground">
+              找不到「{query}」，可在下方新增
+            </p>
+          )}
+          {sections.map((sec) =>
+            sec.items.length === 0 ? null : (
+              <div key={sec.title ?? "all"}>
+                {sec.title && (
+                  <div className="px-2 pb-0.5 pt-1.5 text-[11px] font-medium text-muted-foreground">
+                    {sec.title}
+                  </div>
+                )}
+          {sec.items.map((c) => (
             <button
               key={c.id}
               type="button"
@@ -114,9 +187,9 @@ export function ContactMultiSelect({
                 )}
               />
               <span className="flex-1 truncate">{c.name}</span>
-              {!!usage?.get(c.id) && (
+              {!!countOf(c.id) && (
                 <span className="text-[10px] tabular-nums text-muted-foreground/70">
-                  {usage.get(c.id)} 次
+                  {countOf(c.id)} 次
                 </span>
               )}
               {preferFamily && c.is_family && (
@@ -129,6 +202,9 @@ export function ContactMultiSelect({
               )}
             </button>
           ))}
+              </div>
+            ),
+          )}
         </div>
         <div className="border-t p-2">
           <div className="flex gap-1.5">

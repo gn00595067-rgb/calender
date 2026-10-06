@@ -10,6 +10,8 @@ export interface ContactLite {
   name: string;
   role_label: string | null;
   is_family: boolean;
+  /** 本人（老闆）；0015 前的庫沒有此欄 */
+  is_self?: boolean;
 }
 
 export function useContacts() {
@@ -19,7 +21,7 @@ export function useContacts() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("contacts")
-        .select("id, name, role_label, is_family")
+        .select("id, name, role_label, is_family, is_self")
         .order("name", { ascending: true });
       if (error) throw new Error(error.message);
       return data ?? [];
@@ -97,6 +99,98 @@ export function useContactUsage(role: "subject" | "participant", contactIds: str
       return new Map(counts);
     },
   });
+}
+
+/**
+ * 「誰常跟誰一起」：相關人物依目前主角排序用。
+ * 撈全部人物關聯＋行程的系列編號，前端依情境（主角）計算；重複行程整個系列只算 1 次，
+ * 避免每週上課的老師永遠排最前面。spec：docs/specs/相關人物依主角排序.md
+ */
+export interface CooccurrenceData {
+  /** 行程 → 主角 id／相關人物 id／系列 key（無系列＝行程 id） */
+  events: Map<string, { subjects: string[]; participants: string[]; series: string }>;
+  /** 標記為本人（is_self）的人物 */
+  selfIds: Set<string>;
+}
+
+const PAGE = 1000;
+async function readAllPages<T>(
+  run: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await run(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    out.push(...(data ?? []));
+    if (!data || data.length < PAGE) return out;
+  }
+}
+
+export function useContactCooccurrence(enabled: boolean) {
+  return useQuery({
+    queryKey: ["contacts", "cooccurrence"],
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<CooccurrenceData> => {
+      const supabase = createClient();
+      const [links, evs, selfRes] = await Promise.all([
+        readAllPages<{ event_id: string; contact_id: string; role: string }>((a, b) =>
+          supabase.from("event_contacts").select("event_id, contact_id, role").range(a, b),
+        ),
+        readAllPages<{ id: string; recurrence_group_id: string | null }>((a, b) =>
+          supabase.from("events").select("id, recurrence_group_id").range(a, b),
+        ),
+        supabase.from("contacts").select("id").eq("is_self", true),
+      ]);
+      const seriesOf = new Map(evs.map((e) => [e.id, e.recurrence_group_id ?? e.id]));
+      const events: CooccurrenceData["events"] = new Map();
+      for (const l of links) {
+        const series = seriesOf.get(l.event_id);
+        if (!series) continue;
+        let e = events.get(l.event_id);
+        if (!e) {
+          e = { subjects: [], participants: [], series };
+          events.set(l.event_id, e);
+        }
+        (l.role === "subject" ? e.subjects : e.participants).push(l.contact_id);
+      }
+      return {
+        events,
+        // 0015 未套用時 is_self 不存在 → 視為沒有本人人物
+        selfIds: new Set((selfRes.data ?? []).map((c) => c.id)),
+      };
+    },
+  });
+}
+
+/**
+ * 依主角算出「常一起的相關人物」：主角是本人（或沒選）→ 本人行程裡的人；
+ * 主角是小孩 → 該小孩行程裡的人（老師、教練）。回傳 人物 id → {系列數, 次數}。
+ */
+export function participantAffinity(
+  data: CooccurrenceData,
+  subjectIds: string[],
+): Map<string, { series: number; count: number }> {
+  const others = subjectIds.filter((id) => !data.selfIds.has(id));
+  const selfMode = others.length === 0;
+  const target = new Set(others);
+  const seriesSets = new Map<string, Set<string>>();
+  const counts = new Map<string, number>();
+  for (const e of data.events.values()) {
+    if (e.participants.length === 0) continue;
+    const inContext = selfMode
+      ? e.subjects.length === 0 || e.subjects.some((s) => data.selfIds.has(s))
+      : e.subjects.some((s) => target.has(s));
+    if (!inContext) continue;
+    for (const p of e.participants) {
+      if (!seriesSets.has(p)) seriesSets.set(p, new Set());
+      seriesSets.get(p)!.add(e.series);
+      counts.set(p, (counts.get(p) ?? 0) + 1);
+    }
+  }
+  return new Map(
+    [...seriesSets].map(([id, set]) => [id, { series: set.size, count: counts.get(id) ?? 0 }]),
+  );
 }
 
 export interface ContactBilling {
