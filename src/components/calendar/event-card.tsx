@@ -3,7 +3,7 @@
 import { Star, MessageSquare, Car } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { D, twd } from "@/lib/date";
-import { eventStyle, chipStyle } from "./event-visuals";
+import { eventStyle, chipStyle, displayTitle } from "./event-visuals";
 import { useAppData } from "@/components/app/app-data";
 import { can } from "@/lib/permissions";
 import type { CalEvent } from "@/lib/client/events";
@@ -177,19 +177,24 @@ export function MonthChip({
         onClick?.();
       }}
       style={chipStyle(color, conflict)}
-      className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[11px] leading-tight hover:brightness-95 touch:gap-1.5 touch:px-1.5 touch:py-2 touch:text-xs"
+      // 手機（窄格）：不顯示開始時間、標題可兩行——格子只有約 50px，放了時間就看不到標題
+      className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[11px] leading-tight hover:brightness-95 touch:gap-1.5 touch:px-1.5 touch:py-2 touch:text-xs max-sm:items-start max-sm:gap-0.5 max-sm:px-0.5! max-sm:py-0.5! max-sm:text-[11px]! max-sm:whitespace-normal"
     >
       {event.is_important && <Star className="size-2.5 shrink-0 fill-amber-400 text-amber-500" />}
       {!event.all_day && (
         <span
-          className="shrink-0 font-semibold tabular-nums"
+          className="shrink-0 font-semibold tabular-nums max-sm:hidden"
           style={{ color }}
         >
           {D.time(event.starts_at)}
         </span>
       )}
-      <span className="truncate">{event.title}</span>
-      {event.driver && <Car className="size-3 shrink-0 text-muted-foreground" aria-label="需要司機" />}
+      <span className="truncate max-sm:line-clamp-2 max-sm:whitespace-normal max-sm:break-all">
+        {event.all_day ? event.title : displayTitle(event.title, D.time(event.starts_at))}
+      </span>
+      {event.driver && (
+        <Car className="size-3 shrink-0 text-muted-foreground max-sm:hidden" aria-label="需要司機" />
+      )}
       {unread && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-red-600" />}
     </button>
   );

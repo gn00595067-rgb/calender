@@ -334,7 +334,7 @@ export function MonthView({
                       }}
                       aria-label={`在 ${format(day, "M月d日")} 新增行程`}
                       title="新增行程"
-                      className="flex size-6 items-center justify-center rounded-full text-muted-foreground/50 transition hover:bg-accent hover:text-foreground touch:size-9"
+                      className="flex size-6 items-center justify-center rounded-full text-muted-foreground/50 transition hover:bg-accent hover:text-foreground touch:size-9 max-sm:hidden"
                     >
                       <Plus className="size-3.5 touch:size-4" />
                     </button>
@@ -348,7 +348,7 @@ export function MonthView({
                     aria-label={`查看 ${format(day, "M月d日")} 整天`}
                     title="查看整天"
                     className={cn(
-                      "ml-auto flex size-6 items-center justify-center rounded-full text-xs transition touch:size-9 touch:text-sm",
+                      "ml-auto flex size-6 items-center justify-center rounded-full text-xs transition touch:size-9 touch:text-sm max-sm:mx-auto max-sm:size-7!",
                       today
                         ? "bg-primary font-bold text-primary-foreground"
                         : "hover:bg-accent",
@@ -430,7 +430,7 @@ export function MonthView({
                             nodes.push(
                               <div
                                 key={`free-${ds}-${b.label}-${b.start}`}
-                                className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-primary/80"
+                                className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-primary/80 max-sm:hidden"
                               >
                                 <span className="h-px flex-1 bg-primary/25" />
                                 <span className="shrink-0 tabular-nums">
@@ -470,7 +470,7 @@ export function MonthView({
                         return (
                           <Fragment key={ev.id + ds}>
                             {gap >= MIN_GAP_MINUTES && (
-                              <div className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-muted-foreground/70">
+                              <div className="flex items-center gap-1 px-0.5 text-[10px] leading-none text-muted-foreground/70 max-sm:hidden">
                                 <span className="h-px flex-1 bg-border" />
                                 <span className="shrink-0 tabular-nums">
                                   空 {fmtDur(gap)}
@@ -494,13 +494,14 @@ export function MonthView({
                         e.stopPropagation();
                         setPeekDay(ds);
                       }}
-                      className="w-full rounded px-1 py-0.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-accent touch:py-2 touch:text-xs"
+                      className="w-full rounded px-1 py-0.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-accent touch:py-2 touch:text-xs max-sm:py-1! max-sm:text-center"
                     >
-                      +{extra} 筆 · 看整天
+                      +{extra}
+                      <span className="max-sm:hidden"> 筆 · 看整天</span>
                     </button>
                   )}
                   {lastEndIso && (
-                    <div className="pt-0.5 text-right text-[10px] font-medium leading-none text-muted-foreground/80 tabular-nums">
+                    <div className="pt-0.5 text-right text-[10px] font-medium leading-none text-muted-foreground/80 tabular-nums max-sm:hidden">
                       結束 {D.time(lastEndIso)}
                     </div>
                   )}

@@ -6,7 +6,7 @@ import { zoned, layoutDay } from "@/lib/calendar-utils";
 import { cn } from "@/lib/utils";
 import { D } from "@/lib/date";
 import { eventSegmentOnDay } from "@/lib/availability";
-import { eventStyle } from "./event-visuals";
+import { eventStyle, displayTitle } from "./event-visuals";
 import { Plus, Star } from "lucide-react";
 import type { CalEvent } from "@/lib/client/events";
 
@@ -69,21 +69,37 @@ export function TimeGridView({
   const isTarget = (ev: CalEvent) => !gapFilter || gapFilter.match(ev);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 初次捲動到 7 點
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 7 * HOUR_HEIGHT;
-  }, []);
-
   const isSingle = days.length === 1;
+  const daysKey = days.map((d) => format(d, "yyyy-MM-dd")).join(",");
+
+  // 捲到 7 點；當天有更早的行程（如 05:30 打球）就捲到那筆開始前。
+  // 行程是非同步載入的，載入後再調整一次；之後使用者自己捲就不再動。
+  const earliestMin = days.reduce((min, day) => {
+    const ds = format(day, "yyyy-MM-dd");
+    for (const e of events) {
+      const seg = eventSegmentOnDay(e, ds);
+      if (seg && seg.start < min) min = seg.start;
+    }
+    return min;
+  }, 7 * 60);
+  const hasEvents = events.length > 0;
+  useEffect(() => {
+    if (scrollRef.current)
+      scrollRef.current.scrollTop = Math.max(0, (earliestMin - 30) / 60) * HOUR_HEIGHT;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在換日期／首次有資料時捲動
+  }, [daysKey, hasEvents]);
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
+    {/* 手機上週檢視一天只剩約 50px、標題全被切掉 → 每天至少 6rem，可左右滑 */}
+    <div className="overflow-x-auto">
+    <div className={cn(!isSingle && "max-sm:min-w-[45rem]")}>
       {/* 日期表頭 */}
       <div
         className="grid border-b"
         style={{ gridTemplateColumns: `3rem repeat(${days.length}, 1fr)` }}
       >
-        <div className="border-r bg-muted/40" />
+        <div className="sticky left-0 z-20 border-r bg-muted" />
         {days.map((day) => {
           const today = isToday(day);
           return (
@@ -124,8 +140,8 @@ export function TimeGridView({
           className="grid"
           style={{ gridTemplateColumns: `3rem repeat(${days.length}, 1fr)` }}
         >
-          {/* 小時刻度 */}
-          <div className="relative border-r">
+          {/* 小時刻度（左右滑時固定在左邊） */}
+          <div className="sticky left-0 z-20 border-r bg-card">
             {Array.from({ length: 24 }).map((_, h) => (
               <div
                 key={h}
@@ -211,7 +227,7 @@ export function TimeGridView({
                         width: `calc(${span * widthPct}% - 4px)`,
                       }}
                       className={cn(
-                        "overflow-hidden rounded-md px-1.5 py-0.5 text-left hover:brightness-95 touch:min-h-8",
+                        "flex flex-col items-stretch justify-start overflow-hidden rounded-md px-1.5 py-0.5 text-left hover:brightness-95 touch:min-h-8",
                         !isTarget(event) && "opacity-40",
                       )}
                     >
@@ -229,10 +245,10 @@ export function TimeGridView({
                       <div
                         className={cn(
                           "line-clamp-2 text-xs font-medium leading-tight",
-                          isSingle && "text-sm",
+                          isSingle ? "text-sm" : "max-sm:line-clamp-3 max-sm:break-all",
                         )}
                       >
-                        {event.title}
+                        {isCont ? event.title : displayTitle(event.title, D.time(event.starts_at))}
                       </div>
                       {height > 44 && event.location && (
                         <div className="truncate text-[10px] text-muted-foreground">
@@ -295,6 +311,8 @@ export function TimeGridView({
         </div>
       </div>
     </div>
+    </div>
+    </div>
   );
 }
 
@@ -317,7 +335,7 @@ function AllDayRow({
       className="grid border-b bg-muted/20"
       style={{ gridTemplateColumns: `3rem repeat(${days.length}, 1fr)` }}
     >
-      <div className="border-r py-1 text-center text-[10px] text-muted-foreground">
+      <div className="sticky left-0 z-20 border-r bg-muted py-1 text-center text-[10px] text-muted-foreground">
         整日
       </div>
       {days.map((day) => {
