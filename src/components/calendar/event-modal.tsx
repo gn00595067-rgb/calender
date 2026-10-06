@@ -580,7 +580,12 @@ export function EventModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-lg"
+        // 手機上點到外面（或鍵盤／下拉選單邊緣）不要關閉，否則語音帶入的行程全沒了；
+        // 要關請按右上角 X 或「取消」
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>
             {conflictList ? "時間衝突" : mode === "create" ? "新增行程" : "編輯行程"}
@@ -803,7 +808,12 @@ export function EventModal({
               />
               <p className="text-xs text-muted-foreground">
                 用於報表「依標籤」統計次數與花費、搜尋篩選。不要的標籤到{" "}
-                <Link href="/settings/tags" className="underline underline-offset-2">
+                {/* 開新分頁，避免離開表單而遺失正在填的行程 */}
+                <Link
+                  href="/settings/tags"
+                  target="_blank"
+                  className="underline underline-offset-2"
+                >
                   設定 → 標籤管理
                 </Link>{" "}
                 刪除或合併。
