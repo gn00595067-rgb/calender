@@ -6,11 +6,14 @@ import { zoned, layoutDay } from "@/lib/calendar-utils";
 import { cn } from "@/lib/utils";
 import { D } from "@/lib/date";
 import { eventSegmentOnDay } from "@/lib/availability";
-import { eventStyle, displayTitle } from "./event-visuals";
+import { eventStyle, chipStyle, displayTitle } from "./event-visuals";
+import { useNarrow } from "@/lib/client/use-narrow";
 import { Plus, Star } from "lucide-react";
 import type { CalEvent } from "@/lib/client/events";
 
 const HOUR_HEIGHT = 48;
+/** 手機週檢視：一欄只有約 45px 寬，每小時加高讓 1 小時的行程也放得下 3～4 個字×3 行 */
+const COMPACT_HOUR_HEIGHT = 64;
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
 /** 時間軸標籤用的精簡時長：1h30／45m */
@@ -56,6 +59,7 @@ export function TimeGridView({
   canCreate,
   onSelectEvent,
   onCreateAt,
+  onOpenDay,
 }: {
   days: Date[];
   events: CalEvent[];
@@ -65,11 +69,18 @@ export function TimeGridView({
   canCreate: boolean;
   onSelectEvent: (event: CalEvent) => void;
   onCreateAt: (dateStr: string, hour: number, minute?: number) => void;
+  /** 點表頭日期 → 切到那天的日檢視 */
+  onOpenDay?: (dateStr: string) => void;
 }) {
   const isTarget = (ev: CalEvent) => !gapFilter || gapFilter.match(ev);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const isSingle = days.length === 1;
+  // 手機週檢視（7 天擠一頁）：比 Google 更重可讀性——加高、只放標題、底色加深
+  const narrow = useNarrow();
+  const compact = narrow && !isSingle;
+  const HOUR_H = compact ? COMPACT_HOUR_HEIGHT : HOUR_HEIGHT;
+  const gridCols = gridColsOf(days.length);
   const daysKey = days.map((d) => format(d, "yyyy-MM-dd")).join(",");
 
   // 捲到 7 點；當天有更早的行程（如 05:30 打球）就捲到那筆開始前。
@@ -85,29 +96,38 @@ export function TimeGridView({
   const hasEvents = events.length > 0;
   useEffect(() => {
     if (scrollRef.current)
-      scrollRef.current.scrollTop = Math.max(0, (earliestMin - 30) / 60) * HOUR_HEIGHT;
+      scrollRef.current.scrollTop = Math.max(0, (earliestMin - 30) / 60) * HOUR_H;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在換日期／首次有資料時捲動
-  }, [daysKey, hasEvents]);
+  }, [daysKey, hasEvents, compact]);
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card">
-    {/* 手機上週檢視一天只剩約 50px、標題全被切掉 → 每天至少 6rem，可左右滑 */}
-    <div className="overflow-x-auto">
-    <div className={cn(!isSingle && "max-sm:min-w-[45rem]")}>
+    // 手機週檢視仿 Google：7 天均分一頁、不左右滑，時間欄縮窄、卡片小字折行
+    <div
+      className={cn(
+        "overflow-hidden rounded-xl border bg-card [--time-col:3rem]",
+        !isSingle && "max-sm:[--time-col:2.25rem]",
+      )}
+    >
       {/* 日期表頭 */}
       <div
         className="grid border-b"
-        style={{ gridTemplateColumns: `3rem repeat(${days.length}, 1fr)` }}
+        style={{ gridTemplateColumns: gridCols }}
       >
-        <div className="sticky left-0 z-20 border-r bg-muted" />
+        <div className="border-r bg-muted" />
         {days.map((day) => {
           const today = isToday(day);
+          const ds = format(day, "yyyy-MM-dd");
+          const clickable = !isSingle && !!onOpenDay;
           return (
             <div
-              key={format(day, "yyyy-MM-dd")}
+              key={ds}
+              role={clickable ? "button" : undefined}
+              title={clickable ? "看這天的詳細行程" : undefined}
+              onClick={clickable ? () => onOpenDay(ds) : undefined}
               className={cn(
                 "border-r py-2 text-center last:border-r-0",
                 today && "bg-amber-50/60 dark:bg-amber-950/20",
+                clickable && "cursor-pointer hover:bg-accent",
               )}
             >
               <div className="text-xs text-muted-foreground">
@@ -138,17 +158,17 @@ export function TimeGridView({
       <div ref={scrollRef} className="max-h-[60vh] overflow-y-auto">
         <div
           className="grid"
-          style={{ gridTemplateColumns: `3rem repeat(${days.length}, 1fr)` }}
+          style={{ gridTemplateColumns: gridCols }}
         >
-          {/* 小時刻度（左右滑時固定在左邊） */}
-          <div className="sticky left-0 z-20 border-r bg-card">
+          {/* 小時刻度 */}
+          <div className="border-r bg-card">
             {Array.from({ length: 24 }).map((_, h) => (
               <div
                 key={h}
                 className="relative border-b text-right"
-                style={{ height: HOUR_HEIGHT }}
+                style={{ height: HOUR_H }}
               >
-                <span className="absolute -top-2 right-1 text-[10px] text-muted-foreground">
+                <span className="absolute -top-2 right-1 text-[10px] text-muted-foreground max-sm:right-0.5 max-sm:text-[9px]">
                   {h > 0 ? `${String(h).padStart(2, "0")}:00` : ""}
                 </span>
               </div>
@@ -179,11 +199,11 @@ export function TimeGridView({
                   "relative border-r last:border-r-0",
                   isToday(day) && "bg-amber-50/60 dark:bg-amber-950/20",
                 )}
-                style={{ height: 24 * HOUR_HEIGHT }}
+                style={{ height: 24 * HOUR_H }}
                 onClick={(e) => {
                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                   const y = e.clientY - rect.top;
-                  const hour = Math.max(0, Math.min(23, Math.floor(y / HOUR_HEIGHT)));
+                  const hour = Math.max(0, Math.min(23, Math.floor(y / HOUR_H)));
                   onCreateAt(ds, hour);
                 }}
               >
@@ -191,7 +211,7 @@ export function TimeGridView({
                   <div
                     key={h}
                     className="border-b"
-                    style={{ height: HOUR_HEIGHT }}
+                    style={{ height: HOUR_H }}
                   />
                 ))}
                 {positioned.map(({ event, col, cols, span }) => {
@@ -202,9 +222,12 @@ export function TimeGridView({
                   const multiDay = startDs !== endDs;
                   const isCont = startDs < ds; // 前一天延續過來
                   const continues = endMin >= 24 * 60 && endDs > ds; // 延續到隔天
-                  const top = (startMin / 60) * HOUR_HEIGHT;
-                  const height = Math.max(20, ((endMin - startMin) / 60) * HOUR_HEIGHT);
+                  const top = (startMin / 60) * HOUR_H;
+                  const height = Math.max(compact ? 30 : 20, ((endMin - startMin) / 60) * HOUR_H);
                   const widthPct = 100 / cols;
+                  // 手機週檢視：重疊不左右平分（一張只剩 20px），改層疊——後開始的往右縮排疊上去
+                  const cascadeLeft = col * Math.min(30, 60 / Math.max(1, cols - 1));
+                  const chip = chipStyle(colorOf(event.calendar_id), conflicts.has(event.id));
                   return (
                     <button
                       key={event.id}
@@ -219,18 +242,41 @@ export function TimeGridView({
                         onSelectEvent(event);
                       }}
                       style={{
-                        ...eventStyle(colorOf(event.calendar_id), conflicts.has(event.id)),
                         position: "absolute",
                         top,
                         height,
-                        left: `calc(${col * widthPct}% + 2px)`,
-                        width: `calc(${span * widthPct}% - 4px)`,
+                        ...(compact
+                          ? {
+                              ...chip,
+                              // 半透明底色疊在卡片底色上 → 不透明，疊住的卡不會透字
+                              backgroundColor: "var(--card)",
+                              backgroundImage: `linear-gradient(${chip.backgroundColor}, ${chip.backgroundColor})`,
+                              borderLeftWidth: 3,
+                              boxShadow: cols > 1 ? "0 0 0 1px var(--card)" : undefined,
+                              left: `calc(${cascadeLeft}% + 1px)`,
+                              width: `calc(${100 - cascadeLeft}% - 2px)`,
+                            }
+                          : {
+                              ...eventStyle(colorOf(event.calendar_id), conflicts.has(event.id)),
+                              left: `calc(${col * widthPct}% + 2px)`,
+                              width: `calc(${span * widthPct}% - 4px)`,
+                            }),
                       }}
                       className={cn(
                         "flex flex-col items-stretch justify-start overflow-hidden rounded-md px-1.5 py-0.5 text-left hover:brightness-95 touch:min-h-8",
+                        compact && "rounded-sm px-[3px] py-[2px]",
                         !isTarget(event) && "opacity-40",
                       )}
                     >
+                      {compact ? (
+                        <CompactCardBody
+                          title={isCont ? event.title : displayTitle(event.title, D.time(event.starts_at))}
+                          time={isCont ? "↳續" : D.time(event.starts_at)}
+                          important={event.is_important}
+                          showTime={height >= 88 && cols === 1}
+                        />
+                      ) : (
+                      <>
                       <div className="flex items-center gap-1 text-[11px] font-semibold leading-tight">
                         {event.is_important && (
                           <Star className="size-2.5 shrink-0 fill-amber-400 text-amber-500" />
@@ -245,7 +291,7 @@ export function TimeGridView({
                       <div
                         className={cn(
                           "line-clamp-2 text-xs font-medium leading-tight",
-                          isSingle ? "text-sm" : "max-sm:line-clamp-3 max-sm:break-all",
+                          isSingle && "text-sm",
                         )}
                       >
                         {isCont ? event.title : displayTitle(event.title, D.time(event.starts_at))}
@@ -254,6 +300,8 @@ export function TimeGridView({
                         <div className="truncate text-[10px] text-muted-foreground">
                           {event.location}
                         </div>
+                      )}
+                      </>
                       )}
                     </button>
                   );
@@ -264,7 +312,7 @@ export function TimeGridView({
                   const nextStart = busy[i + 1][0];
                   const gap = nextStart - end;
                   if (gap < GRID_MIN_GAP) return null;
-                  const mid = ((end + nextStart) / 2 / 60) * HOUR_HEIGHT;
+                  const mid = ((end + nextStart) / 2 / 60) * HOUR_H;
                   return (
                     <div
                       key={`gap-${i}`}
@@ -279,14 +327,29 @@ export function TimeGridView({
                             onCreateAt(ds, Math.floor(end / 60), end % 60);
                           }}
                           title={`在 ${hhmm(end)}–${hhmm(nextStart)} 空檔新增行程`}
-                          className="pointer-events-auto inline-flex items-center gap-0.5 rounded-full border bg-card/95 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm transition hover:border-primary hover:bg-accent hover:text-foreground touch:px-2 touch:py-1"
+                          className={cn(
+                            "pointer-events-auto inline-flex items-center gap-0.5 rounded-full border bg-card/95 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm transition hover:border-primary hover:bg-accent hover:text-foreground touch:px-2 touch:py-1",
+                            // 手機週檢視：縮成「空 6h」，不顯示＋號與聚焦對象名
+                            !isSingle && "max-sm:px-1! max-sm:text-[9px]",
+                          )}
                         >
-                          <Plus className="size-2.5" />
-                          {gapFilter ? `${gapFilter.name} ` : ""}空 {fmtDurShort(gap)}
+                          <Plus className={cn("size-2.5", !isSingle && "max-sm:hidden")} />
+                          <span className={cn(!isSingle && "max-sm:hidden")}>
+                            {gapFilter ? `${gapFilter.name} ` : ""}
+                          </span>
+                          空 {fmtDurShort(gap)}
                         </button>
                       ) : (
-                        <span className="rounded-full border bg-card/90 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
-                          {gapFilter ? `${gapFilter.name} ` : ""}空 {fmtDurShort(gap)}
+                        <span
+                          className={cn(
+                            "rounded-full border bg-card/90 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm",
+                            !isSingle && "max-sm:px-1 max-sm:text-[9px]",
+                          )}
+                        >
+                          <span className={cn(!isSingle && "max-sm:hidden")}>
+                            {gapFilter ? `${gapFilter.name} ` : ""}
+                          </span>
+                          空 {fmtDurShort(gap)}
                         </span>
                       )}
                     </div>
@@ -296,12 +359,21 @@ export function TimeGridView({
                 {/* 最後結束時間：畫一條線 + 標籤 */}
                 {lastEndMin !== null && lastEndMin < 24 * 60 && (
                   <div
-                    className="pointer-events-none absolute inset-x-0 z-10 flex items-center gap-1 px-1"
-                    style={{ top: (lastEndMin / 60) * HOUR_HEIGHT }}
+                    className={cn(
+                      "pointer-events-none absolute inset-x-0 z-10 flex items-center gap-1 px-1",
+                      !isSingle && "max-sm:gap-0 max-sm:px-0",
+                    )}
+                    style={{ top: (lastEndMin / 60) * HOUR_H }}
                   >
                     <span className="h-px flex-1 bg-primary/40" />
-                    <span className="rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold text-primary tabular-nums">
-                      結束 {hhmm(lastEndMin)}
+                    <span
+                      className={cn(
+                        "rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold text-primary tabular-nums",
+                        !isSingle && "max-sm:px-0.5 max-sm:text-[9px]",
+                      )}
+                    >
+                      <span className={cn(!isSingle && "max-sm:hidden")}>結束 </span>
+                      {hhmm(lastEndMin)}
                     </span>
                   </div>
                 )}
@@ -311,9 +383,44 @@ export function TimeGridView({
         </div>
       </div>
     </div>
-    </div>
-    </div>
   );
+}
+
+/**
+ * 手機週檢視的卡片內容：標題放最上面、11px 粗體，字數多就往下折行填滿卡片
+ * （只在必要時斷字，英文名不會像 Google 被切成 Ph/oe/nix）；卡片夠高才在底下補開始時間。
+ */
+function CompactCardBody({
+  title,
+  time,
+  important,
+  showTime,
+}: {
+  title: string;
+  time: string;
+  important: boolean;
+  showTime: boolean;
+}) {
+  return (
+    <>
+      <div className="min-h-0 overflow-hidden text-[11px] font-semibold leading-[1.2] [overflow-wrap:anywhere]">
+        {important && (
+          <Star className="mr-0.5 inline size-2.5 fill-amber-400 align-[-1px] text-amber-500" />
+        )}
+        {title}
+      </div>
+      {showTime && (
+        <div className="mt-auto shrink-0 pt-0.5 text-[9px] leading-none text-muted-foreground tabular-nums">
+          {time}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** 時間欄＋各天欄；minmax(0,1fr) 讓長字不會把欄撐寬（手機週檢視要 7 天塞一頁） */
+function gridColsOf(n: number): string {
+  return `var(--time-col) repeat(${n}, minmax(0, 1fr))`;
 }
 
 function AllDayRow({
@@ -329,13 +436,14 @@ function AllDayRow({
 }) {
   const allDay = events.filter((e) => e.all_day);
   if (allDay.length === 0) return null;
+  const isSingle = days.length === 1;
 
   return (
     <div
       className="grid border-b bg-muted/20"
-      style={{ gridTemplateColumns: `3rem repeat(${days.length}, 1fr)` }}
+      style={{ gridTemplateColumns: gridColsOf(days.length) }}
     >
-      <div className="sticky left-0 z-20 border-r bg-muted py-1 text-center text-[10px] text-muted-foreground">
+      <div className="border-r bg-muted py-1 text-center text-[10px] text-muted-foreground">
         整日
       </div>
       {days.map((day) => {
@@ -346,7 +454,13 @@ function AllDayRow({
           return ds >= s && ds <= en;
         });
         return (
-          <div key={ds} className="space-y-0.5 border-r p-1 last:border-r-0">
+          <div
+            key={ds}
+            className={cn(
+              "min-w-0 space-y-0.5 border-r p-1 last:border-r-0",
+              !isSingle && "max-sm:p-0.5",
+            )}
+          >
             {dayAllDay.map((ev) => (
               <button
                 key={ev.id}
@@ -354,7 +468,10 @@ function AllDayRow({
                 title={`整日 ${ev.title}${ev.location ? ` @ ${ev.location}` : ""}`}
                 onClick={() => onSelectEvent(ev)}
                 style={eventStyle(colorOf(ev.calendar_id))}
-                className="block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] hover:brightness-95 touch:py-2 touch:text-xs"
+                className={cn(
+                  "block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] hover:brightness-95 touch:py-2 touch:text-xs",
+                  !isSingle && "max-sm:px-0.5 max-sm:text-[10px]!",
+                )}
               >
                 {ev.title}
               </button>

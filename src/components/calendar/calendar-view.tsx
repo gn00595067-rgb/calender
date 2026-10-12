@@ -337,6 +337,7 @@ export function CalendarView() {
           canCreate={canCreate}
           onSelectEvent={setDetail}
           onCreateAt={openCreate}
+          onOpenDay={openDay}
         />
       )}
 
