@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useForm, Controller } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Star, Mic, AlertTriangle, History, Info, Loader2, Plus, X } from "lucide-react";
+import { Star, Mic, AlertTriangle, History, Info, Loader2, Plus, X, ChevronUp } from "lucide-react";
 import { MicButton } from "@/components/voice/mic-button";
 import {
   Dialog,
@@ -20,6 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Calendar } from "@/components/ui/calendar";
+import { zhTW } from "react-day-picker/locale";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -1645,9 +1647,20 @@ function shortDateLabel(ds: string): string {
   return `${m}/${d}（${WEEKDAY_ZH[wallWeekday(`${ds}T12:00`)]}）`;
 }
 
+/** yyyy-MM-dd ↔ 本地 Date（月曆元件用；只取年月日，不涉時區換算） */
+function dsToDate(ds: string): Date {
+  const [y, m, d] = ds.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function dateToDs(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /**
  * 指定日期（多選）：日期不規則的同一件事（如 10/13、10/16、10/20 都 14:00）。
- * 開始日永遠是第一個（改上面的開始日期即可換），其他日期點「＋ 加日期」挑選，可個別移除。
+ * 開始日永遠是第一個（改上面的開始日期即可換），其他日期點「＋ 加日期」展開月曆連續點選，可個別移除。
+ * 不用原生 <input type="date">：電腦版 Chrome／Edge 只有點右側小日曆圖示才會開，
+ * 透明蓋在按鈕上時點了完全沒反應（2026-10-12 Peggy 回報）。
  */
 function RecurrenceDatesField({
   startDate,
@@ -1659,10 +1672,8 @@ function RecurrenceDatesField({
   onChange: (dates: string[]) => void;
 }) {
   const extra = [...new Set(value)].filter((d) => d !== startDate).sort();
-  const add = (ds: string) => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(ds) || ds === startDate || extra.includes(ds)) return;
-    onChange([...extra, ds].sort());
-  };
+  const [picking, setPicking] = useState(false);
+  const validStart = /^\d{4}-\d{2}-\d{2}$/.test(startDate);
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">
@@ -1686,20 +1697,42 @@ function RecurrenceDatesField({
             </button>
           </span>
         ))}
-        {/* 原生日期選擇器：選了就加入，並清空以便再選下一個 */}
-        <label className="relative inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-sm text-primary hover:bg-accent">
-          <Plus className="size-3.5" />
-          加日期
-          <input
-            type="date"
-            min={startDate}
-            value=""
-            onChange={(e) => add(e.target.value)}
-            className="absolute inset-0 cursor-pointer opacity-0"
-            aria-label="加一個日期"
-          />
-        </label>
+        <button
+          type="button"
+          onClick={() => setPicking((v) => !v)}
+          aria-expanded={picking}
+          disabled={!validStart}
+          className="inline-flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-sm text-primary hover:bg-accent disabled:opacity-50"
+        >
+          {picking ? <ChevronUp className="size-3.5" /> : <Plus className="size-3.5" />}
+          {picking ? "收起月曆" : "加日期"}
+        </button>
       </div>
+      {/* 月曆直接展開在表單裡（不用浮動視窗，手機上不會蓋住或跳出表單）；可連續點多天，再點一次取消 */}
+      {picking && validStart && (
+        <div className="w-fit rounded-lg border">
+          <Calendar
+            mode="multiple"
+            locale={zhTW}
+            defaultMonth={dsToDate(startDate)}
+            selected={[startDate, ...extra].map(dsToDate)}
+            disabled={{ before: dsToDate(startDate) }}
+            onSelect={(dates) =>
+              onChange(
+                (dates ?? [])
+                  .map(dateToDs)
+                  .filter((d) => d !== startDate)
+                  .sort(),
+              )
+            }
+          />
+          <div className="flex justify-end border-t px-2 py-1.5">
+            <Button type="button" size="sm" variant="ghost" onClick={() => setPicking(false)}>
+              完成
+            </Button>
+          </div>
+        </div>
+      )}
       <p className="text-xs text-muted-foreground">
         共 {extra.length + 1} 天、每天同一時間；之後可在任一筆選「此筆與之後全部」一起改或刪。
       </p>
