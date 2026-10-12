@@ -85,6 +85,8 @@ interface FullContact {
   gap_mode: GapMode;
   /** 本人（老闆） */
   is_self: boolean;
+  /** 別名（英文名等），AI 拆學習回饋時用來對應 */
+  aliases: string[];
 }
 
 /** 表單中的一列方案（金額以字串暫存，方便輸入） */
@@ -128,6 +130,7 @@ function useContactsFull() {
         default_direction: c.default_direction,
         default_payment_method: c.default_payment_method,
         routine: Array.isArray(c.routine) ? (c.routine as RoutineBlock[]) : [],
+        aliases: Array.isArray(c.aliases) ? c.aliases : [],
         gap_mode: c.gap_mode ?? "off",
         is_self: c.is_self ?? false,
         plans: plans.get(c.id) ?? [],
@@ -297,6 +300,7 @@ function ContactFormDialog({
   const [roleLabel, setRoleLabel] = useState("");
   const [phone, setPhone] = useState("");
   const [note, setNote] = useState("");
+  const [aliases, setAliases] = useState("");
   // 收費方案（1對1／1對2…）
   const [plans, setPlans] = useState<PlanDraft[]>([]);
   const [defaultCategoryId, setDefaultCategoryId] = useState<string | null>(null);
@@ -318,6 +322,7 @@ function ContactFormDialog({
     setRoleLabel(contact?.role_label ?? "");
     setPhone(contact?.phone ?? "");
     setNote(contact?.note ?? "");
+    setAliases((contact?.aliases ?? []).join("、"));
     setIsFamily(contact?.is_family ?? false);
     setRoutine(contact?.routine ?? []);
     setGapMode(contact?.gap_mode ?? "off");
@@ -359,6 +364,10 @@ function ContactFormDialog({
         roleLabel: roleLabel || null,
         phone: phone || null,
         note: note || null,
+        aliases: aliases
+          .split(/[、,，\s]+/)
+          .map((a) => a.trim())
+          .filter(Boolean),
         isFamily,
         // 只有家人才有作息；非家人送空陣列清掉
         routine: isFamily ? routine : [],
@@ -417,6 +426,18 @@ function ContactFormDialog({
               onChange={(e) => setRoleLabel(e.target.value)}
               placeholder="例：數學家教"
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ct-aliases">別名／英文名</Label>
+            <Input
+              id="ct-aliases"
+              value={aliases}
+              onChange={(e) => setAliases(e.target.value)}
+              placeholder="例：Rick（多個用「、」隔開）"
+            />
+            <p className="text-xs text-muted-foreground">
+              老師回饋裡用英文名寫（如 Rick、Iris）時，系統靠這裡認出是哪個小孩。
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="ct-phone">電話</Label>

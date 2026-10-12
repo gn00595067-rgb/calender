@@ -12,6 +12,7 @@ import {
   Car,
   BellRing,
   Hash,
+  GraduationCap,
   type LucideIcon,
 } from "lucide-react";
 
@@ -25,6 +26,7 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/calendar", label: "行事曆", icon: CalendarDays },
   { href: "/digest", label: "區間總覽", icon: LayoutDashboard },
   { href: "/search", label: "搜尋", icon: Search },
+  { href: "/learning", label: "學習回饋", icon: GraduationCap },
   { href: "/reports", label: "報表結算", icon: BarChart3 },
   { href: "/driver", label: "司機行程", icon: Car },
 ];

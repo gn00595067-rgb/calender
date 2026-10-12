@@ -168,6 +168,8 @@ export interface Database {
           // 0015 空檔顯示方式、是否本人
           gap_mode?: "off" | "always" | "free_days";
           is_self?: boolean;
+          // 0017 別名（英文名等）
+          aliases?: string[];
           default_payment_method:
             | "monthly"
             | "per_time"
@@ -193,6 +195,8 @@ export interface Database {
           // 0015 空檔顯示方式、是否本人
           gap_mode?: "off" | "always" | "free_days";
           is_self?: boolean;
+          // 0017 別名（英文名等）
+          aliases?: string[];
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -218,6 +222,8 @@ export interface Database {
           // 0015 空檔顯示方式、是否本人
           gap_mode?: "off" | "always" | "free_days";
           is_self?: boolean;
+          // 0017 別名（英文名等）
+          aliases?: string[];
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -380,6 +386,26 @@ export interface Database {
           user_agent?: string | null;
         };
         Update: { p256dh?: string; auth?: string; user_agent?: string | null; user_id?: string };
+        Relationships: [];
+      };
+      // 0017 學習回饋依小孩拆分
+      note_parts: {
+        Row: {
+          id: string;
+          note_id: string;
+          subject_contact_id: string | null;
+          content: string;
+          position: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          note_id: string;
+          subject_contact_id?: string | null;
+          content: string;
+          position?: number;
+        };
+        Update: { subject_contact_id?: string | null; content?: string; position?: number };
         Relationships: [];
       };
       tags: {

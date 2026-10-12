@@ -23,6 +23,8 @@ const contactSchema = z.object({
   roleLabel: z.string().trim().max(40).optional().nullable(),
   phone: z.string().trim().max(40).optional().nullable(),
   note: z.string().trim().max(500).optional().nullable(),
+  // 別名（英文名等，0017）；未提供＝不動
+  aliases: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
   // 家人／本人：可當「主角（誰的行程）」
   isFamily: z.boolean().optional(),
   // 固定作息（不算空檔），例如平日上學；未提供＝不動
@@ -212,6 +214,9 @@ export async function createContactAction(
     if (routineErr === "retry") ({ data, error } = await insert(withoutRoutine(row)));
     else if (routineErr) return fail(routineErr);
     if (error || !data) return fail(error?.message ?? "建立失敗");
+    // 別名另外寫（尚未套 0017 時略過，不影響建立人物）
+    if (parsed.data.aliases?.length)
+      await supabase.from("contacts").update({ aliases: parsed.data.aliases }).eq("id", data.id);
     if (parsed.data.plans) {
       const planErr = await syncPlans(supabase, user.id, data.id, parsed.data.plans);
       if (planErr) return fail(planErr);
@@ -241,10 +246,17 @@ export async function updateContactAction(
       ...(parsed.data.routine ? { routine: parsed.data.routine } : {}),
       ...(parsed.data.gapMode ? { gap_mode: parsed.data.gapMode } : {}),
       ...(parsed.data.isSelf !== undefined ? { is_self: parsed.data.isSelf } : {}),
+      ...(parsed.data.aliases ? { aliases: parsed.data.aliases } : {}),
       ...billingColumns(parsed.data),
     };
     const update = (r: typeof patch) => supabase.from("contacts").update(r).eq("id", id);
     let { error } = await update(patch);
+    // 尚未套 0017（沒有 aliases 欄位）：先存其他欄位，別名之後再補
+    if (error && /aliases/.test(error.message)) {
+      const { aliases: _drop, ...rest } = patch as typeof patch & { aliases?: string[] };
+      void _drop;
+      ({ error } = await update(rest));
+    }
     const routineErr = routineColumnError(error, parsed.data);
     if (routineErr === "retry") ({ error } = await update(withoutRoutine(patch)));
     else if (routineErr) return fail(routineErr);
