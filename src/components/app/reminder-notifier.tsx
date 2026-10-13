@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell } from "lucide-react";
@@ -24,14 +24,28 @@ function saveNotified(s: Set<string>) {
   }
 }
 
+type Perm = NotificationPermission | "unsupported";
+
+// 通知權限沒有變更事件；回到視窗時重讀（換頁時元件重繪也會重讀）。
+// 伺服器端回傳 unsupported → SSR 不畫邀請按鈕，避免水合後閃一下。
+function readPerm(): Perm {
+  return "Notification" in window ? Notification.permission : "unsupported";
+}
+function subscribePerm(onChange: () => void) {
+  window.addEventListener("focus", onChange);
+  document.addEventListener("visibilitychange", onChange);
+  return () => {
+    window.removeEventListener("focus", onChange);
+    document.removeEventListener("visibilitychange", onChange);
+  };
+}
+
 /**
  * 桌面（瀏覽器）行程提醒：網頁開著時，於提醒時間彈出系統通知。
  * 需使用者授權通知權限；未決定時顯示一顆小按鈕邀請開啟。
  */
 export function ReminderNotifier() {
-  const [perm, setPerm] = useState<NotificationPermission | "unsupported">(
-    "default",
-  );
+  const perm = useSyncExternalStore(subscribePerm, readPerm, (): Perm => "unsupported");
   // 只有授權後才需要輪詢資料
   const { data: reminders = [] } = useUpcomingReminders(perm === "granted");
   const notified = useRef<Set<string>>(new Set());
@@ -39,13 +53,7 @@ export function ReminderNotifier() {
 
   useEffect(() => {
     notified.current = loadNotified();
-    if (typeof window !== "undefined" && "Notification" in window) {
-      setPerm(Notification.permission);
-    } else {
-      setPerm("unsupported");
-    }
   }, []);
-
 
   useEffect(() => {
     if (perm !== "granted") return;
