@@ -170,6 +170,8 @@ export interface Database {
           is_self?: boolean;
           // 0017 別名（英文名等）
           aliases?: string[];
+          // 0018 月薪（工作效益比對用）
+          monthly_salary?: number | null;
           default_payment_method:
             | "monthly"
             | "per_time"
@@ -197,6 +199,7 @@ export interface Database {
           is_self?: boolean;
           // 0017 別名（英文名等）
           aliases?: string[];
+          monthly_salary?: number | null;
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -224,6 +227,7 @@ export interface Database {
           is_self?: boolean;
           // 0017 別名（英文名等）
           aliases?: string[];
+          monthly_salary?: number | null;
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -261,6 +265,70 @@ export interface Database {
           position?: number;
           is_archived?: boolean;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      work_categories: {
+        Row: {
+          id: string;
+          owner_id: string;
+          contact_id: string;
+          name: string;
+          sub_label: string | null;
+          hourly_rate: number;
+          aliases: string[];
+          position: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          contact_id: string;
+          name: string;
+          sub_label?: string | null;
+          hourly_rate?: number;
+          aliases?: string[];
+          position?: number;
+          created_at?: string;
+        };
+        Update: {
+          name?: string;
+          sub_label?: string | null;
+          hourly_rate?: number;
+          aliases?: string[];
+          position?: number;
+        };
+        Relationships: [];
+      };
+      work_logs: {
+        Row: {
+          id: string;
+          owner_id: string;
+          contact_id: string;
+          work_date: string;
+          start_time: string | null;
+          end_time: string | null;
+          hours: number;
+          content: string | null;
+          category_raw: string | null;
+          category_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          contact_id: string;
+          work_date: string;
+          start_time?: string | null;
+          end_time?: string | null;
+          hours: number;
+          content?: string | null;
+          category_raw?: string | null;
+          category_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          category_id?: string | null;
         };
         Relationships: [];
       };
