@@ -18,6 +18,8 @@ import { MicButton } from "./mic-button";
 import { useAppData } from "@/components/app/app-data";
 import { can } from "@/lib/permissions";
 import { EventModal, type EventDraft } from "@/components/calendar/event-modal";
+import { VoiceTargetDialog, type VoiceTargetRequest } from "./voice-target-dialog";
+import type { CalEvent } from "@/lib/client/events";
 import { taipeiNowWall, taipeiNowHuman } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +36,7 @@ interface ParsedEvent {
   participantIds: string[];
   tagNames: string[];
   needsDriver: boolean;
+  isLesson: boolean;
   recurrence: NonNullable<EventDraft["recurrence"]>;
   weekdays: number[];
   recurrenceUntil: string | null;
@@ -76,6 +79,10 @@ export function VoiceAddButton({
   const [modalOpen, setModalOpen] = useState(false);
   /** 還沒帶入的後續幾筆 */
   const [queue, setQueue] = useState<EventDraft[]>([]);
+  /** 語音改／刪：要找的行程 */
+  const [target, setTarget] = useState<VoiceTargetRequest | null>(null);
+  /** 語音修改：選好行程後開編輯表單 */
+  const [editing, setEditing] = useState<{ event: CalEvent; draft: EventDraft } | null>(null);
   /** 這次關閉表單是因為存檔成功（表單先關閉、後呼叫 onSaved） */
   const savedRef = useRef(false);
 
@@ -116,6 +123,7 @@ export function VoiceAddButton({
       participantIds: ev.participantIds,
       tagNames: ev.tagNames,
       needsDriver: ev.needsDriver,
+      isLesson: ev.isLesson,
       recurrence: ev.recurrence,
       recurrenceWeekdays: ev.weekdays,
       recurrenceUntil: ev.recurrenceUntil ?? undefined,
@@ -186,12 +194,21 @@ export function VoiceAddButton({
         return;
       }
 
-      // 搜尋意圖：關掉對話框、導到搜尋頁
+      // 搜尋意圖：關掉對話框、導到搜尋頁（有講日期就帶範圍）
       if (data.intent === "search") {
         setOpen(false);
         setText("");
         if (data.note) toast.message(data.note);
-        router.push(`/search?q=${encodeURIComponent(data.query)}`);
+        const range = `${data.rangeStart ? `&from=${data.rangeStart}` : ""}${data.rangeEnd ? `&to=${data.rangeEnd}` : ""}`;
+        router.push(`/search?q=${encodeURIComponent(data.query)}${range}`);
+        return;
+      }
+
+      // 改／刪既有行程：先找出候選讓使用者點選確認
+      if (data.intent === "modify" || data.intent === "delete") {
+        setOpen(false);
+        setText("");
+        setTarget({ ...data, transcript });
         return;
       }
 
@@ -245,7 +262,7 @@ export function VoiceAddButton({
               語音助理
             </DialogTitle>
             <DialogDescription>
-              說一句話即可，會自動判斷要「新增」還是「搜尋」。講得越完整越準：誰、什麼時間、做什麼、跟誰、在哪、要不要司機。
+              說一句話即可，會自動判斷要「新增」「搜尋」「修改」還是「刪除」。講得越完整越準：誰、什麼時間、做什麼、跟誰、在哪、要不要司機。
               例如「週二晚上六點哥哥桌球，郭老師，要司機接送」；沒講的部分會參考過去同類行程自動補上，並在確認畫面提醒你。
               也可用鍵盤上的 🎤 聽寫或手動打字。
             </DialogDescription>
@@ -261,7 +278,7 @@ export function VoiceAddButton({
                   void submit();
                 }
               }}
-              placeholder="新增：週二晚上六點哥哥桌球，要司機接送／搜尋：幫我找跟運動有關的行程"
+              placeholder="新增：週二晚上六點哥哥桌球，要司機接送／修改：下週三的會議改到下午三點／刪除：取消11月每週二的線上會議"
               rows={3}
               autoFocus
               className="pr-11"
@@ -292,6 +309,21 @@ export function VoiceAddButton({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <VoiceTargetDialog
+        request={target}
+        onClose={() => setTarget(null)}
+        onEdit={(event, d) => setEditing({ event, draft: d })}
+        onDone={onSaved}
+      />
+      <EventModal
+        open={!!editing}
+        onOpenChange={(o) => !o && setEditing(null)}
+        mode="edit"
+        event={editing?.event}
+        draft={editing?.draft}
+        onSaved={onSaved}
+      />
 
       {/* 帶入解析結果的「新增行程」對話框，供確認後送出 */}
       <EventModal

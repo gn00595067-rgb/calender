@@ -58,6 +58,8 @@ import { utcToTaipeiWall, taipeiWallToUtcISO, twd } from "@/lib/date";
 import { addMinutesToWall, wallWeekday, diffMinutes } from "@/lib/wall-time";
 import { fetchEventsInRange, type CalEvent } from "@/lib/client/events";
 import { ConflictPrompt } from "./conflict-prompt";
+import { occurrenceDates } from "@/lib/recurrence";
+import { eventSentence } from "@/lib/event-summary";
 import {
   extraLabel,
   isMonthlyPlan,
@@ -65,6 +67,7 @@ import {
   planAmount,
   planSummary,
   splitAmount,
+  looksNonLesson,
   type RatePlan,
 } from "@/lib/rate-plans";
 import { cn } from "@/lib/utils";
@@ -136,6 +139,10 @@ export interface EventDraft {
   recurrenceWeekdays?: number[];
   recurrenceUntil?: string;
   recurrenceDates?: string[];
+  /** 編輯模式（語音修改）：重複行程預設的套用範圍 */
+  scope?: "this" | "following";
+  /** 語音判斷這是不是上課；false（談話、開會…）→ 不自動帶上課費 */
+  isLesson?: boolean;
   /** 語音解析結果的說明（原句與提示），顯示在表單頂端供確認 */
   voice?: VoiceHints;
 }
@@ -189,6 +196,11 @@ export function EventModal({
   const planManualRef = useRef(false);
   /** 上一次處理過的收費老師（偵測換老師） */
   const billingContactRef = useRef<string | null>(null);
+  /** 不是上課而沒有自動帶入上課費時的說明（顯示在財務區） */
+  const [feeSkipNote, setFeeSkipNote] = useState<string | null>(null);
+  /** 語音帶入時先只看一句話摘要，全部欄位收起來；要改再展開 */
+  const isVoiceDraft = mode === "create" && !!draft?.voice;
+  const [detailsOpen, setDetailsOpen] = useState(!isVoiceDraft);
 
   const editData = useEventEditData(mode === "edit" && open ? (event?.id ?? null) : null);
 
@@ -254,24 +266,27 @@ export function EventModal({
     reminderTouchedRef.current = false;
     planManualRef.current = false;
     billingContactRef.current = null;
+    setFeeSkipNote(null);
+    setDetailsOpen(!(mode === "create" && !!draft?.voice));
     // 語音已判斷出主角時以語音為準；編輯舊行程不自動改
     subjectsTouchedRef.current = mode === "edit" || !!draft?.subjectIds?.length;
     if (mode === "edit" && event) {
+      // 語音修改：draft 帶著要改的欄位（新時間、地點…），其餘照原本
       reset({
         calendarId: event.calendar_id,
-        title: event.title,
+        title: draft?.title ?? event.title,
         description: event.description ?? "",
-        location: event.location ?? "",
+        location: draft?.location ?? event.location ?? "",
         allDay: event.all_day,
-        startWall: utcToTaipeiWall(event.starts_at),
-        endWall: utcToTaipeiWall(event.ends_at),
+        startWall: draft?.startWall ?? utcToTaipeiWall(event.starts_at),
+        endWall: draft?.endWall ?? utcToTaipeiWall(event.ends_at),
         isImportant: event.is_important,
         recurrence: "none",
         recurrenceUntil: "",
         recurrenceWeekdays: [],
         recurrenceDates: [],
         reminderMinutes: event.reminder_minutes ?? null,
-        scope: "this",
+        scope: draft?.scope ?? "this",
         subjectIds: [],
         participantIds: [],
         tagNames: event.tagNames,
@@ -408,7 +423,15 @@ export function EventModal({
       return;
     }
     amountTouchedRef.current = false;
-    setValue("financeEnabled", true);
+    // 談話、開會等不是上課：預設值照帶，但財務先不打開（要算錢再手動打開）
+    const nonLesson =
+      mode === "create" && (draft?.isLesson === false || looksNonLesson(getValues("title")));
+    setFeeSkipNote(
+      nonLesson
+        ? `這看起來不是上課，沒有自動算 ${c.name} 的上課費；如果要記這筆費用（例如算在上班時間的行政工作），把財務打開即可。`
+        : null,
+    );
+    setValue("financeEnabled", !nonLesson);
     setValue("financeDirection", c.default_direction ?? "expense");
     if (c.default_category_id) {
       setValue("financeCategoryId", c.default_category_id);
@@ -436,29 +459,81 @@ export function EventModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billingContact?.id, subjectIds.join(","), plans.length, canFinance]);
 
-  // 方案／時長變動 → 重算金額（使用者沒手動改過才覆蓋）
+  // 方案／時長變動、或手動打開財務 → 重算金額（使用者沒手動改過才覆蓋）
+  const financeOn = watch("financeEnabled");
   useEffect(() => {
     if (suggestedAmount == null || amountTouchedRef.current) return;
-    if (!getValues("financeEnabled")) return;
+    if (!financeOn) return;
     setValue("financeAmount", String(suggestedAmount));
     // 月薪制：這堂不用另外付錢，直接算已結清（錢在月底的月薪那筆）
     if (isMonthlyPlan(selectedPlan) && !selectedPlan?.extra_fee) setValue("financeSettled", true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [suggestedAmount]);
+  }, [suggestedAmount, financeOn]);
 
-  /** 找出與此行程同時段的既有時段行程（全部可存取分類；排除自己與整日行程） */
+  /**
+   * 找出與此行程同時段的既有時段行程（全部可存取分類；排除自己與整日行程）。
+   * 新增重複／指定日期時，逐一比對每個日期的同一時段。
+   */
   async function findConflicts(v: FormValues): Promise<CalEvent[]> {
-    // 整日行程不佔時段；新增重複行程先不逐堂比對（MVP 範圍外）
-    if (v.allDay || (mode === "create" && v.recurrence !== "none")) return [];
+    if (v.allDay) return [];
     const startIso = taipeiWallToUtcISO(v.startWall);
     const endIso = taipeiWallToUtcISO(v.endWall);
     if (endIso <= startIso) return [];
+    const durationMs = +new Date(endIso) - +new Date(startIso);
+    const time = v.startWall.slice(11);
+    const dates =
+      mode === "create"
+        ? occurrenceDates({
+            startDate: v.startWall.slice(0, 10),
+            recurrence: v.recurrence,
+            until: v.recurrenceUntil || null,
+            weekdays: v.recurrence === "weekly" ? v.recurrenceWeekdays : null,
+            dates: v.recurrenceDates,
+          })
+        : [v.startWall.slice(0, 10)];
+    const slots = dates.map((ds) => {
+      const s = +new Date(taipeiWallToUtcISO(`${ds}T${time}`));
+      return [s, s + durationMs] as const;
+    });
     const found = await fetchEventsInRange(
-      startIso,
-      endIso,
+      new Date(slots[0][0]).toISOString(),
+      new Date(slots[slots.length - 1][1]).toISOString(),
       calendars.map((c) => c.id),
     );
-    return found.filter((e) => !e.all_day && e.id !== event?.id);
+    return found.filter((e) => {
+      if (e.all_day || e.id === event?.id) return false;
+      const es = +new Date(e.starts_at);
+      const ee = +new Date(e.ends_at);
+      return slots.some(([s, en]) => es < en && ee > s);
+    });
+  }
+
+  /** 一句話描述（時　人　事（地）），給語音快速確認與存好後的確認訊息 */
+  function sentenceOf(v: FormValues): string {
+    const nameOf = (id: string) => allContacts.find((c) => c.id === id)?.name;
+    return eventSentence({
+      title: v.title,
+      startWall: v.startWall,
+      endWall: v.endWall,
+      allDay: v.allDay,
+      recurrence: mode === "create" ? v.recurrence : "none",
+      weekdays: v.recurrenceWeekdays,
+      until: v.recurrenceUntil || null,
+      dates:
+        mode === "create" && v.recurrence !== "none"
+          ? occurrenceDates({
+              startDate: v.startWall.slice(0, 10),
+              recurrence: v.recurrence,
+              until: v.recurrenceUntil || null,
+              weekdays: v.recurrence === "weekly" ? v.recurrenceWeekdays : null,
+              dates: v.recurrenceDates,
+            })
+          : undefined,
+      subjects: v.subjectIds.map(nameOf).filter((n): n is string => !!n),
+      selfName: allContacts.find((c) => c.is_self)?.name ?? null,
+      participants: v.participantIds.map(nameOf).filter((n): n is string => !!n),
+      location: v.location,
+    });
   }
 
   const onSubmit = handleSubmit(async (v) => {
@@ -481,7 +556,7 @@ export function EventModal({
       return;
     }
     save(v, []);
-  });
+  }, () => setDetailsOpen(true));
 
   /** 實際儲存；成功後刪除使用者在衝突面板勾選的舊行程 */
   function save(v: FormValues, deleteIds: string[]) {
@@ -583,8 +658,17 @@ export function EventModal({
         if (r.ok) deleted++;
       }
       const base = mode === "create" ? "已新增行程" : "已更新行程";
-      if (deleteIds.length === 0) toast.success(base);
-      else if (deleted === deleteIds.length) toast.success(`${base}，並刪除 ${deleted} 筆舊行程`);
+      // 一句話把人事時地念一次，讓輸入的人（或第二個人）一眼核對
+      const sentence = sentenceOf(v);
+      const confirm = {
+        description: sentence,
+        duration: 12000,
+        closeButton: true,
+        action: { label: "新增紀錄", onClick: () => router.push("/recent") },
+      };
+      if (deleteIds.length === 0) toast.success(base, confirm);
+      else if (deleted === deleteIds.length)
+        toast.success(`${base}，並刪除 ${deleted} 筆舊行程`, confirm);
       else toast.error(`${base}，但有 ${deleteIds.length - deleted} 筆舊行程刪除失敗，請手動處理`);
       await qc.invalidateQueries({ queryKey: ["events"] });
       onOpenChange(false);
@@ -633,6 +717,16 @@ export function EventModal({
             {mode === "create" && draft?.voice && (
               <VoicePanel
                 hints={draft.voice}
+                summary={sentenceOf(watch())}
+                facts={[
+                  ...(watch("driverEnabled") ? ["要司機接送"] : []),
+                  ...(watch("financeEnabled") && watch("financeAmount")
+                    ? [`費用 NT$${Number(watch("financeAmount")).toLocaleString("zh-TW")}`]
+                    : []),
+                  ...(watch("isImportant") ? ["重點行程"] : []),
+                ]}
+                detailsOpen={detailsOpen}
+                onToggleDetails={() => setDetailsOpen((o) => !o)}
                 getCurrent={() => {
                   const v = getValues();
                   return {
@@ -654,6 +748,16 @@ export function EventModal({
                 }}
               />
             )}
+            {mode === "edit" && draft?.voice && (
+              <div className="flex items-start gap-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+                <Mic className="mt-0.5 size-4 shrink-0 text-primary" />
+                <div>
+                  <div className="text-muted-foreground">「{draft.voice.transcript}」</div>
+                  <div className="mt-1 text-xs">已帶入要修改的內容，確認無誤後按「儲存」。</div>
+                </div>
+              </div>
+            )}
+            <div className={detailsOpen ? "space-y-4" : "hidden"}>
             {isRecurringEdit && (
               <div className="rounded-lg border bg-muted/40 p-3">
                 <Label className="mb-2 block text-xs text-muted-foreground">
@@ -1132,6 +1236,9 @@ export function EventModal({
                     )}
                   />
                 </div>
+                {!financeOn && feeSkipNote && (
+                  <p className="mt-2 text-xs text-muted-foreground">{feeSkipNote}</p>
+                )}
                 {watch("financeEnabled") && (
                   <div className="mt-3 space-y-3">
                     {billingContact && plans.length > 0 && (
@@ -1335,12 +1442,20 @@ export function EventModal({
               </div>
             )}
 
+            </div>
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 取消
               </Button>
               <Button type="submit" disabled={pending || checking}>
-                {pending ? "儲存中…" : checking ? "檢查時段…" : "儲存"}
+                {pending
+                  ? "儲存中…"
+                  : checking
+                    ? "檢查時段…"
+                    : isVoiceDraft && !detailsOpen
+                      ? "沒問題，新增"
+                      : "儲存"}
               </Button>
             </DialogFooter>
           </form>
@@ -1519,9 +1634,19 @@ const HABIT_FIELD_LABEL: Record<string, string> = {
 /** 語音解析面板：原句＋待確認／依過去紀錄帶入／假設，讓使用者一眼知道要補什麼 */
 function VoicePanel({
   hints,
+  summary,
+  facts,
+  detailsOpen,
+  onToggleDetails,
   getCurrent,
 }: {
   hints: VoiceHints;
+  /** 目前表單的一句話摘要（時　人　事（地）），隨修改即時更新 */
+  summary: string;
+  /** 摘要外值得一眼看到的設定：要司機、費用、重點 */
+  facts: string[];
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
   getCurrent: () => Record<string, unknown>;
 }) {
   const habit = hints.fromHabit.map((f) => HABIT_FIELD_LABEL[f] ?? f);
@@ -1551,11 +1676,20 @@ function VoicePanel({
           第 {hints.position.index} / {hints.position.total} 筆（存好後自動帶下一筆）
         </div>
       )}
-      <div className="flex items-start gap-2">
-        <Mic className="mt-0.5 size-4 shrink-0 text-primary" />
-        <span className="text-muted-foreground">「{hints.transcript}」</span>
+      {/* 一眼確認：一句話把時間、誰、做什麼、在哪念出來 */}
+      <div className="rounded-md bg-background p-2.5">
+        <div className="text-base font-semibold leading-relaxed">{summary}</div>
+        {facts.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {facts.map((f) => (
+              <span key={f} className="rounded-full bg-muted px-2 py-0.5 text-xs">
+                {f}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
-      {hints.warnings.length > 0 && (
+      {hints.warnings.length > 0 ? (
         <ul className="space-y-1">
           {hints.warnings.map((w) => (
             <li key={w} className="flex items-start gap-1.5 text-amber-700 dark:text-amber-400">
@@ -1564,21 +1698,28 @@ function VoicePanel({
             </li>
           ))}
         </ul>
+      ) : (
+        <div className="text-xs text-muted-foreground">看起來沒問題，確認上面這句話對就按「沒問題，新增」。</div>
       )}
-      {habit.length > 0 && (
-        <div className="flex items-start gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
-          <History className="mt-0.5 size-3.5 shrink-0" />
-          依過去紀錄帶入：{habit.join("、")}（請確認是否相同）
-        </div>
-      )}
-      {hints.assumptions.map((a) => (
-        <div key={a} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-          <Info className="mt-0.5 size-3.5 shrink-0" />
-          {a}
-        </div>
-      ))}
-      {hints.warnings.length === 0 && (
-        <div className="text-xs text-muted-foreground">資訊看起來完整，確認無誤即可儲存。</div>
+      {detailsOpen && (
+        <>
+          <div className="flex items-start gap-2 text-xs">
+            <Mic className="mt-0.5 size-3.5 shrink-0 text-primary" />
+            <span className="text-muted-foreground">你說：「{hints.transcript}」</span>
+          </div>
+          {habit.length > 0 && (
+            <div className="flex items-start gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
+              <History className="mt-0.5 size-3.5 shrink-0" />
+              依過去紀錄帶入：{habit.join("、")}（請確認是否相同）
+            </div>
+          )}
+          {hints.assumptions.map((a) => (
+            <div key={a} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Info className="mt-0.5 size-3.5 shrink-0" />
+              {a}
+            </div>
+          ))}
+        </>
       )}
 
       {/* 用語音回答／補充：不必手動改選單 */}
@@ -1635,6 +1776,9 @@ function VoicePanel({
             {hints.warnings.length ? "用語音回答上面的問題" : "用語音補充或修改"}
           </Button>
         ))}
+      <Button type="button" size="sm" variant="ghost" className="w-full" onClick={onToggleDetails}>
+        {detailsOpen ? "收起欄位" : "要改細節？展開全部欄位"}
+      </Button>
     </div>
   );
 }

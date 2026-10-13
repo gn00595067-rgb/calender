@@ -71,8 +71,9 @@ function SearchInner() {
   const [calFilter, setCalFilter] = useState<Set<string>>(new Set());
   const [contactIds, setContactIds] = useState<Set<string>>(new Set());
   const [tagIds, setTagIds] = useState<Set<string>>(new Set());
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // 語音搜尋會帶日期範圍（?from=2026-11-01&to=2026-11-30）
+  const [startDate, setStartDate] = useState(params.get("from") ?? "");
+  const [endDate, setEndDate] = useState(params.get("to") ?? "");
   const [importantOnly, setImportantOnly] = useState(false);
   const [hasFinance, setHasFinance] = useState(false);
   const [hasNotes, setHasNotes] = useState(false);

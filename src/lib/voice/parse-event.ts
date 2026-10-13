@@ -41,6 +41,8 @@ export const eventSchema = z.object({
   participantIds: z.array(z.string()),
   tagNames: z.array(z.string()),
   needsDriver: z.boolean(),
+  /** 是否為上課（家教、才藝課、教練課）；談話、開會、面談等為 false → 不自動帶上課費 */
+  isLesson: z.boolean(),
   recurrence: z.enum(["none", "daily", "weekly", "biweekly", "monthly", "dates"]),
   weekdays: z.array(z.number().int()),
   recurrenceUntil: z.string().nullable(),
@@ -55,10 +57,34 @@ export const eventSchema = z.object({
 });
 export type EventOutput = z.infer<typeof eventSchema>;
 
-/** 模型輸出（結構化輸出保證符合）：一句話可含多個行程；search 時 events 為空 */
+/** 修改意圖：要改成什麼（沒講的欄位給 null＝不改） */
+export const changesSchema = z.object({
+  title: z.string().nullable(),
+  /** 改到哪一天 YYYY-MM-DD */
+  date: z.string().nullable(),
+  /** 新的開始／結束時刻 HH:mm */
+  startTime: z.string().nullable(),
+  endTime: z.string().nullable(),
+  /** 相對調整：延後一小時＝60、提早半小時＝-30 */
+  shiftMinutes: z.number().int().nullable(),
+  location: z.string().nullable(),
+});
+export type ChangesOutput = z.infer<typeof changesSchema>;
+
+/**
+ * 模型輸出（結構化輸出保證符合）：一句話可含多個行程；
+ * search／modify／delete 時 events 為空，改用 query＋日期範圍找既有行程。
+ */
 export const outputSchema = z.object({
-  intent: z.enum(["create", "search"]),
+  intent: z.enum(["create", "search", "modify", "delete"]),
+  /** 找既有行程的關鍵字（不含日期、星期、時間等字眼） */
   query: z.string().nullable(),
+  /** 找既有行程的日期範圍 YYYY-MM-DD（沒講給 null） */
+  rangeStart: z.string().nullable(),
+  rangeEnd: z.string().nullable(),
+  /** 修改／刪除重複行程：one＝只這一次；series＝這次與之後全部 */
+  scope: z.enum(["one", "series"]),
+  changes: changesSchema.nullable(),
   events: z.array(eventSchema),
 });
 export type Output = z.infer<typeof outputSchema>;
@@ -199,8 +225,18 @@ export function buildSystemPrompt(args: {
 「現在時間」會附在使用者訊息開頭。
 
 ## 意圖
-- "search"：想找已存在的行程（幫我搜尋…、找一下…、查…、有沒有…、上次那個…）。只填 query（精煉關鍵字，去掉贅語），events 給空陣列。
-- "create"：想新增／安排行程。兩者皆可時，只有明確出現搜尋動詞才判 search。
+- "create"：想新增／安排行程。
+- "search"：想找已存在的行程（幫我搜尋…、找一下…、查…、有沒有…、上次那個…）。
+- "delete"：想刪除／取消既有行程（刪掉…、取消…、不用去了、那個會議不開了）。
+- "modify"：想修改既有行程（改到…、延後…、提早…、換地點…、改成…）。
+判斷原則：只有明確出現搜尋、刪除／取消、修改／改到 等動詞才判成 search／delete／modify，否則 create。
+
+search／delete／modify 共用的欄位（events 給空陣列）：
+- query：找行程的關鍵字，只留「事情」與「人名」（如「線上會議」「總經理」「數學」），**去掉**日期、月份、星期、時間、「每週」「行程」「幫我」等字眼；多個關鍵字用空白分開。
+- rangeStart／rangeEnd：有講日期或月份就填範圍（查日期對照表）。「11月」→ 11/01～11/30；「下週三」→ 那天到那天；「11月1號開始的每週二」→ rangeStart=11/01、rangeEnd 給 null。沒講給 null。
+- scope：說「全部、每週的、以後都、整個、之後都」→ "series"；否則（只講某一天、這次）→ "one"。search 時給 "one"。
+- changes：只有 modify 要填，沒講要改的欄位給 null；date＝改到哪一天、startTime／endTime＝新的時刻（HH:mm）；只說「延後一小時」「提早半小時」這類相對調整 → shiftMinutes（60、-30），startTime 給 null。其他意圖給 null。
+create 時：query、rangeStart、rangeEnd、changes 給 null，scope 給 "one"。
 
 ## 一句話多個行程
 一句話可能講了好幾件事（例：「明天早上10點開會，下午3點去美甲」）。每一件各輸出一筆到 events，依時間先後排序，最多 5 筆。
@@ -224,7 +260,10 @@ ${others.length ? others.map(fmt).join("\n") : "（無）"}
 ${args.habits}
 
 規則：
-- 時間一律台北時間、24 小時制「YYYY-MM-DDTHH:mm」。相對日期（明天、下週三…）依現在時間換算，星期不要算錯。
+- 時間一律台北時間、24 小時制「YYYY-MM-DDTHH:mm」。相對日期一律查使用者訊息裡的「日期對照表」，不要自己推算：
+  「下週三」＝下週那一列的三；「下下週三」＝下下週那一列的三；
+  「隔N週」「N週後」（如隔三週、三週後）＝今天日期＋7×N 天（同一個星期幾），例：今天 10/13(二)，隔三週＝11/03(二)；
+  「隔三週的週五」＝本週往後第 3 週那一列的五。只說「週三」沒說哪週＝今天之後最近的週三。
 - 沒講時長：有過去習慣用習慣的時長，否則 1 小時。只講日期沒講時間：有習慣用習慣時間（並寫進 assumptions），否則 allDay=true、00:00–23:59。
 - 只講幾點沒講上下午，依常識與習慣判斷。
 - title 簡潔，不含時間、地點、人名（「哥哥桌球」→ title="桌球"，哥哥放主角）。地點「(延吉街)」與主角名「-哥哥」會由系統自動加在標題後面，你不用加。若與過去習慣的標題是同一件事，沿用習慣的標題寫法。
@@ -232,8 +271,10 @@ ${args.habits}
 - participantIds：老師、醫師、客戶等；「郭老師」對到稱謂或名字相符者。沒提到但習慣固定是某人時可帶入（記入 fromHabit）。
 - tagNames：優先用既有標籤（含習慣中的標籤）；只有明顯需要時才新增，最多 3 個。
 - needsDriver：說到「司機、載、接送、送去、接回」或習慣「通常要司機」時 true。
-- recurrence／weekdays：說「每週二四」→ weekly、weekdays=[2,4]（0=日..6=六）；「每天」daily；「每兩週」biweekly；「每月」monthly；否則 none、[]。有講「到幾月」填 recurrenceUntil（YYYY-MM-DD），否則 null。不是 dates 時 extraDates 給空陣列。
+- recurrence／weekdays：說「每週二四」→ weekly、weekdays=[2,4]（0=日..6=六）；「每天」daily；「每兩週」「隔週」biweekly；「每月」monthly；否則 none、[]。
+  「每三週」「每四週」等系統沒有的週期 → recurrence="dates"，extraDates 依間隔從日期對照表列出之後的日期（有講到幾月就列到那時，否則列約 3 個月），並寫進 assumptions。有講「到幾月」填 recurrenceUntil（YYYY-MM-DD），否則 null。不是 dates 時 extraDates 給空陣列。
 - location：有講才填（簡短，如「公司」「延吉街」「延吉街美甲店」）；沒講但習慣有固定地點可帶入（記入 fromHabit）。
+- isLesson：老師／教練來「上課」（家教、才藝課、球課、練習）才 true；跟老師談話、開會、面談、溝通、討論進度、聚餐等都是 false（系統只在 true 時自動帶入上課費）。
 - isImportant：明確強調很重要／一定要／別忘了才 true。
 - fromHabit：列出「不是使用者說的、而是依過去習慣帶入」的欄位（time/calendar/subjects/participants/tags/location/driver）。
 - assumptions：你做的假設，每條一句中文（例：「沒講時間，先用平常的 18:15–19:15」）。沒有就空陣列。
@@ -243,9 +284,36 @@ ${args.habits}
 - note：其他想提醒的一句話，沒有就空字串。`;
 }
 
+const DAY_ZH = ["日", "一", "二", "三", "四", "五", "六"];
+
+/**
+ * 日期對照表：從本週一起列 14 週（週一到週日），附「本週／下週／下下週／N 週後」標籤。
+ * 模型自己推算「隔三週」「下下週三」容易差一週，改成查表。
+ */
+export function buildDateTable(nowWall: string): string {
+  const today = new Date(`${nowWall.slice(0, 10)}T12:00:00Z`);
+  const dow = today.getUTCDay(); // 0=日
+  const monday = new Date(today.getTime() - ((dow + 6) % 7) * 86400000);
+  const label = (w: number) =>
+    w === 0 ? "本週" : w === 1 ? "下週" : w === 2 ? "下下週" : `${w}週後那週`;
+  const lines: string[] = [];
+  for (let w = 0; w < 14; w++) {
+    const cells: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday.getTime() + (w * 7 + i) * 86400000);
+      cells.push(`${DAY_ZH[d.getUTCDay()]}=${d.toISOString().slice(0, 10)}`);
+    }
+    lines.push(`${label(w)}：${cells.join(" ")}`);
+  }
+  return lines.join("\n");
+}
+
 /** 使用者訊息：把會變動的「現在時間」放這裡，讓系統提示詞（人物＋習慣）可以被快取 */
-export function buildUserMessage(nowHuman: string, transcript: string): string {
-  return `現在時間（台北）：${nowHuman}\n使用者說：「${transcript}」`;
+export function buildUserMessage(nowHuman: string, transcript: string, nowWall?: string): string {
+  const table = nowWall
+    ? `\n日期對照表（週一到週日；日期一律從這裡查，不要自己推算）：\n${buildDateTable(nowWall)}`
+    : "";
+  return `現在時間（台北）：${nowHuman}${table}\n使用者說：「${transcript}」`;
 }
 
 /**
@@ -254,6 +322,7 @@ export function buildUserMessage(nowHuman: string, transcript: string): string {
  */
 export function buildFollowUpMessage(args: {
   nowHuman: string;
+  nowWall?: string;
   original: string;
   current: Record<string, unknown>;
   questions: string[];
@@ -261,6 +330,7 @@ export function buildFollowUpMessage(args: {
 }): string {
   return [
     `現在時間（台北）：${args.nowHuman}`,
+    ...(args.nowWall ? [`日期對照表（週一到週日；日期一律從這裡查）：`, buildDateTable(args.nowWall)] : []),
     `這是「追問的回答」：intent 一律 "create"，events 只輸出 1 筆＝更新後的這一筆行程。`,
     `原本使用者說：「${args.original}」`,
     `目前這一筆行程（表單現值，JSON；title 若帶「(地點)」「-人名」後綴請去掉再輸出）：`,

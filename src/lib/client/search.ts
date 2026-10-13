@@ -37,49 +37,57 @@ function hasAnyCriteria(p: SearchParams): boolean {
   );
 }
 
+/** 單一關鍵字對到的行程 id（標題／說明／地點／回饋／人物／標籤） */
+async function idsMatching(
+  supabase: ReturnType<typeof createClient>,
+  word: string,
+  calendarIds: string[],
+): Promise<Set<string>> {
+  const like = `%${word}%`;
+  const [byText, byNote, byContact, byTag] = await Promise.all([
+    supabase
+      .from("events")
+      .select("id")
+      .in("calendar_id", calendarIds)
+      .or(`title.ilike.${like},description.ilike.${like},location.ilike.${like}`),
+    supabase.from("event_notes").select("event_id").ilike("content", like),
+    supabase.from("contacts").select("id").ilike("name", like),
+    supabase.from("tags").select("id").ilike("name", like),
+  ]);
+
+  const ids = new Set<string>();
+  for (const r of byText.data ?? []) ids.add(r.id);
+  for (const r of byNote.data ?? []) ids.add(r.event_id);
+
+  const contactIds = (byContact.data ?? []).map((r) => r.id);
+  if (contactIds.length) {
+    const { data } = await supabase
+      .from("event_contacts")
+      .select("event_id")
+      .in("contact_id", contactIds);
+    for (const r of data ?? []) ids.add(r.event_id);
+  }
+  const tagIds = (byTag.data ?? []).map((r) => r.id);
+  if (tagIds.length) {
+    const { data } = await supabase.from("event_tags").select("event_id").in("tag_id", tagIds);
+    for (const r of data ?? []) ids.add(r.event_id);
+  }
+  return ids;
+}
+
 export async function searchEvents(p: SearchParams): Promise<CalEvent[]> {
   if (p.calendarIds.length === 0 || !hasAnyCriteria(p)) return [];
   const supabase = createClient();
 
-  // 關鍵字 → 候選 event id
-  let keywordIds: Set<string> | null = null;
-  const q = sanitize(p.q);
-  if (q) {
-    const like = `%${q}%`;
-    const [byText, byNote, byContact, byTag] = await Promise.all([
-      supabase
-        .from("events")
-        .select("id")
-        .in("calendar_id", p.calendarIds)
-        .or(`title.ilike.${like},description.ilike.${like},location.ilike.${like}`),
-      supabase.from("event_notes").select("event_id").ilike("content", like),
-      supabase.from("contacts").select("id").ilike("name", like),
-      supabase.from("tags").select("id").ilike("name", like),
-    ]);
-
-    const ids = new Set<string>();
-    for (const r of byText.data ?? []) ids.add(r.id);
-    for (const r of byNote.data ?? []) ids.add(r.event_id);
-
-    const contactIds = (byContact.data ?? []).map((r) => r.id);
-    if (contactIds.length) {
-      const { data } = await supabase
-        .from("event_contacts")
-        .select("event_id")
-        .in("contact_id", contactIds);
-      for (const r of data ?? []) ids.add(r.event_id);
-    }
-    const tagIds = (byTag.data ?? []).map((r) => r.id);
-    if (tagIds.length) {
-      const { data } = await supabase
-        .from("event_tags")
-        .select("event_id")
-        .in("tag_id", tagIds);
-      for (const r of data ?? []) ids.add(r.event_id);
-    }
-
-    keywordIds = ids;
-    if (ids.size === 0) return [];
+  // 關鍵字 → 候選 event id。空白分開的多個詞要「每個都對到」（各詞可對到不同欄位），
+  // 例：「線上會議 總經理」＝標題有線上會議、人物有總經理。
+  let keywordIds = null as Set<string> | null;
+  const words = sanitize(p.q).split(/\s+/).filter(Boolean);
+  for (const w of words) {
+    const ids = await idsMatching(supabase, w, p.calendarIds);
+    const prev: Set<string> | null = keywordIds;
+    keywordIds = prev ? new Set([...prev].filter((id) => ids.has(id))) : ids;
+    if (keywordIds.size === 0) return [];
   }
 
   // 基礎查詢

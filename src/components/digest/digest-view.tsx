@@ -30,6 +30,9 @@ import {
 } from "./interval-picker";
 import { AvailabilityControls, AvailabilitySummary } from "./availability";
 import { IntervalGrid } from "./interval-grid";
+import { WeeksOverview } from "./weeks-overview";
+import Link from "next/link";
+import { Printer } from "lucide-react";
 import {
   windowFromKey,
   minutesFromGapKey,
@@ -219,12 +222,20 @@ export function DigestView() {
         title="區間總覽"
         description="一個螢幕，看清這段期間所有重要的事與空檔。"
         actions={
-          canCreate ? (
-            <Button onClick={() => openCreate(todayStr)}>
-              <Plus className="size-4" />
-              新增行程
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href={`/week-sheet?start=${interval.startDate}`}>
+                <Printer className="size-4" />
+                週行程表
+              </Link>
             </Button>
-          ) : undefined
+            {canCreate && (
+              <Button onClick={() => openCreate(todayStr)}>
+                <Plus className="size-4" />
+                新增行程
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -332,6 +343,22 @@ export function DigestView() {
             blocks={avail.blocks}
             dayCount={days.length}
             onFocusDay={focusDay}
+          />
+        )}
+
+        {spanDays > 7 && !isLoading && (
+          <WeeksOverview
+            startDate={interval.startDate}
+            endDate={interval.endDate}
+            events={shownEvents}
+            onFocusWeek={(mon) =>
+              setInterval({
+                startDate: mon,
+                endDate: new Date(Date.parse(`${mon}T12:00:00Z`) + 6 * 86400000)
+                  .toISOString()
+                  .slice(0, 10),
+              })
+            }
           />
         )}
 

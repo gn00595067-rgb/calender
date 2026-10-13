@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { fromZonedTime } from "date-fns-tz";
-import { addDays, addMonths, addWeeks } from "date-fns";
 import { getAuthed, fail, type ActionResult } from "./helpers";
 import { resolveCategoryId } from "./categories";
-import { TIME_ZONE, RECURRENCE_MAX_MONTHS } from "@/lib/constants";
+import { TIME_ZONE } from "@/lib/constants";
+import { occurrenceDates } from "@/lib/recurrence";
 import { tagKey } from "@/lib/tags";
 import { applySubjectTitle } from "@/lib/subject-title";
 
@@ -151,54 +151,6 @@ function toUtc(wallStr: string): string {
   return fromZonedTime(wallStr, TIME_ZONE).toISOString();
 }
 
-/** 產生重複日期（台北曆日字串），上限至 recurrenceUntil 或起始日 +6 個月 */
-function generateDates(
-  startDate: string,
-  rule: "daily" | "weekly" | "biweekly" | "monthly",
-  until: string | null | undefined,
-  weekdays?: number[] | null,
-): string[] {
-  const anchor = new Date(`${startDate}T12:00:00Z`);
-  const hardCap = addMonths(anchor, RECURRENCE_MAX_MONTHS);
-  const untilCap = until ? new Date(`${until}T12:00:00Z`) : null;
-  const cap =
-    untilCap && untilCap < hardCap ? untilCap : hardCap;
-
-  // 每週 + 指定星期（如每週二、四）：逐日掃描，取符合星期者
-  if (rule === "weekly" && weekdays && weekdays.length) {
-    const set = new Set(weekdays);
-    const out: string[] = [];
-    let cur = anchor;
-    for (let i = 0; i < 400 && cur <= cap; i++) {
-      if (set.has(cur.getUTCDay())) out.push(cur.toISOString().slice(0, 10));
-      cur = addDays(cur, 1);
-    }
-    return out;
-  }
-
-  const step = (d: Date): Date => {
-    switch (rule) {
-      case "daily":
-        return addDays(d, 1);
-      case "weekly":
-        return addWeeks(d, 1);
-      case "biweekly":
-        return addWeeks(d, 2);
-      case "monthly":
-        return addMonths(d, 1);
-    }
-  };
-
-  const out: string[] = [];
-  let cur = anchor;
-  // 安全上限，避免異常輸入產生過多列
-  for (let i = 0; i < 400 && cur <= cap; i++) {
-    out.push(cur.toISOString().slice(0, 10));
-    cur = step(cur);
-  }
-  return out;
-}
-
 /** 找出或建立標籤，回傳 tag id 陣列 */
 async function resolveTagIds(
   supabase: Awaited<ReturnType<typeof getAuthed>>["supabase"],
@@ -273,15 +225,14 @@ export async function createEventAction(
     const durationMs =
       new Date(toUtc(d.endWall)).getTime() - new Date(toUtc(d.startWall)).getTime();
 
-    // 決定所有 occurrence 的起始日
-    let dates =
-      d.recurrence === "none"
-        ? [startDate]
-        : d.recurrence === "dates"
-          ? [...new Set([startDate, ...(d.dates ?? [])])].sort()
-          : generateDates(startDate, d.recurrence, d.recurrenceUntil, d.weekdays);
-    // 保底：任何情況都至少建立起始日這一筆
-    if (dates.length === 0) dates = [startDate];
+    // 決定所有 occurrence 的起始日（保底至少起始日這一筆）
+    const dates = occurrenceDates({
+      startDate,
+      recurrence: d.recurrence,
+      until: d.recurrenceUntil,
+      weekdays: d.weekdays,
+      dates: d.dates,
+    });
 
     const groupId =
       d.recurrence === "none" || dates.length < 2 ? null : crypto.randomUUID();

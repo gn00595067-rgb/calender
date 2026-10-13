@@ -109,3 +109,12 @@ export function splitAmount(amount: number, n: number): number[] {
   const rem = amount - base * k;
   return Array.from({ length: k }, (_, i) => base + (i < rem ? 1 : 0));
 }
+
+/**
+ * 標題看起來不是上課（談話、開會、面談…）→ 選到老師也不自動帶上課費。
+ * Peggy 回饋：「跟 Phoenix 談話」被自動算成一堂 500 元的課。
+ */
+const NON_LESSON_RE = /談話|談事|會議|開會|面談|約談|討論|溝通|聊|聚餐|吃飯|面試|行政/;
+export function looksNonLesson(title: string): boolean {
+  return NON_LESSON_RE.test(title);
+}

@@ -96,12 +96,13 @@ export async function POST(req: Request) {
   const userMessage = parsed.followUp
     ? buildFollowUpMessage({
         nowHuman: parsed.nowHuman,
+        nowWall: parsed.nowWall,
         original: parsed.followUp.original,
         current: parsed.followUp.current,
         questions: parsed.followUp.questions,
         answer: parsed.transcript,
       })
-    : buildUserMessage(parsed.nowHuman, parsed.transcript);
+    : buildUserMessage(parsed.nowHuman, parsed.transcript, parsed.nowWall);
 
   // 4) 呼叫 Claude 解析（結構化輸出；婉拒時由伺服器端自動改用其他模型）
   const client = new Anthropic();
@@ -136,11 +137,28 @@ export async function POST(req: Request) {
     );
   }
 
-  // 5a) 搜尋意圖（追問一律視為新增）：回精煉關鍵字，讓前端導到搜尋頁
-  if (result.intent === "search" && !parsed.followUp) {
+  // 5a) 找既有行程（搜尋／刪除／修改；追問一律視為新增）：回關鍵字＋日期範圍，由前端查出候選讓使用者選
+  if (result.intent !== "create" && !parsed.followUp) {
+    const ymd = (v: string | null) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+    const hm = (v: string | null | undefined) => (v && /^\d{2}:\d{2}$/.test(v) ? v : null);
+    const c = result.changes;
     return NextResponse.json({
-      intent: "search",
-      query: result.query?.trim() || parsed.transcript,
+      intent: result.intent,
+      query: result.query?.trim() || (result.intent === "search" ? parsed.transcript : ""),
+      rangeStart: ymd(result.rangeStart),
+      rangeEnd: ymd(result.rangeEnd),
+      scope: result.scope,
+      changes:
+        result.intent === "modify" && c
+          ? {
+              title: c.title?.trim() || null,
+              date: ymd(c.date),
+              startTime: hm(c.startTime),
+              endTime: hm(c.endTime),
+              shiftMinutes: c.shiftMinutes || null,
+              location: c.location?.trim() || null,
+            }
+          : null,
       note: "",
     });
   }
@@ -215,13 +233,19 @@ function normalizeEvent(
     if (!warnings.includes(text)) warnings.push(text);
   };
   if (!startWall || !endWall) addWarn("沒聽清楚時間，請確認日期與時間");
-  if (!isFollowUp && subjectIds.length === 0 && contacts.some((c) => c.is_family)) {
+  // 有設定「本人」時，確認畫面的一句話會直接寫出本人名字，不必再另外提醒（Peggy 回饋要確認的項目太多）
+  if (
+    !isFollowUp &&
+    subjectIds.length === 0 &&
+    contacts.some((c) => c.is_family) &&
+    !contacts.some((c) => c.is_self)
+  ) {
     addWarn("沒有指定主角，會當成本人的行程；如果是小孩的活動，請選主角");
   }
   if (ev.needsDriver && !location) {
     addWarn("需要司機，但還沒有地點，司機會不知道要去哪裡");
   }
-  if (/課|班|家教|老師|教練|練習/.test(base) && participantIds.length === 0) {
+  if (ev.isLesson && participantIds.length === 0) {
     addWarn("看起來是課程，但沒有選老師；選了老師才會自動帶入收費方案");
   }
   const unknownNames = [...new Set(ev.unknownNames.map((n) => n.trim()).filter(Boolean))];
@@ -241,6 +265,7 @@ function normalizeEvent(
     participantIds,
     tagNames: [...new Set(ev.tagNames.map((t) => t.trim()).filter(Boolean))].slice(0, 3),
     needsDriver: ev.needsDriver,
+    isLesson: ev.isLesson,
     recurrence,
     weekdays,
     recurrenceUntil,

@@ -131,3 +131,23 @@
     @apply font-sans;
   }
 }
+/* 週行程表列印：只印表格本身，橫向 A4 */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-area,
+  #print-area * {
+    visibility: visible;
+  }
+  #print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+}

@@ -21,9 +21,9 @@ function todayZoned(): Date {
   return zoned(new Date());
 }
 
-export function presetInterval(
-  preset: "today" | "week" | "next7" | "month",
-): Interval {
+export type IntervalPreset = "today" | "week" | "nextWeek" | "next7" | "month" | "next3m";
+
+export function presetInterval(preset: IntervalPreset): Interval {
   const t = todayZoned();
   switch (preset) {
     case "today":
@@ -32,6 +32,19 @@ export function presetInterval(
       return {
         startDate: format(startOfWeek(t, { weekStartsOn: 1 }), "yyyy-MM-dd"),
         endDate: format(endOfWeek(t, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      };
+    case "nextWeek": {
+      const n = addDays(t, 7);
+      return {
+        startDate: format(startOfWeek(n, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+        endDate: format(endOfWeek(n, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+      };
+    }
+    case "next3m":
+      // 找旅遊空檔：從本週一起看約 3 個月（13 週）
+      return {
+        startDate: format(startOfWeek(t, { weekStartsOn: 1 }), "yyyy-MM-dd"),
+        endDate: format(addDays(startOfWeek(t, { weekStartsOn: 1 }), 13 * 7 - 1), "yyyy-MM-dd"),
       };
     case "next7":
       return {
@@ -46,11 +59,13 @@ export function presetInterval(
   }
 }
 
-const PRESETS: { key: "today" | "week" | "next7" | "month"; label: string }[] = [
+const PRESETS: { key: IntervalPreset; label: string }[] = [
   { key: "today", label: "今天" },
   { key: "week", label: "本週" },
+  { key: "nextWeek", label: "下週" },
   { key: "next7", label: "未來 7 天" },
   { key: "month", label: "本月" },
+  { key: "next3m", label: "未來 3 個月" },
 ];
 
 export function IntervalPicker({
