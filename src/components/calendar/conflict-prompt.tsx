@@ -20,6 +20,24 @@ function spanLabel(e: CalEvent): string {
     : `${sd} ${D.time(e.starts_at)} → ${ed} ${D.time(e.ends_at)}`;
 }
 
+/** 同一系列（重複行程）合成一組，避免新增重複行程時列出十幾張一樣的卡片 */
+function groupConflicts(list: CalEvent[]): CalEvent[][] {
+  const m = new Map<string, CalEvent[]>();
+  for (const e of [...list].sort((a, b) => a.starts_at.localeCompare(b.starts_at))) {
+    const k = e.recurrence_group_id ?? e.id;
+    m.set(k, [...(m.get(k) ?? []), e]);
+  }
+  return [...m.values()];
+}
+
+/** 一組的時間文字：單筆照舊；多筆「11/3、11/10、11/17…共 9 次 17:00–22:00」 */
+function groupLabel(g: CalEvent[]): string {
+  if (g.length === 1) return spanLabel(g[0]);
+  const dates = g.map((e) => format(zoned(e.starts_at), "M/d"));
+  const shown = dates.length > 4 ? `${dates.slice(0, 3).join("、")}…共 ${dates.length} 次` : dates.join("、");
+  return `${shown} ${D.time(g[0].starts_at)}–${D.time(g[0].ends_at)}`;
+}
+
 /**
  * 儲存前的時間衝突面板：列出同時段既有行程，讓使用者選
  * 返回修改／放棄新行程／儲存（可勾選同時刪除舊行程）。
@@ -46,22 +64,29 @@ export function ConflictPrompt({
   onDiscard: () => void;
   onSave: (deleteIds: string[]) => void;
 }) {
-  // 預設不勾：刪除不可復原，要使用者明確選
+  // 預設不勾：刪除不可復原，要使用者明確選；勾一組＝該組裡衝突到的每一筆
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const toggle = (id: string, on: boolean) =>
+  const toggle = (ids: string[], on: boolean) =>
     setPicked((prev) => {
       const next = new Set(prev);
-      if (on) next.add(id);
-      else next.delete(id);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
       return next;
     });
+  const groups = groupConflicts(conflicts);
 
   return (
     <div className="space-y-4">
       <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/30">
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
         <div>
-          <p className="font-medium">這個時段已經有 {conflicts.length} 筆行程</p>
+          <p className="font-medium">
+            {groups.length === conflicts.length
+              ? `這個時段已經有 ${conflicts.length} 筆行程`
+              : `有 ${groups.length} 個行程時間重疊（共 ${conflicts.length} 次）`}
+          </p>
           <p className="text-xs text-muted-foreground">
             要取消的舊行程請打勾，儲存時會一併刪除；不勾就兩個都保留。
           </p>
@@ -69,9 +94,11 @@ export function ConflictPrompt({
       </div>
 
       <ul className="space-y-2">
-        {conflicts.map((e) => {
-          const deletable = canDelete(e);
-          const checked = picked.has(e.id);
+        {groups.map((g) => {
+          const e = g[0];
+          const ids = g.map((x) => x.id);
+          const deletable = g.every(canDelete);
+          const checked = ids.every((id) => picked.has(id));
           return (
             <li key={e.id}>
               <label
@@ -85,15 +112,13 @@ export function ConflictPrompt({
                   className="mt-0.5"
                   checked={checked}
                   disabled={!deletable}
-                  onCheckedChange={(c) => toggle(e.id, !!c)}
+                  onCheckedChange={(c) => toggle(ids, !!c)}
                 />
                 <div className="min-w-0 flex-1">
                   <div className={"text-sm font-medium" + (checked ? " line-through" : "")}>
                     {e.title}
                   </div>
-                  <div className="text-xs text-muted-foreground tabular-nums">
-                    {spanLabel(e)}
-                  </div>
+                  <div className="text-xs text-muted-foreground tabular-nums">{groupLabel(g)}</div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <span
@@ -103,10 +128,14 @@ export function ConflictPrompt({
                       {calendarName(e.calendar_id)}
                     </span>
                     {e.subjectNames.length > 0 && <span>主角：{e.subjectNames.join("、")}</span>}
-                    {e.recurrence_group_id && <span>重複行程（只刪這一筆）</span>}
+                    {e.recurrence_group_id && (
+                      <span>
+                        {g.length > 1 ? `重複行程（只刪重疊的這 ${g.length} 次）` : "重複行程（只刪這一筆）"}
+                      </span>
+                    )}
                   </div>
-                  {checked && e.finance.length > 0 && (
-                    <p className="mt-1 text-xs text-amber-600">財務紀錄會保留，只是不再連到這個行程。</p>
+                  {checked && g.some((x) => x.finance.length > 0) && (
+                    <p className="mt-1 text-xs text-amber-600">這個行程的費用紀錄也會一起刪除。</p>
                   )}
                   {!deletable && (
                     <p className="mt-1 text-xs text-muted-foreground">沒有此分類的編輯權限，無法刪除。</p>
