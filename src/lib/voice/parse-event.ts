@@ -96,6 +96,8 @@ export type ContactRow = {
   role_label: string | null;
   is_family: boolean;
   is_self?: boolean;
+  /** 別名（哥哥、Rick…）；人物改名後語音講舊稱呼也對得到 */
+  aliases?: string[] | null;
 };
 
 /** 出現最多次的值 */
@@ -218,7 +220,9 @@ export function buildSystemPrompt(args: {
   const family = args.contacts.filter((c) => c.is_family);
   const others = args.contacts.filter((c) => !c.is_family);
   const fmt = (c: ContactRow) =>
-    `- id="${c.id}" 名字="${c.name}"${c.role_label ? ` 稱謂="${c.role_label}"` : ""}`;
+    `- id="${c.id}" 名字="${c.name}"${c.role_label ? ` 稱謂="${c.role_label}"` : ""}${
+      c.aliases?.length ? ` 別名="${c.aliases.join("、")}"` : ""
+    }`;
   return `你是家庭行事曆的語音助理。使用者（家長／主管）說一句話，你先判斷「意圖」，再盡可能完整地解析成行程欄位。
 使用者通常只講「什麼時候做什麼」，人物、標籤、地點常常不講——請善用下面的人物清單與過去習慣補齊，並清楚標出哪些是推測的。
 
@@ -267,7 +271,7 @@ ${args.habits}
 - 沒講時長：有過去習慣用習慣的時長，否則 1 小時。只講日期沒講時間：有習慣用習慣時間（並寫進 assumptions），否則 allDay=true、00:00–23:59。
 - 只講幾點沒講上下午，依常識與習慣判斷。
 - title 簡潔，不含時間、地點、人名（「哥哥桌球」→ title="桌球"，哥哥放主角）。地點「(延吉街)」與主角名「-哥哥」會由系統自動加在標題後面，你不用加。若與過去習慣的標題是同一件事，沿用習慣的標題寫法。
-- subjectIds：句子提到的家人（哥哥、妹妹、小明…，含暱稱與稱謂對應）；沒提到但過去習慣固定是某位家人時可帶入（記入 fromHabit）。本人（使用者自己）的行程留空陣列。
+- subjectIds：句子提到的家人（哥哥、妹妹、小明…，名字、別名、暱稱與稱謂都算對上）；沒提到但過去習慣固定是某位家人時可帶入（記入 fromHabit）。本人（使用者自己）的行程留空陣列。
 - participantIds：老師、醫師、客戶等；「郭老師」對到稱謂或名字相符者。沒提到但習慣固定是某人時可帶入（記入 fromHabit）。
 - tagNames：優先用既有標籤（含習慣中的標籤）；只有明顯需要時才新增，最多 3 個。
 - needsDriver：說到「司機、載、接送、送去、接回」或習慣「通常要司機」時 true。

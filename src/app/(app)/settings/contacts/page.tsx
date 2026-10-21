@@ -433,10 +433,10 @@ function ContactFormDialog({
               id="ct-aliases"
               value={aliases}
               onChange={(e) => setAliases(e.target.value)}
-              placeholder="例：Rick（多個用「、」隔開）"
+              placeholder="例：哥、立齊、Rick（多個用「、」隔開）"
             />
             <p className="text-xs text-muted-foreground">
-              老師回饋裡用英文名寫（如 Rick、Iris）時，系統靠這裡認出是哪個小孩。
+              老師的稱呼不一（哥、立齊、Rick）時，回饋拆分、英文翻譯、語音新增都靠這裡認出是誰；畫面上統一顯示上面的名字。
             </p>
           </div>
           <div className="space-y-2">

@@ -50,7 +50,27 @@ ${list}
 1. 原文逐字照抄，不改寫、不摘要、不補字；只做切分。每個字都要出現在 shared 或某個小孩的 content 裡。
 2. 標題、日期、教學概念、作業等對所有小孩都適用的內容放 shared。
 3. 每個小孩一段：包含提到他的小標題（如「Rick 教學回饋」）與其後的內容。
-4. subjectId：原文名字對得上候選的本名或別名就填那個 id；對不上（例如英文名但沒設別名）填空字串，由家長自己選。
+4. subjectId：原文名字對得上候選的本名或別名就填那個 id（大小寫不分；簡稱也算，例如「哥」＝哥哥、「妹」＝妹妹）；對不上（例如英文名但沒設別名）填空字串，由家長自己選。
    不要用猜的——兩個英文名都沒設別名時，兩段都填空字串。
 5. 原文根本沒有分小孩（整篇講共同內容）→ children 給空陣列，全文放 shared。`;
+}
+
+/** 稱呼比對用：去空白、轉小寫 */
+const norm = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+
+/**
+ * AI 沒填 subjectId 時，用原文稱呼比對本名／別名再補一次（AI 偶爾漏對已設好的別名）。
+ * 簡稱：「哥」對「哥哥」、「妹」對「妹妹」這種疊字本名的單字。
+ */
+export function matchSubject(
+  nameInText: string,
+  subjects: z.infer<typeof splitBodySchema>["subjects"],
+): string | null {
+  const n = norm(nameInText);
+  if (!n) return null;
+  const hits = subjects.filter((s) => {
+    const names = [s.name, ...s.aliases].map(norm).filter(Boolean);
+    return names.some((x) => x === n || (x.length === 2 && x[0] === x[1] && x[0] === n));
+  });
+  return hits.length === 1 ? hits[0].id : null;
 }

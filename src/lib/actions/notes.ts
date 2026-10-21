@@ -21,7 +21,8 @@ const aliasSchema = z.object({
 const noteSchema = z.object({
   eventId: z.uuid(),
   content: z.string().trim().min(1, { error: "請輸入回饋內容" }).max(4000),
-  progressLabel: z.string().trim().max(80).optional().nullable(),
+  /** 課程進度（當天教學進度與章節） */
+  progressLabel: z.string().trim().max(1000, { error: "課程進度最多 1000 字" }).optional().nullable(),
   /** 依小孩拆分的段落（多個主角時）；未提供＝不拆 */
   parts: z.array(partSchema).max(10).optional(),
   learnAliases: z.array(aliasSchema).max(10).optional(),

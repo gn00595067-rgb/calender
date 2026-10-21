@@ -35,6 +35,7 @@ import { EmptyState, ListSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { ProgressBlock } from "@/components/calendar/notes-section";
 import { useAppData } from "@/components/app/app-data";
 import { can } from "@/lib/permissions";
 import {
@@ -834,12 +835,8 @@ export default function ReportsPage() {
                         <span className="font-medium text-foreground">{n.event_title}</span>
                         <span>{D.date(n.event_start)}</span>
                         <span>· {n.authorName}</span>
-                        {n.progress_label && (
-                          <Badge variant="outline" className="ml-auto">
-                            {n.progress_label}
-                          </Badge>
-                        )}
                       </div>
+                      {n.progress_label && <ProgressBlock text={n.progress_label} />}
                       <p className="mt-1 whitespace-pre-wrap text-sm">{n.content}</p>
                     </li>
                   ))}

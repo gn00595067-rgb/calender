@@ -4,7 +4,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { MODEL } from "@/lib/voice/parse-event";
-import { splitBodySchema, splitOutputSchema, splitSystemPrompt } from "@/lib/note-split";
+import { matchSubject, splitBodySchema, splitOutputSchema, splitSystemPrompt } from "@/lib/note-split";
 
 /**
  * 學習回饋依小孩拆分：老師一次寫兩個小孩（Rick … Iris …）的回饋 → 拆成共同內容＋每個小孩一段。
@@ -52,7 +52,9 @@ export async function POST(req: Request) {
       children: out.children
         .filter((c) => c.content.trim())
         .map((c) => ({
-          subjectId: ids.has(c.subjectId) ? c.subjectId : null,
+          subjectId: ids.has(c.subjectId)
+            ? c.subjectId
+            : matchSubject(c.nameInText, parsed.subjects),
           nameInText: c.nameInText.trim(),
           content: c.content.trim(),
         })),

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLearningFeed, type LearningGroup } from "@/lib/client/learning";
 import { teacherLabel } from "@/lib/learning";
+import { ProgressBlock } from "@/components/calendar/notes-section";
 import { taipeiTodayStr, D } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
@@ -151,12 +152,8 @@ function GroupSection({ group }: { group: LearningGroup }) {
                   未依小孩拆開
                 </Badge>
               )}
-              {e.progressLabel && (
-                <Badge variant="outline" className="ml-auto">
-                  {e.progressLabel}
-                </Badge>
-              )}
             </div>
+            {e.progressLabel && <ProgressBlock text={e.progressLabel} />}
             {e.shared && (
               <details className="mt-1.5 text-sm text-muted-foreground">
                 <summary className="cursor-pointer select-none text-xs">共同內容（教學概念等）</summary>

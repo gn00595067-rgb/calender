@@ -80,7 +80,7 @@ export async function POST(req: Request) {
 
   // 3) 脈絡：人物、標籤、過去習慣（伺服器端查，RLS 只會給看得到的資料）
   const [ctRes, tagRes] = await Promise.all([
-    supabase.from("contacts").select("id, name, role_label, is_family, is_self").order("name"),
+    supabase.from("contacts").select("id, name, role_label, is_family, is_self, aliases").order("name"),
     supabase.from("tags").select("name").order("name"),
   ]);
   const contacts: ContactRow[] = ctRes.data ?? [];
