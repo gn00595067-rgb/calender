@@ -62,6 +62,8 @@ export function EventDetailDialog({
   const qc = useQueryClient();
   const [pending, startTransition] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** 重複行程刪除範圍：預設只刪這筆，避免一時誤刪整個系列（Peggy 回饋 #15） */
+  const [deleteScope, setDeleteScope] = useState<"this" | "following">("this");
 
   if (!event) return null;
   const cal = calendarById.get(event.calendar_id);
@@ -230,7 +232,10 @@ export function EventDetailDialog({
                 variant="outline"
                 size="sm"
                 className="text-destructive hover:text-destructive"
-                onClick={() => setConfirmDelete(true)}
+                onClick={() => {
+                  setDeleteScope("this");
+                  setConfirmDelete(true);
+                }}
                 disabled={pending}
               >
                 <Trash2 className="size-4" />
@@ -255,25 +260,49 @@ export function EventDetailDialog({
                 : "此操作無法復原。"}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {isRecurring && (
+            <div className="space-y-2" role="radiogroup" aria-label="刪除範圍">
+              {(
+                [
+                  { v: "this", l: "僅此筆", d: `只刪 ${D.full(event.starts_at)} 這一次` },
+                  { v: "following", l: "此筆與之後全部", d: "這一次和之後的每一次都刪掉" },
+                ] as const
+              ).map((o) => (
+                <label
+                  key={o.v}
+                  className={
+                    "flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm " +
+                    (deleteScope === o.v
+                      ? o.v === "following"
+                        ? "border-destructive bg-destructive/5"
+                        : "border-primary bg-primary/5"
+                      : "hover:bg-accent")
+                  }
+                >
+                  <input
+                    type="radio"
+                    className="mt-1"
+                    checked={deleteScope === o.v}
+                    onChange={() => setDeleteScope(o.v)}
+                  />
+                  <span>
+                    <span className="font-medium">{o.l}</span>
+                    <span className="block text-xs text-muted-foreground">{o.d}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
           <AlertDialogFooter className="flex-col gap-2 sm:flex-row">
             <AlertDialogCancel>取消</AlertDialogCancel>
             {isRecurring ? (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => doDelete("this")}
-                  disabled={pending}
-                >
-                  僅此筆
-                </Button>
-                <Button
-                  className="bg-destructive text-white hover:bg-destructive/90"
-                  onClick={() => doDelete("following")}
-                  disabled={pending}
-                >
-                  此筆與之後全部
-                </Button>
-              </>
+              <Button
+                className="bg-destructive text-white hover:bg-destructive/90"
+                onClick={() => doDelete(deleteScope)}
+                disabled={pending}
+              >
+                {deleteScope === "this" ? "刪除這一筆" : "刪除此筆與之後全部"}
+              </Button>
             ) : (
               <Button
                 className="bg-destructive text-white hover:bg-destructive/90"

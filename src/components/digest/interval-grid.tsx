@@ -2,7 +2,7 @@
 
 import { Star } from "lucide-react";
 import { layoutDay } from "@/lib/calendar-utils";
-import { eventStyle } from "@/components/calendar/event-visuals";
+import { eventStyle, displayTitle } from "@/components/calendar/event-visuals";
 import { D, taipeiDateStartUtcISO } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import type { CalEvent } from "@/lib/client/events";
@@ -185,24 +185,15 @@ export function IntervalGrid({
                         left: `calc(${col * widthPct}% + 1px)`,
                         width: `calc(${span * widthPct}% - 2px)`,
                       }}
-                      className="overflow-hidden rounded px-1 text-left leading-tight hover:brightness-95"
+                      className="flex flex-col overflow-hidden rounded px-1 py-px text-left hover:brightness-95"
                     >
-                      <span className="flex items-center gap-0.5 text-[10px] font-semibold">
-                        {event.is_important && (
-                          <Star className="size-2.5 shrink-0 fill-amber-400 text-amber-500" />
-                        )}
-                        {height >= 26 && (
-                          <span className="tabular-nums">{D.time(event.starts_at)}</span>
-                        )}
-                        {height < 26 && (
-                          <span className="truncate">{event.title}</span>
-                        )}
-                      </span>
-                      {height >= 26 && (
-                        <span className="block truncate text-[11px] font-medium">
-                          {event.title}
-                        </span>
-                      )}
+                      <EventChipBody
+                        title={event.title}
+                        start={D.time(event.starts_at)}
+                        important={event.is_important}
+                        height={height}
+                        narrow={cols > 1}
+                      />
                     </button>
                   );
                 })}
@@ -255,5 +246,58 @@ function AllDayRow({
         </div>
       ))}
     </div>
+  );
+}
+
+/** 每行字高（px）：11px 字、行高 1.2 */
+const LINE_PX = 13;
+
+/**
+ * 行程塊內容：內容優先（Peggy 回饋 5-2：很多只看到時間、看不到行程內容）。
+ * 標題放最上面、可折多行填滿色塊（窄欄也不切成「17-2…」）；
+ * 標題本身已寫了時間（如「0730小游」）就不再另列時間，否則塊夠高才在下面補開始時間。
+ */
+function EventChipBody({
+  title,
+  start,
+  important,
+  height,
+  narrow,
+}: {
+  title: string;
+  start: string;
+  important: boolean;
+  height: number;
+  narrow: boolean;
+}) {
+  const text = displayTitle(title, start);
+  const titleHasTime = text !== title;
+  const lines = Math.max(1, Math.floor((height - 2) / LINE_PX));
+  // 時間另佔一行：塊夠高（至少還能放 2 行標題）且標題裡沒有時間才顯示
+  const showTime = !titleHasTime && lines >= 3;
+  const titleLines = showTime ? lines - 1 : lines;
+  return (
+    <>
+      <span
+        className="overflow-hidden text-[11px] font-medium leading-[1.2] [overflow-wrap:anywhere]"
+        style={{
+          display: "-webkit-box",
+          WebkitBoxOrient: "vertical",
+          WebkitLineClamp: titleLines,
+          // 窄欄（同時段多筆並排）字縮一點，多塞幾個字
+          fontSize: narrow ? 10 : undefined,
+        }}
+      >
+        {important && (
+          <Star className="mr-0.5 inline size-2.5 fill-amber-400 align-[-1px] text-amber-500" />
+        )}
+        {title}
+      </span>
+      {showTime && (
+        <span className="mt-auto text-[9px] leading-none text-muted-foreground tabular-nums">
+          {start}
+        </span>
+      )}
+    </>
   );
 }

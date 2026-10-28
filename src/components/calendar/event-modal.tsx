@@ -56,9 +56,10 @@ import {
 import { createEventAction, updateEventAction, deleteEventAction } from "@/lib/actions/events";
 import { utcToTaipeiWall, taipeiWallToUtcISO, twd } from "@/lib/date";
 import { addMinutesToWall, wallWeekday, diffMinutes } from "@/lib/wall-time";
-import { fetchEventsInRange, type CalEvent } from "@/lib/client/events";
+import { fetchEventsInRange, useSeriesStarts, type CalEvent } from "@/lib/client/events";
 import { ConflictPrompt } from "./conflict-prompt";
-import { occurrenceDates } from "@/lib/recurrence";
+import { generateDates, occurrenceDates } from "@/lib/recurrence";
+import { applySubjectTitle, stripSubjectSuffix } from "@/lib/subject-title";
 import { eventSentence } from "@/lib/event-summary";
 import {
   extraLabel,
@@ -97,6 +98,8 @@ interface FormValues {
   scope: "this" | "following";
   subjectIds: string[];
   participantIds: string[];
+  /** 標題後面加「-主角名」（取消＝只留原標題，如「0730小游」） */
+  suffixSubjects: boolean;
   tagNames: string[];
   financeEnabled: boolean;
   financeDirection: "expense" | "income";
@@ -113,7 +116,11 @@ interface FormValues {
   driverTrip: DriverTrip;
   driverPickupMinutes: number;
   driverPickupLocation: string;
+  /** 回程送到哪；空白＝家 */
+  driverDropoffLocation: string;
   driverNote: string;
+  /** 編輯重複行程：延長重複到哪天（空＝不延長） */
+  extendUntil: string;
 }
 
 function plusMonths(dateStr: string, m: number): string {
@@ -239,6 +246,7 @@ export function EventModal({
       scope: "this",
       subjectIds: draft?.subjectIds ?? [],
       participantIds: draft?.participantIds ?? [],
+      suffixSubjects: true,
       tagNames: draft?.tagNames ?? [],
       financeEnabled: false,
       financeDirection: "expense",
@@ -253,7 +261,9 @@ export function EventModal({
       driverTrip: "round",
       driverPickupMinutes: DEFAULT_PICKUP_MINUTES,
       driverPickupLocation: "",
+      driverDropoffLocation: "",
       driverNote: "",
+      extendUntil: "",
     };
   }
 
@@ -281,14 +291,16 @@ export function EventModal({
         startWall: draft?.startWall ?? utcToTaipeiWall(event.starts_at),
         endWall: draft?.endWall ?? utcToTaipeiWall(event.ends_at),
         isImportant: event.is_important,
+        // 單筆行程編輯時也能改成重複（Peggy 回饋：編輯時重複欄位不見了）
         recurrence: "none",
-        recurrenceUntil: "",
-        recurrenceWeekdays: [],
+        recurrenceUntil: plusMonths(utcToTaipeiWall(event.starts_at).slice(0, 10), 3),
+        recurrenceWeekdays: [wallWeekday(utcToTaipeiWall(event.starts_at))],
         recurrenceDates: [],
         reminderMinutes: event.reminder_minutes ?? null,
         scope: draft?.scope ?? "this",
         subjectIds: [],
         participantIds: [],
+        suffixSubjects: true,
         tagNames: event.tagNames,
         financeEnabled: false,
         financeDirection: "expense",
@@ -303,7 +315,9 @@ export function EventModal({
         driverTrip: event.driver?.trip ?? "round",
         driverPickupMinutes: event.driver?.pickupMinutes ?? DEFAULT_PICKUP_MINUTES,
         driverPickupLocation: event.driver?.pickupLocation ?? "",
+        driverDropoffLocation: event.driver?.dropoffLocation ?? "",
         driverNote: event.driver?.note ?? "",
+        extendUntil: "",
       });
     } else {
       reset(buildDefaults());
@@ -317,6 +331,18 @@ export function EventModal({
     if (mode !== "edit" || !editData.data) return;
     setValue("subjectIds", editData.data.subjectIds);
     setValue("participantIds", editData.data.participantIds);
+    // 有主角但標題沒有「-主角名」＝之前刻意拿掉，維持不加
+    if (event && allContacts.length) {
+      const names = editData.data.subjectIds
+        .map((id) => allContacts.find((c) => c.id === id))
+        .filter((c) => c && !c.is_self)
+        .map((c) => c!.name);
+      const family = allContacts.filter((c) => c.is_family).map((c) => c.name);
+      setValue(
+        "suffixSubjects",
+        names.length === 0 || stripSubjectSuffix(event.title, family) !== event.title,
+      );
+    }
     if (editData.data.finance) {
       setValue("financeEnabled", true);
       setValue("financeDirection", editData.data.finance.direction);
@@ -339,7 +365,7 @@ export function EventModal({
       planManualRef.current = !!planId;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editData.data]);
+  }, [editData.data, allContacts.length]);
 
   const allDay = watch("allDay");
   const recurrence = watch("recurrence");
@@ -394,6 +420,48 @@ export function EventModal({
   const durationMin = Math.max(diffMinutes(startWall, endWall), 0);
   const suggestedAmount = selectedPlan ? planAmount(selectedPlan, durationMin) : null;
   const maxHeadcount = plans.reduce((m, p) => Math.max(m, p.headcount), 0);
+  // 這次編輯改了時長或上課形式 → 金額要重算（Peggy 回饋：灰字提示很容易沒看到）
+  const origDuration = event
+    ? diffMinutes(utcToTaipeiWall(event.starts_at), utcToTaipeiWall(event.ends_at))
+    : null;
+  const priceInputsChanged =
+    mode === "create" ||
+    durationMin !== origDuration ||
+    (!!editData.data?.finance && financePlanId !== (editData.data.finance.rate_plan_id ?? null));
+
+  // 編輯重複行程：系列共幾次、到哪天，可延長
+  const series = useSeriesStarts(isRecurringEdit && open ? (event?.recurrence_group_id ?? null) : null);
+  const seriesDates = (series.data ?? []).map((iso) => utcToTaipeiWall(iso).slice(0, 10));
+  const seriesLast = seriesDates.at(-1) ?? null;
+  const seriesRule = (event?.recurrence_rule ?? null) as
+    | "daily"
+    | "weekly"
+    | "biweekly"
+    | "monthly"
+    | null;
+
+  /** 存檔時要多建的日期：單筆改成重複，或延長重複系列 */
+  function addDatesOf(v: FormValues): string[] {
+    const start = v.startWall.slice(0, 10);
+    if (mode !== "edit") return [];
+    if (!isRecurringEdit) {
+      if (v.recurrence === "none") return [];
+      return occurrenceDates({
+        startDate: start,
+        recurrence: v.recurrence,
+        until: v.recurrenceUntil || null,
+        weekdays: v.recurrence === "weekly" ? v.recurrenceWeekdays : null,
+        dates: v.recurrenceDates,
+      }).filter((d) => d !== start);
+    }
+    if (!seriesRule || !seriesLast || !v.extendUntil || v.extendUntil <= seriesLast) return [];
+    // 每週：沿用系列裡出現過的星期（每週二、四）
+    const weekdays =
+      seriesRule === "weekly" ? [...new Set(seriesDates.map((d) => wallWeekday(`${d}T12:00`)))] : null;
+    return generateDates(seriesLast, seriesRule, v.extendUntil, weekdays).filter(
+      (d) => d > seriesLast,
+    );
+  }
 
   const financePaymentMethod = watch("financePaymentMethod");
   const usesPrepaid =
@@ -490,7 +558,7 @@ export function EventModal({
             weekdays: v.recurrence === "weekly" ? v.recurrenceWeekdays : null,
             dates: v.recurrenceDates,
           })
-        : [v.startWall.slice(0, 10)];
+        : [v.startWall.slice(0, 10), ...addDatesOf(v)];
     const slots = dates.map((ds) => {
       const s = +new Date(taipeiWallToUtcISO(`${ds}T${time}`));
       return [s, s + durationMs] as const;
@@ -564,10 +632,13 @@ export function EventModal({
       ? {
           trip: v.driverTrip,
           pickupMinutes: v.driverPickupMinutes,
-          pickupLocation: v.driverPickupLocation.trim() || null,
+          // 只有回程沒有上車地點、只有去程沒有回程地點
+          pickupLocation: v.driverTrip !== "from" ? v.driverPickupLocation.trim() || null : null,
+          dropoffLocation: v.driverTrip !== "to" ? v.driverDropoffLocation.trim() || null : null,
           note: v.driverNote.trim() || null,
         }
       : null;
+    const addDates = addDatesOf(v);
     const pmMeta = PAYMENT_METHODS.find(
       (p) => p.value === v.financePaymentMethod,
     );
@@ -623,6 +694,7 @@ export function EventModal({
               reminderMinutes: v.reminderMinutes,
               subjectIds: v.subjectIds,
               participantIds: v.participantIds,
+              suffixSubjects: v.suffixSubjects,
               tagNames: v.tagNames,
               finance,
               driver,
@@ -641,9 +713,15 @@ export function EventModal({
               scope: v.scope,
               subjectIds: v.subjectIds,
               participantIds: v.participantIds,
+              suffixSubjects: v.suffixSubjects,
               tagNames: v.tagNames,
               finance,
               driver,
+              addDates,
+              recurrenceRule:
+                !isRecurringEdit && v.recurrence !== "none" && v.recurrence !== "dates"
+                  ? v.recurrence
+                  : null,
             });
 
       if (!res.ok) {
@@ -657,7 +735,13 @@ export function EventModal({
         const r = await deleteEventAction(id, "this");
         if (r.ok) deleted++;
       }
-      const base = mode === "create" ? "已新增行程" : "已更新行程";
+      const added = mode === "edit" && res.data && "added" in res.data ? (res.data.added ?? 0) : 0;
+      const base =
+        mode === "create"
+          ? "已新增行程"
+          : added
+            ? `已更新行程，並新增 ${added} 筆重複`
+            : "已更新行程";
       // 一句話把人事時地念一次，讓輸入的人（或第二個人）一眼核對
       const sentence = sentenceOf(v);
       const confirm = {
@@ -795,6 +879,15 @@ export function EventModal({
                 placeholder="例：數學家教課"
                 autoFocus
                 aria-invalid={!!formState.errors.title}
+              />
+              <SubjectSuffixToggle
+                control={control}
+                title={watch("title")}
+                subjectNames={subjectIds
+                  .map((id) => allContacts.find((c) => c.id === id))
+                  .filter((c) => c && !c.is_self)
+                  .map((c) => c!.name)}
+                familyNames={allContacts.filter((c) => c.is_family).map((c) => c.name)}
               />
             </div>
 
@@ -1031,7 +1124,16 @@ export function EventModal({
               </div>
             )}
 
-            {mode === "create" && (
+            {isRecurringEdit && (
+              <SeriesExtendField
+                rule={seriesRule}
+                count={seriesDates.length}
+                last={seriesLast}
+                register={register("extendUntil")}
+                adding={addDatesOf(watch()).length}
+              />
+            )}
+            {!isRecurringEdit && (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>重複</Label>
@@ -1117,6 +1219,11 @@ export function EventModal({
                     </p>
                   </div>
                 )}
+                {mode === "edit" && recurrence !== "none" && (
+                  <p className="text-xs text-muted-foreground sm:col-span-2">
+                    存檔後這筆會變成重複行程，另外新增 {addDatesOf(watch()).length} 筆（內容、時間照這筆）。
+                  </p>
+                )}
               </div>
             )}
 
@@ -1192,13 +1299,24 @@ export function EventModal({
                         />
                       </div>
                     )}
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">上車地點（空白＝{DEFAULT_PICKUP_PLACE}）</Label>
-                      <Input
-                        {...register("driverPickupLocation")}
-                        placeholder={`例：${DEFAULT_PICKUP_PLACE}、公司`}
-                      />
-                    </div>
+                    {watch("driverTrip") !== "from" && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">上車地點（空白＝{DEFAULT_PICKUP_PLACE}）</Label>
+                        <Input
+                          {...register("driverPickupLocation")}
+                          placeholder={`例：${DEFAULT_PICKUP_PLACE}、公司`}
+                        />
+                      </div>
+                    )}
+                    {watch("driverTrip") !== "to" && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">回程送到（空白＝{DEFAULT_PICKUP_PLACE}）</Label>
+                        <Input
+                          {...register("driverDropoffLocation")}
+                          placeholder={`例：${DEFAULT_PICKUP_PLACE}、公司`}
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">給司機的備註</Label>
@@ -1211,6 +1329,7 @@ export function EventModal({
                     endWall={endWall}
                     pickupMinutes={watch("driverPickupMinutes")}
                     home={watch("driverPickupLocation").trim() || DEFAULT_PICKUP_PLACE}
+                    back={watch("driverDropoffLocation").trim() || DEFAULT_PICKUP_PLACE}
                     dest={watch("location").trim() || "（地點未填）"}
                   />
                 </div>
@@ -1314,6 +1433,7 @@ export function EventModal({
                             : null
                         }
                         current={Math.round(Number(watch("financeAmount")) || 0)}
+                        alert={priceInputsChanged}
                         subjectCount={subjectIds.length}
                         onApply={() => {
                           amountTouchedRef.current = false;
@@ -1534,6 +1654,7 @@ function PlanAmountHint({
   suggested,
   extra,
   current,
+  alert,
   subjectCount,
   onApply,
 }: {
@@ -1544,11 +1665,36 @@ function PlanAmountHint({
   /** 每次加收（如交通費 100） */
   extra: { label: string; fee: number } | null;
   current: number;
+  /** 這次改了時間／上課形式：金額不符時用紅字提醒，不然很容易沒看到 */
+  alert: boolean;
   subjectCount: number;
   onApply: () => void;
 }) {
   const hours = Math.round((minutes / 60) * 100) / 100;
   const each = subjectCount >= 2 ? splitAmount(current || suggested, subjectCount) : null;
+  if (alert && current !== suggested) {
+    return (
+      <div
+        role="alert"
+        className="space-y-1.5 rounded-md border border-red-300 bg-red-50 p-2.5 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+      >
+        <div className="flex items-start gap-1.5 font-semibold">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            金額要重算：依方案應為 {twd(suggested)}，目前填 {twd(current)}
+          </span>
+        </div>
+        <div className="text-xs">
+          {summary}
+          {hourly ? ` × ${hours} 小時` : ""}
+          {extra ? ` ＋ ${extra.label} ${twd(extra.fee)}` : ""} = {twd(suggested)}
+        </div>
+        <Button type="button" size="sm" className="h-7" onClick={onApply}>
+          改成 {twd(suggested)}
+        </Button>
+      </div>
+    );
+  }
   return (
     <div className="space-y-0.5 text-xs text-muted-foreground">
       <div className="flex flex-wrap items-center gap-x-2">
@@ -1586,6 +1732,7 @@ function DriverPreview({
   endWall,
   pickupMinutes,
   home,
+  back: backTo,
   dest,
 }: {
   trip: DriverTrip;
@@ -1594,6 +1741,8 @@ function DriverPreview({
   endWall: string;
   pickupMinutes: number;
   home: string;
+  /** 回程送到 */
+  back: string;
   dest: string;
 }) {
   const lines: string[] = [];
@@ -1604,7 +1753,7 @@ function DriverPreview({
   }
   if (trip !== "to") {
     const t = allDay ? "整日" : endWall.slice(11);
-    lines.push(`回程 ${t} 上車：${dest} → ${home}${pickupMinutes > 0 && !allDay ? `，約 ${back} 到` : ""}`);
+    lines.push(`回程 ${t} 上車：${dest} → ${backTo}${pickupMinutes > 0 && !allDay ? `，約 ${back} 到` : ""}`);
   }
   // 車程也算沒空：讓使用者知道空檔會從哪裡算起
   if (!allDay && pickupMinutes > 0) {
@@ -1879,6 +2028,96 @@ function RecurrenceDatesField({
       )}
       <p className="text-xs text-muted-foreground">
         共 {extra.length + 1} 天、每天同一時間；之後可在任一筆選「此筆與之後全部」一起改或刪。
+      </p>
+    </div>
+  );
+}
+
+/**
+ * 「標題後面加主角名」開關：只在有非本人的主角時出現。
+ * Peggy 回饋：本人和豪哥一起上的課，標題只要「0730小游」，不要「-豪哥」。
+ */
+function SubjectSuffixToggle({
+  control,
+  title,
+  subjectNames,
+  familyNames,
+}: {
+  control: import("react-hook-form").Control<FormValues>;
+  title: string;
+  subjectNames: string[];
+  familyNames: string[];
+}) {
+  if (subjectNames.length === 0) return null;
+  return (
+    <Controller
+      control={control}
+      name="suffixSubjects"
+      render={({ field }) => {
+        const preview = applySubjectTitle(title, field.value ? subjectNames : [], familyNames);
+        return (
+          <label className="flex items-start gap-2 text-xs text-muted-foreground">
+            <Checkbox
+              className="mt-0.5"
+              checked={field.value}
+              onCheckedChange={(c) => field.onChange(!!c)}
+            />
+            <span>
+              標題後面加上主角名（-{subjectNames.join("、")}）
+              {title.trim() && (
+                <span className="block text-foreground">存檔後標題：{preview}</span>
+              )}
+            </span>
+          </label>
+        );
+      }}
+    />
+  );
+}
+
+const RULE_LABEL: Record<string, string> = {
+  daily: "每天",
+  weekly: "每週",
+  biweekly: "每兩週",
+  monthly: "每月",
+};
+
+/** 編輯重複行程：顯示系列共幾次、到哪天；有規則的系列可延長 */
+function SeriesExtendField({
+  rule,
+  count,
+  last,
+  register: reg,
+  adding,
+}: {
+  rule: string | null;
+  count: number;
+  last: string | null;
+  register: import("react-hook-form").UseFormRegisterReturn;
+  adding: number;
+}) {
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      <Label className="font-medium">重複</Label>
+      <p className="text-sm">
+        {rule ? RULE_LABEL[rule] ?? "重複" : "指定日期"}
+        {last ? `，到 ${shortDateLabel(last)}，共 ${count} 次` : ""}
+      </p>
+      {rule ? (
+        <div className="space-y-1.5">
+          <Label htmlFor="ev-extend" className="text-xs">
+            延長重複到（選填）
+          </Label>
+          <Input id="ev-extend" type="date" min={last ?? undefined} {...reg} />
+          {adding > 0 && (
+            <p className="text-xs text-primary">存檔後會再新增 {adding} 筆（內容、時間照這筆）。</p>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">要加日期，請另外新增一筆「指定日期」行程。</p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        要提早結束：點最後想保留那筆的下一筆 → 刪除 →「此筆與之後全部」。
       </p>
     </div>
   );

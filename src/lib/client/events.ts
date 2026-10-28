@@ -61,6 +61,7 @@ type EventRowLite = {
   driver_trip?: DriverTrip | null;
   driver_pickup_minutes?: number | null;
   driver_pickup_location?: string | null;
+  driver_dropoff_location?: string | null;
   driver_note?: string | null;
 };
 
@@ -192,5 +193,23 @@ export function useCalendarEvents(startIso: string, endIso: string) {
   return useQuery({
     queryKey: ["events", startIso, endIso, ids],
     queryFn: () => fetchEventsInRange(startIso, endIso, ids),
+  });
+}
+
+/** 重複系列裡每一筆的開始時間（編輯時顯示「到哪天、共幾次」與延長重複用） */
+export function useSeriesStarts(groupId: string | null) {
+  return useQuery({
+    queryKey: ["events", "series", groupId],
+    enabled: !!groupId,
+    queryFn: async (): Promise<string[]> => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("events")
+        .select("starts_at")
+        .eq("recurrence_group_id", groupId!)
+        .order("starts_at", { ascending: true });
+      if (error) throw new Error(error.message);
+      return (data ?? []).map((r) => r.starts_at);
+    },
   });
 }

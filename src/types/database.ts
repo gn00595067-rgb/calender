@@ -94,6 +94,10 @@ export interface Database {
           driver_pickup_minutes?: number | null;
           driver_pickup_location?: string | null;
           driver_note?: string | null;
+          // 0019 回程下車地點、修改紀錄（套 migration 前查不到，故標為可選）
+          driver_dropoff_location?: string | null;
+          edited_at?: string | null;
+          edited_by?: string | null;
         };
         Insert: {
           id?: string;
@@ -120,6 +124,10 @@ export interface Database {
           driver_pickup_minutes?: number | null;
           driver_pickup_location?: string | null;
           driver_note?: string | null;
+          // 0019 回程下車地點、修改紀錄（套 migration 前查不到，故標為可選）
+          driver_dropoff_location?: string | null;
+          edited_at?: string | null;
+          edited_by?: string | null;
         };
         Update: {
           id?: string;
@@ -146,6 +154,10 @@ export interface Database {
           driver_pickup_minutes?: number | null;
           driver_pickup_location?: string | null;
           driver_note?: string | null;
+          // 0019 回程下車地點、修改紀錄（套 migration 前查不到，故標為可選）
+          driver_dropoff_location?: string | null;
+          edited_at?: string | null;
+          edited_by?: string | null;
         };
         Relationships: [];
       };

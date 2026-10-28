@@ -4,43 +4,61 @@ import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { enrichEvents, type CalEvent } from "./events";
 
-/** 新增紀錄的一列：重複行程整個系列算一列 */
+/** 新增／修改紀錄的一列：重複行程整個系列算一列 */
 export interface RecentItem {
   /** 系列第一筆（依時間） */
   first: CalEvent;
   /** 系列全部行程，依時間排序 */
   all: CalEvent[];
-  createdAt: string;
-  creatorName: string;
+  /** 輸入（新增）或修改的時間 */
+  at: string;
+  /** 輸入或修改的人 */
+  byName: string;
 }
 
+export type RecentKind = "added" | "edited";
+
+/** 0019（edited_at）還沒套用 */
+export class EditLogUnavailable extends Error {}
+
 /**
- * 依「輸入時間」（created_at）列出某時間之後新增的行程，給第二個人核對有沒有漏。
+ * 依「輸入時間」（created_at）或「修改時間」（edited_at）列出某時間之後的行程，
+ * 給第二個人核對有沒有漏、有沒有改錯。
  * spec：docs/specs/新增確認與新增紀錄.md
  */
-export function useRecentlyAdded(sinceIso: string) {
+export function useRecentEvents(sinceIso: string, kind: RecentKind) {
   return useQuery({
-    queryKey: ["events", "recent", sinceIso],
+    queryKey: ["events", "recent", kind, sinceIso],
+    retry: false,
     queryFn: async (): Promise<RecentItem[]> => {
       const supabase = createClient();
+      const col = kind === "added" ? "created_at" : "edited_at";
       const { data, error } = await supabase
         .from("events")
         .select("*")
-        .gte("created_at", sinceIso)
-        .order("created_at", { ascending: false })
+        .gte(col, sinceIso)
+        .order(col, { ascending: false })
         .limit(500);
-      if (error) throw new Error(error.message);
+      if (error) {
+        if (kind === "edited" && (error.code === "42703" || error.message.includes("edited_at")))
+          throw new EditLogUnavailable("修改紀錄要等資料庫更新（0019）後才會開始記錄");
+        throw new Error(error.message);
+      }
       const rows = data ?? [];
       const enriched = await enrichEvents(rows);
       const byId = new Map(enriched.map((e) => [e.id, e]));
+      const atOf = (r: (typeof rows)[number]) =>
+        (kind === "added" ? r.created_at : r.edited_at) ?? r.created_at;
+      const whoOf = (r: (typeof rows)[number]) =>
+        (kind === "added" ? r.creator_id : r.edited_by) ?? r.creator_id;
 
-      const creatorIds = [...new Set(rows.map((r) => r.creator_id))];
-      const { data: profiles } = creatorIds.length
-        ? await supabase.from("profiles").select("id, display_name").in("id", creatorIds)
+      const personIds = [...new Set(rows.map(whoOf))];
+      const { data: profiles } = personIds.length
+        ? await supabase.from("profiles").select("id, display_name").in("id", personIds)
         : { data: [] as { id: string; display_name: string }[] };
       const nameOf = new Map((profiles ?? []).map((p) => [p.id, p.display_name]));
 
-      // 同一系列（recurrence_group_id）合成一列；列的順序依最新輸入時間
+      // 同一系列（recurrence_group_id）合成一列；列的順序依最新時間
       const groups = new Map<string, { rows: typeof rows }>();
       for (const r of rows) {
         const key = r.recurrence_group_id ?? r.id;
@@ -56,8 +74,8 @@ export function useRecentlyAdded(sinceIso: string) {
         return {
           first: all[0],
           all,
-          createdAt: rs[0].created_at,
-          creatorName: nameOf.get(rs[0].creator_id) ?? "",
+          at: atOf(rs[0]),
+          byName: nameOf.get(whoOf(rs[0])) ?? "",
         };
       });
     },

@@ -15,13 +15,16 @@ export const DRIVER_TRIPS: { value: DriverTrip; label: string }[] = [
 /** 去程提早上車的選項（分鐘） */
 export const DRIVER_PICKUP_OPTIONS = [0, 15, 30, 45, 60, 90];
 export const DEFAULT_PICKUP_MINUTES = 30;
-/** 上車地點空白時的預設稱呼 */
+/** 上車地點／回程下車地點空白時的預設稱呼 */
 export const DEFAULT_PICKUP_PLACE = "家";
 
 export interface DriverInfo {
   trip: DriverTrip;
   pickupMinutes: number;
+  /** 去程上車地點；空＝家 */
   pickupLocation: string | null;
+  /** 回程送到哪；空＝家（Peggy 回饋：從公司出發、回程要回家，不是回公司） */
+  dropoffLocation: string | null;
   note: string | null;
 }
 
@@ -31,13 +34,18 @@ export function driverFromRow(row: {
   driver_trip?: DriverTrip | null;
   driver_pickup_minutes?: number | null;
   driver_pickup_location?: string | null;
+  driver_dropoff_location?: string | null;
   driver_note?: string | null;
 }): DriverInfo | null {
   if (!row.needs_driver) return null;
+  const trip = row.driver_trip ?? "round";
   return {
-    trip: row.driver_trip ?? "round",
+    trip,
     pickupMinutes: row.driver_pickup_minutes ?? DEFAULT_PICKUP_MINUTES,
     pickupLocation: row.driver_pickup_location ?? null,
+    // 0019 前「只有回程」把目的地存在上車地點欄，沿用；來回則回程預設回家
+    dropoffLocation:
+      row.driver_dropoff_location ?? (trip === "from" ? row.driver_pickup_location ?? null : null),
     note: row.driver_note ?? null,
   };
 }
@@ -72,6 +80,7 @@ export interface DriverLeg {
 export function driverLegs(e: DriverEventLike): DriverLeg[] {
   if (!e.driver) return [];
   const home = e.driver.pickupLocation?.trim() || DEFAULT_PICKUP_PLACE;
+  const back = e.driver.dropoffLocation?.trim() || DEFAULT_PICKUP_PLACE;
   const dest = e.location?.trim() || "（地點未填）";
   const base = {
     eventId: e.id,
@@ -88,7 +97,7 @@ export function driverLegs(e: DriverEventLike): DriverLeg[] {
     legs.push({ ...base, kind: "to", at, from: home, to: dest });
   }
   if (e.driver.trip !== "to") {
-    legs.push({ ...base, kind: "from", at: e.ends_at, from: dest, to: home, note: null });
+    legs.push({ ...base, kind: "from", at: e.ends_at, from: dest, to: back, note: null });
   }
   return legs;
 }
