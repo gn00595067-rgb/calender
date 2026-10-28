@@ -2,7 +2,7 @@
 
 import { Star } from "lucide-react";
 import { layoutDay } from "@/lib/calendar-utils";
-import { eventStyle, displayTitle } from "@/components/calendar/event-visuals";
+import { eventStyle } from "@/components/calendar/event-visuals";
 import { D, taipeiDateStartUtcISO } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import type { CalEvent } from "@/lib/client/events";
@@ -49,7 +49,8 @@ export function IntervalGrid({
   // 讓整個時間帶塞進約一個畫面：依時數自動決定每小時像素
   const pxPerHour = Math.max(20, Math.min(64, Math.round(560 / windowHours)));
   const bodyHeight = windowHours * pxPerHour;
-  const labelStep = pxPerHour < 26 ? 3 : pxPerHour < 40 ? 2 : 1;
+  // 每小時都標（回饋 18：以「每小時」為區間呈現）；格子太矮時字縮小
+  const labelStep = 1;
   const startHour = w.start / 60;
 
   const gridCols = `2.75rem repeat(${days.length}, minmax(0, 1fr))`;
@@ -112,7 +113,10 @@ export function IntervalGrid({
                   style={{ height: pxPerHour }}
                 >
                   {i % labelStep === 0 && (
-                    <span className="pl-1 text-[10px] text-muted-foreground">
+                    <span
+                      className="pl-1 text-muted-foreground"
+                      style={{ fontSize: pxPerHour < 24 ? 9 : 10 }}
+                    >
                       {String(hour).padStart(2, "0")}:00
                     </span>
                   )}
@@ -189,7 +193,6 @@ export function IntervalGrid({
                     >
                       <EventChipBody
                         title={event.title}
-                        start={D.time(event.starts_at)}
                         important={event.is_important}
                         height={height}
                         narrow={cols > 1}
@@ -252,52 +255,46 @@ function AllDayRow({
 /** 每行字高（px）：11px 字、行高 1.2 */
 const LINE_PX = 13;
 
+/** 去掉標題開頭的時間（「0730-0900小游」→「小游」）；位置已代表時間，色塊只放內容 */
+function stripLeadingTime(title: string): string {
+  // 「0730」「07:30」「0730-0900」「17-22」；時、分要合理，避免把「2026計畫」當時間
+  const m = title.match(/^(\d{1,2})(?:[:：]?(\d{2}))?(\s*[-~～–]\s*\d{1,2}(?:[:：]?\d{2})?)?\s*/);
+  if (!m || (!m[2] && !m[3]) || Number(m[1]) > 23 || Number(m[2] ?? 0) > 59) return title;
+  const rest = title.slice(m[0].length).replace(/^[\s\-–~～、,，]+/, "");
+  return rest || title;
+}
+
 /**
- * 行程塊內容：內容優先（Peggy 回饋 5-2：很多只看到時間、看不到行程內容）。
- * 標題放最上面、可折多行填滿色塊（窄欄也不切成「17-2…」）；
- * 標題本身已寫了時間（如「0730小游」）就不再另列時間，否則塊夠高才在下面補開始時間。
+ * 行程塊內容：只放內容、不放時間（回饋 5-2／18：只看到時間、看不到行程）。
+ * 標題開頭的時間也去掉，可折多行填滿色塊；完整時間在滑過的提示與點開的詳情。
  */
 function EventChipBody({
   title,
-  start,
   important,
   height,
   narrow,
 }: {
   title: string;
-  start: string;
   important: boolean;
   height: number;
   narrow: boolean;
 }) {
-  const text = displayTitle(title, start);
-  const titleHasTime = text !== title;
   const lines = Math.max(1, Math.floor((height - 2) / LINE_PX));
-  // 時間另佔一行：塊夠高（至少還能放 2 行標題）且標題裡沒有時間才顯示
-  const showTime = !titleHasTime && lines >= 3;
-  const titleLines = showTime ? lines - 1 : lines;
   return (
-    <>
-      <span
-        className="overflow-hidden text-[11px] font-medium leading-[1.2] [overflow-wrap:anywhere]"
-        style={{
-          display: "-webkit-box",
-          WebkitBoxOrient: "vertical",
-          WebkitLineClamp: titleLines,
-          // 窄欄（同時段多筆並排）字縮一點，多塞幾個字
-          fontSize: narrow ? 10 : undefined,
-        }}
-      >
-        {important && (
-          <Star className="mr-0.5 inline size-2.5 fill-amber-400 align-[-1px] text-amber-500" />
-        )}
-        {title}
-      </span>
-      {showTime && (
-        <span className="mt-auto text-[9px] leading-none text-muted-foreground tabular-nums">
-          {start}
-        </span>
+    <span
+      className="overflow-hidden text-[11px] font-medium leading-[1.2] [overflow-wrap:anywhere]"
+      style={{
+        display: "-webkit-box",
+        WebkitBoxOrient: "vertical",
+        WebkitLineClamp: lines,
+        // 窄欄（同時段多筆並排）字縮一點，多塞幾個字
+        fontSize: narrow ? 10 : undefined,
+      }}
+    >
+      {important && (
+        <Star className="mr-0.5 inline size-2.5 fill-amber-400 align-[-1px] text-amber-500" />
       )}
-    </>
+      {stripLeadingTime(title)}
+    </span>
   );
 }

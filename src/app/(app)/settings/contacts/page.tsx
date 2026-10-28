@@ -36,6 +36,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CategorySelect } from "@/components/calendar/category-select";
+import { TagInput } from "@/components/calendar/tag-input";
+import { useAppData } from "@/components/app/app-data";
 import {
   BILLING_MODES,
   PAYMENT_METHODS,
@@ -87,6 +89,9 @@ interface FullContact {
   is_self: boolean;
   /** 別名（英文名等），AI 拆學習回饋時用來對應 */
   aliases: string[];
+  /** 排行程預設（0020）：選到此人自動帶入的分類與標籤 */
+  default_calendar_id: string | null;
+  default_tag_names: string[];
 }
 
 /** 表單中的一列方案（金額以字串暫存，方便輸入） */
@@ -133,6 +138,8 @@ function useContactsFull() {
         aliases: Array.isArray(c.aliases) ? c.aliases : [],
         gap_mode: c.gap_mode ?? "off",
         is_self: c.is_self ?? false,
+        default_calendar_id: c.default_calendar_id ?? null,
+        default_tag_names: Array.isArray(c.default_tag_names) ? c.default_tag_names : [],
         plans: plans.get(c.id) ?? [],
       }));
     },
@@ -314,6 +321,9 @@ function ContactFormDialog({
   const [routine, setRoutine] = useState<RoutineBlock[]>([]);
   const [gapMode, setGapMode] = useState<GapMode>("off");
   const [isSelf, setIsSelf] = useState(false);
+  const [defaultCalendarId, setDefaultCalendarId] = useState<string | null>(null);
+  const [defaultTagNames, setDefaultTagNames] = useState<string[]>([]);
+  const { ownedCalendars, sharedCalendars } = useAppData();
   const [pending, startTransition] = useTransition();
   const [init, setInit] = useState(false);
 
@@ -344,6 +354,8 @@ function ContactFormDialog({
     setDefaultCategoryId(contact?.default_category_id ?? null);
     setDefaultDirection(contact?.default_direction ?? "expense");
     setDefaultPaymentMethod(contact?.default_payment_method ?? "");
+    setDefaultCalendarId(contact?.default_calendar_id ?? null);
+    setDefaultTagNames(contact?.default_tag_names ?? []);
     setInit(true);
   }
   if (!open && init) setInit(false);
@@ -386,6 +398,8 @@ function ContactFormDialog({
         defaultCategoryId: defaultCategoryId,
         defaultDirection: hasRate ? defaultDirection : null,
         defaultPaymentMethod: defaultPaymentMethod || null,
+        defaultCalendarId,
+        defaultTagNames,
       };
       const res =
         mode === "create"
@@ -576,6 +590,47 @@ function ContactFormDialog({
               </div>
             </div>
           </div>
+
+          {/* 排行程預設：選到此人自動帶入分類、標籤（回饋 23：同一位老師分類常選錯／漏選） */}
+          {!isFamily && (
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+              <div className="text-sm font-medium">
+                排行程預設（選填）
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  新增行程時在「相關人物」選到此人，自動帶入分類與標籤（費用類別在上面）
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">分類</Label>
+                <Select
+                  value={defaultCalendarId ?? "none"}
+                  onValueChange={(v) => setDefaultCalendarId(v === "none" ? null : v)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">不指定</SelectItem>
+                    {[...ownedCalendars, ...sharedCalendars].map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="size-2.5 rounded-full"
+                            style={{ backgroundColor: c.color }}
+                          />
+                          {c.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">標籤</Label>
+                <TagInput value={defaultTagNames} onChange={setDefaultTagNames} />
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

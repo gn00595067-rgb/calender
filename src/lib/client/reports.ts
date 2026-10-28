@@ -35,6 +35,8 @@ export interface FinanceItem {
   calendar_id: string | null;
   event_id: string | null;
   event_title: string | null;
+  /** 行程長度（分鐘）；整日或無關聯行程為 null。月報「時數」欄用 */
+  event_minutes: number | null;
   contact_id: string | null;
   contact_name: string | null;
   /** 這筆費用所屬行程的主角（誰的行程）；供「依主角」統計。空＝本人 */
@@ -90,8 +92,19 @@ export function useFinanceRange(
 
       const [evRes, ctRes, catRes] = await Promise.all([
         eventIds.length
-          ? supabase.from("events").select("id, title").in("id", eventIds)
-          : Promise.resolve({ data: [] as { id: string; title: string }[] }),
+          ? supabase
+              .from("events")
+              .select("id, title, starts_at, ends_at, all_day")
+              .in("id", eventIds)
+          : Promise.resolve({
+              data: [] as {
+                id: string;
+                title: string;
+                starts_at: string;
+                ends_at: string;
+                all_day: boolean;
+              }[],
+            }),
         contactIds.length
           ? supabase.from("contacts").select("id, name").in("id", contactIds)
           : Promise.resolve({ data: [] as { id: string; name: string }[] }),
@@ -105,6 +118,12 @@ export function useFinanceRange(
             }),
       ]);
       const evTitle = new Map((evRes.data ?? []).map((e) => [e.id, e.title]));
+      const evMinutes = new Map(
+        (evRes.data ?? []).map((e) => [
+          e.id,
+          e.all_day ? null : Math.round((+new Date(e.ends_at) - +new Date(e.starts_at)) / 60000),
+        ]),
+      );
       const ctName = new Map((ctRes.data ?? []).map((c) => [c.id, c.name]));
       const catById = new Map((catRes.data ?? []).map((c) => [c.id, c]));
 
@@ -159,6 +178,7 @@ export function useFinanceRange(
           category_name: cat?.name ?? r.category_label ?? null,
           category_group: cat?.group_label ?? null,
           event_title: r.event_id ? (evTitle.get(r.event_id) ?? null) : null,
+          event_minutes: r.event_id ? (evMinutes.get(r.event_id) ?? null) : null,
           contact_name: r.contact_id ? (ctName.get(r.contact_id) ?? null) : null,
           subject_names: r.event_id
             ? (subjectsByEvent.get(r.event_id) ?? [])

@@ -184,6 +184,9 @@ export interface Database {
           aliases?: string[];
           // 0018 月薪（工作效益比對用）
           monthly_salary?: number | null;
+          // 0020 排行程預設
+          default_calendar_id?: string | null;
+          default_tag_names?: string[];
           default_payment_method:
             | "monthly"
             | "per_time"
@@ -212,6 +215,9 @@ export interface Database {
           // 0017 別名（英文名等）
           aliases?: string[];
           monthly_salary?: number | null;
+          // 0020 排行程預設
+          default_calendar_id?: string | null;
+          default_tag_names?: string[];
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -240,6 +246,9 @@ export interface Database {
           // 0017 別名（英文名等）
           aliases?: string[];
           monthly_salary?: number | null;
+          // 0020 排行程預設
+          default_calendar_id?: string | null;
+          default_tag_names?: string[];
           default_payment_method?:
             | "monthly"
             | "per_time"

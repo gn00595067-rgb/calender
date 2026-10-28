@@ -103,7 +103,11 @@ export function EventDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent
+          className="max-h-[90vh] overflow-y-auto sm:max-w-lg"
+          // 不自動聚焦到回饋輸入框：手機一打開就跳鍵盤，看起來像進了編輯（回饋 21）
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <div className="flex items-start gap-2">
               {cal && (

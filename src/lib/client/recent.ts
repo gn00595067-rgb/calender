@@ -26,22 +26,19 @@ export class EditLogUnavailable extends Error {}
  * 給第二個人核對有沒有漏、有沒有改錯。
  * spec：docs/specs/新增確認與新增紀錄.md
  */
-export function useRecentEvents(sinceIso: string, kind: RecentKind) {
+export function useRecentEvents(sinceIso: string, untilIso: string | null, kind: RecentKind) {
   return useQuery({
-    queryKey: ["events", "recent", kind, sinceIso],
+    queryKey: ["events", "recent", kind, sinceIso, untilIso],
     retry: false,
     queryFn: async (): Promise<RecentItem[]> => {
       const supabase = createClient();
       const col = kind === "added" ? "created_at" : "edited_at";
-      const { data, error } = await supabase
-        .from("events")
-        .select("*")
-        .gte(col, sinceIso)
-        .order(col, { ascending: false })
-        .limit(500);
+      let q = supabase.from("events").select("*").gte(col, sinceIso);
+      if (untilIso) q = q.lt(col, untilIso);
+      const { data, error } = await q.order(col, { ascending: false }).limit(500);
       if (error) {
         if (kind === "edited" && (error.code === "42703" || error.message.includes("edited_at")))
-          throw new EditLogUnavailable("修改紀錄要等資料庫更新（0019）後才會開始記錄");
+          throw new EditLogUnavailable("修改紀錄功能還在等系統更新，更新完成後，之後每次「編輯→儲存」都會列在這裡");
         throw new Error(error.message);
       }
       const rows = data ?? [];

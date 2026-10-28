@@ -209,6 +209,9 @@ export interface ContactBilling {
     | null;
   /** 收費方案（1對1／1對2…），依 position 排序；沒設收費者為空陣列 */
   plans: RatePlan[];
+  /** 排行程預設（0020 前為 null／空） */
+  default_calendar_id: string | null;
+  default_tag_names: string[];
 }
 
 type ContactPlanSource = {
@@ -285,13 +288,23 @@ export function useContactsBilling() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("contacts")
-        .select(
-          "id, name, billing_mode, default_rate, default_category_id, default_direction, default_payment_method",
-        );
+        // 用 *：0020 前的庫沒有 default_calendar_id，列欄位會查詢失敗
+        .select("*");
       if (error) throw new Error(error.message);
       const rows = data ?? [];
       const plans = await fetchPlansByContact(rows);
-      return rows.map((c) => ({ ...c, plans: plans.get(c.id) ?? [] }));
+      return rows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        billing_mode: c.billing_mode,
+        default_rate: c.default_rate,
+        default_category_id: c.default_category_id,
+        default_direction: c.default_direction,
+        default_payment_method: c.default_payment_method,
+        plans: plans.get(c.id) ?? [],
+        default_calendar_id: c.default_calendar_id ?? null,
+        default_tag_names: Array.isArray(c.default_tag_names) ? c.default_tag_names : [],
+      }));
     },
   });
 }

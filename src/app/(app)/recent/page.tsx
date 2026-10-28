@@ -19,9 +19,20 @@ import { eventSentence, summaryFromEvents } from "@/lib/event-summary";
 import { fmt, taipeiDateStartUtcISO, taipeiTodayStr } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
-type Range = "today" | "week";
+type Range = "today" | "week" | "lastWeek";
 /** 排序：輸入／修改時間（新→舊）、行程日期近→遠、遠→近、依分類 */
 type Sort = "input" | "dateAsc" | "dateDesc" | "calendar";
+
+/** yyyy-MM-dd 加減天數 */
+function plusDays(ds: string, n: number): string {
+  return new Date(new Date(`${ds}T12:00:00Z`).getTime() + n * 86400000).toISOString().slice(0, 10);
+}
+
+/** yyyy-MM-dd → 10/26 */
+function md(ds: string): string {
+  const [, m, d] = ds.split("-").map(Number);
+  return `${m}/${d}`;
+}
 
 /** 本週一（台北）yyyy-MM-dd */
 function mondayOf(today: string): string {
@@ -71,8 +82,20 @@ export default function RecentPage() {
   const [range, setRange] = useState<Range>("today");
   const [sort, setSort] = useState<Sort>("input");
   const today = taipeiTodayStr();
-  const since = taipeiDateStartUtcISO(range === "today" ? today : mondayOf(today));
-  const { data, isLoading, error, refetch } = useRecentEvents(since, kind);
+  // 週＝週一到週日（如 10/26–11/1）
+  const monday = mondayOf(today);
+  const lastMonday = plusDays(monday, -7);
+  const since = taipeiDateStartUtcISO(
+    range === "today" ? today : range === "week" ? monday : lastMonday,
+  );
+  const until = range === "lastWeek" ? taipeiDateStartUtcISO(monday) : null;
+  const rangeLabel =
+    range === "today"
+      ? md(today)
+      : range === "week"
+        ? `${md(monday)}–${md(plusDays(monday, 6))}`
+        : `${md(lastMonday)}–${md(plusDays(lastMonday, 6))}`;
+  const { data, isLoading, error, refetch } = useRecentEvents(since, until, kind);
   const { calendarById } = useAppData();
   const { data: contacts = [] } = useContacts();
   const selfName = contacts.find((c) => c.is_self)?.name ?? null;
@@ -103,7 +126,7 @@ export default function RecentPage() {
       return [...m.entries()];
     }
     for (const it of items) {
-      const k = range === "week" ? `${fmt(it.at, "M/d（EEE）")} ${verb}` : "";
+      const k = range !== "today" ? `${fmt(it.at, "M/d（EEE）")} ${verb}` : "";
       m.set(k, [...(m.get(k) ?? []), it]);
     }
     return [...m.entries()];
@@ -132,10 +155,15 @@ export default function RecentPage() {
           options={[
             { v: "today", l: kind === "added" ? "今天新增" : "今天修改" },
             { v: "week", l: kind === "added" ? "本週新增" : "本週修改" },
+            { v: "lastWeek", l: kind === "added" ? "上週新增" : "上週修改" },
           ]}
           value={range}
           onChange={setRange}
         />
+        <p className="text-xs text-muted-foreground">
+          {rangeLabel}
+          {range === "today" ? "" : "（每週從週一算到週日）"}
+        </p>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">排序</span>
           <Chips
@@ -161,7 +189,7 @@ export default function RecentPage() {
       ) : total === 0 ? (
         <EmptyState
           icon={ClipboardCheck}
-          title={`${range === "today" ? "今天" : "本週"}還沒有${kind === "added" ? "新增" : "修改"}行程`}
+          title={`${range === "today" ? "今天" : range === "week" ? "本週" : "上週"}沒有${kind === "added" ? "新增" : "修改"}行程`}
         />
       ) : (
         <div className="space-y-4">

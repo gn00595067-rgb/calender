@@ -203,6 +203,8 @@ export function EventModal({
   const planManualRef = useRef(false);
   /** 上一次處理過的收費老師（偵測換老師） */
   const billingContactRef = useRef<string | null>(null);
+  /** 已套用過「排行程預設」的人物（每位只套一次） */
+  const templateRef = useRef<string | null>(null);
   /** 不是上課而沒有自動帶入上課費時的說明（顯示在財務區） */
   const [feeSkipNote, setFeeSkipNote] = useState<string | null>(null);
   /** 語音帶入時先只看一句話摘要，全部欄位收起來；要改再展開 */
@@ -276,6 +278,7 @@ export function EventModal({
     reminderTouchedRef.current = false;
     planManualRef.current = false;
     billingContactRef.current = null;
+    templateRef.current = null;
     setFeeSkipNote(null);
     setDetailsOpen(!(mode === "create" && !!draft?.voice));
     // 語音已判斷出主角時以語音為準；編輯舊行程不自動改
@@ -475,6 +478,27 @@ export function EventModal({
       a.contact_id === firstContactId ||
       a.id === watch("financePrepaidAccountId"),
   );
+
+  // 排行程預設：相關人物中第一位有設預設分類／標籤的人（回饋 23：采婕＝哥哥+妹妹、家教）
+  const templateContact =
+    participantIds
+      .map((id) => (contactsBilling.data ?? []).find((b) => b.id === id))
+      .find((b) => b && (b.default_calendar_id || b.default_tag_names.length > 0)) ?? null;
+  const templateCalendar =
+    templateContact?.default_calendar_id &&
+    editableCalendars.some((c) => c.id === templateContact.default_calendar_id)
+      ? templateContact.default_calendar_id
+      : null;
+  useEffect(() => {
+    if (!open || mode !== "create" || !templateContact) return;
+    if (templateRef.current === templateContact.id) return;
+    templateRef.current = templateContact.id;
+    if (templateCalendar) setValue("calendarId", templateCalendar);
+    const tags = getValues("tagNames");
+    const add = templateContact.default_tag_names.filter((t) => !tags.includes(t));
+    if (add.length) setValue("tagNames", [...tags, ...add]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, templateContact?.id]);
 
   // 選到「有收費方案」的老師 → 帶入財務預設（類別/方向/付款方式）。
   // 每位老師只套用一次；使用者已自行輸入金額時不覆蓋。
@@ -917,6 +941,21 @@ export function EventModal({
                   </Select>
                 )}
               />
+              {/* 防呆：分類跟老師的預設不同（同一位老師分類常選錯） */}
+              {templateContact && templateCalendar && calendarId !== templateCalendar && (
+                <p className="flex flex-wrap items-center gap-x-2 text-xs text-amber-700 dark:text-amber-400">
+                  <span>
+                    {templateContact.name} 的行程平常用「{calendarById.get(templateCalendar)?.name}」分類
+                  </span>
+                  <button
+                    type="button"
+                    className="underline underline-offset-2"
+                    onClick={() => setValue("calendarId", templateCalendar)}
+                  >
+                    改用
+                  </button>
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-between rounded-lg border p-3">
@@ -984,9 +1023,9 @@ export function EventModal({
 
             <div className="space-y-2">
               <Label>
-                主角
+                誰的行程（主角）
                 <span className="ml-1 text-xs font-normal text-muted-foreground">
-                  誰的行程（小孩／本人）
+                  本人或哪個小孩
                 </span>
               </Label>
               <Controller
@@ -1006,8 +1045,12 @@ export function EventModal({
                   />
                 )}
               />
-              {autoSubjectNote && (
+              {autoSubjectNote ? (
                 <p className="text-xs text-muted-foreground">{autoSubjectNote}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  分類名稱有人名（如「哥哥+妹妹」）會自動帶入；用來算每個人的空檔、費用分攤與報表。
+                </p>
               )}
             </div>
 
@@ -1040,6 +1083,10 @@ export function EventModal({
                   />
                 )}
               />
+              {/* 回饋 20：會不會通知對方？能不能在這裡新增？ */}
+              <p className="text-xs text-muted-foreground">
+                只是記錄是跟誰，不會通知對方。清單裡沒有的人，在選單最下面輸入姓名按「＋」就能新增。
+              </p>
             </div>
 
             <div className="space-y-2">

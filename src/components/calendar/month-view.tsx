@@ -6,6 +6,7 @@ import { CalendarRange, Plus } from "lucide-react";
 import { zoned } from "@/lib/calendar-utils";
 import { D } from "@/lib/date";
 import { cn } from "@/lib/utils";
+import { useNarrow } from "@/lib/client/use-narrow";
 import {
   freeOnDay,
   eventSegmentOnDay,
@@ -228,6 +229,8 @@ export function MonthView({
   };
   // 點某天 → 從底部滑出當天面板（不切走視圖，關掉即回月曆）。
   const [peekDay, setPeekDay] = useState<string | null>(null);
+  // 手機格子小、點日期很容易點到行程：點行程先開當天全部行程，再點要看的那筆（回饋 21）
+  const narrow = useNarrow();
 
   const byDay = new Map<string, CalEvent[]>();
   // 跨日行程：月曆格上改畫成橫條，不在每天重複列 chip
@@ -453,7 +456,7 @@ export function MonthView({
                                 event={ev}
                                 color={colorOf(ev.calendar_id)}
                                 conflict={conflicts.has(ev.id)}
-                                onClick={() => onSelectEvent(ev)}
+                                onClick={() => (narrow ? setPeekDay(ds) : onSelectEvent(ev))}
                               />
                             </div>,
                           );
@@ -482,7 +485,7 @@ export function MonthView({
                               event={ev}
                               color={colorOf(ev.calendar_id)}
                               conflict={conflicts.has(ev.id)}
-                              onClick={() => onSelectEvent(ev)}
+                              onClick={() => (narrow ? setPeekDay(ds) : onSelectEvent(ev))}
                             />
                           </Fragment>
                         );

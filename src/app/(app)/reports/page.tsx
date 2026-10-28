@@ -330,6 +330,7 @@ export default function ReportsPage() {
       "人物",
       "主角",
       "上課形式",
+      "時數",
       "加收（交通費等）",
       "每位主角分攤",
       "行程",
@@ -340,12 +341,14 @@ export default function ReportsPage() {
       "結清狀態",
     ];
     const rows = finance.map((f) => [
-      f.occurred_on,
+      // 2026/10/31(六)：老師月報核對時一眼看出星期
+      `${f.occurred_on.replaceAll("-", "/")}(${"日一二三四五六"[new Date(`${f.occurred_on}T12:00:00Z`).getUTCDay()]})`,
       calendarById.get(f.calendar_id ?? "")?.name ?? "",
       f.category_name ?? "",
       f.contact_name ?? "",
       f.subject_names.join("、"),
       f.lesson_label ?? "",
+      f.event_minutes != null ? Math.round((f.event_minutes / 60) * 100) / 100 : "",
       f.extra_fee ? `${f.extra_label || "交通費"} ${f.extra_fee}` : "",
       f.subject_names.length >= 2
         ? splitAmount(f.amount, f.subject_names.length).join("／")

@@ -51,7 +51,36 @@ const contactSchema = z.object({
     .enum(["monthly", "per_time", "per_time_cash", "prepaid_deduct", "prepaid_term"])
     .optional()
     .nullable(),
+  // 排行程預設（0020）：選到此人自動帶入的分類與標籤；未提供＝不動
+  defaultCalendarId: z.uuid().optional().nullable(),
+  defaultTagNames: z.array(z.string().trim().min(1).max(30)).max(10).optional(),
 });
+
+/**
+ * 排行程預設另外寫（尚未套 0020 時：沒設定就略過；有設定才提示要更新資料庫）。
+ * 回傳錯誤訊息（null＝成功）。
+ */
+async function writeEventDefaults(
+  supabase: Awaited<ReturnType<typeof getAuthed>>["supabase"],
+  id: string,
+  d: z.infer<typeof contactSchema>,
+): Promise<string | null> {
+  if (d.defaultCalendarId === undefined && d.defaultTagNames === undefined) return null;
+  const { error } = await supabase
+    .from("contacts")
+    .update({
+      default_calendar_id: d.defaultCalendarId ?? null,
+      default_tag_names: d.defaultTagNames ?? [],
+    })
+    .eq("id", id);
+  if (!error) return null;
+  if (/default_calendar_id|default_tag_names/.test(error.message)) {
+    return d.defaultCalendarId || d.defaultTagNames?.length
+      ? "人物已儲存，但「排行程預設」需先套用資料庫更新（0020）才能保存"
+      : null;
+  }
+  return error.message;
+}
 
 /**
  * 收費欄位 → DB 欄位（create/update 共用）。
@@ -221,6 +250,8 @@ export async function createContactAction(
       const planErr = await syncPlans(supabase, user.id, data.id, parsed.data.plans);
       if (planErr) return fail(planErr);
     }
+    const defErr = await writeEventDefaults(supabase, data.id, parsed.data);
+    if (defErr) return fail(defErr);
     revalidatePath("/", "layout");
     return { ok: true, data };
   } catch (e) {
@@ -265,6 +296,8 @@ export async function updateContactAction(
       const planErr = await syncPlans(supabase, user.id, id, parsed.data.plans);
       if (planErr) return fail(planErr);
     }
+    const defErr = await writeEventDefaults(supabase, id, parsed.data);
+    if (defErr) return fail(defErr);
     revalidatePath("/", "layout");
     return { ok: true, data: undefined };
   } catch (e) {
