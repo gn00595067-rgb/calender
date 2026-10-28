@@ -54,6 +54,8 @@ const contactSchema = z.object({
   // 排行程預設（0020）：選到此人自動帶入的分類與標籤；未提供＝不動
   defaultCalendarId: z.uuid().optional().nullable(),
   defaultTagNames: z.array(z.string().trim().min(1).max(30)).max(10).optional(),
+  // 每堂課要寫回饋（0021）；未提供＝不動
+  needsFeedback: z.boolean().optional(),
 });
 
 /**
@@ -65,6 +67,14 @@ async function writeEventDefaults(
   id: string,
   d: z.infer<typeof contactSchema>,
 ): Promise<string | null> {
+  if (d.needsFeedback !== undefined) {
+    const { error: fbErr } = await supabase
+      .from("contacts")
+      .update({ needs_feedback: d.needsFeedback })
+      .eq("id", id);
+    if (fbErr && d.needsFeedback && /needs_feedback/.test(fbErr.message))
+      return "人物已儲存，但「每堂課都要寫學習回饋」需先套用資料庫更新（0021）才能保存";
+  }
   if (d.defaultCalendarId === undefined && d.defaultTagNames === undefined) return null;
   const { error } = await supabase
     .from("contacts")

@@ -568,3 +568,15 @@ spec：`docs/specs/時間衝突提醒.md`。
 
 **追加（10/29）**：使用者已套 0019、0020，驗證欄位都在（driver_dropoff_location、edited_at、edited_by、default_calendar_id、default_tag_names）。修改紀錄從套用後開始記。
 **下一步**：請雅雲在人物設定老師的排行程預設；實測系列改費用（#13）與修改紀錄。
+
+---
+
+## 2026-10-29 — 回饋 22：老師自填回饋＋缺回饋不付款
+
+**做了什麼**：
+- A：人物（非家人）勾「每堂課都要寫學習回饋」；報表「依老師」顯示「缺回饋 N 堂，暫不付款」、明細標「缺回饋」，全部結清前跳確認。
+- B：人物管理「老師帳號」建立／重設密碼／停用（`src/lib/actions/teachers.ts`，管理金鑰），產生可直接貼 LINE 的帳密訊息；老師登入一律導到 `/teach`「我的課與回饋」：過去 31 天～未來 7 天、還沒寫的排最上面、填課程進度＋回饋、可刪自己的。
+- migration `0021_teacher_feedback.sql`（needs_feedback、teacher_user_id、is_event_teacher／my_teacher_links／teacher_lessons、event_notes 與 profiles 政策）。spec：`docs/specs/老師自填回饋與缺回饋不付款.md`。
+**驗證**：tsc 0 錯誤、eslint 0 錯誤（1 個原有警告）、next build 過（含 /teach）。
+**未驗證**：0021 未套用，老師登入與權限尚未實測。
+**下一步**：套 0021 → 用測試老師驗證：只看到自己的課、看不到費用與別人的回饋、送出後家長端看得到。

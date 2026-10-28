@@ -35,11 +35,21 @@ import { EmptyState, ListSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ProgressBlock } from "@/components/calendar/notes-section";
 import { useAppData } from "@/components/app/app-data";
 import { can } from "@/lib/permissions";
 import {
   useFinanceRange,
+  useFeedbackCheck,
   useNotesRange,
   useTagStatsRange,
   type FinanceItem,
@@ -301,6 +311,26 @@ export default function ReportsPage() {
     router.refresh();
   };
 
+  // 缺回饋（回饋 22）：要寫回饋的老師、已上完（≤ 今天）、那堂一則回饋都沒有
+  const feedback = useFeedbackCheck(
+    finance.map((f) => f.event_id).filter((id): id is string => !!id),
+  );
+  const today = taipeiTodayStr();
+  const missingFeedback = (f: FinanceItem): boolean =>
+    !!feedback.data &&
+    !!f.event_id &&
+    !!f.contact_id &&
+    feedback.data.needIds.has(f.contact_id) &&
+    isSession(f) &&
+    f.occurred_on <= today &&
+    !feedback.data.noted.has(f.event_id);
+  /** 「全部結清」前若有缺回饋：先確認（例外狀況由人判斷） */
+  const [settleConfirm, setSettleConfirm] = useState<{
+    name: string;
+    missing: number;
+    ids: string[];
+  } | null>(null);
+
   const settle = (ids: string[], settled: boolean) => {
     if (ids.length === 0) return;
     startTransition(async () => {
@@ -517,6 +547,7 @@ export default function ReportsPage() {
                 const unsettledIds = g.items
                   .filter((i) => !i.is_settled && !i.covered_by_prepaid)
                   .map((i) => i.id);
+                const missing = g.items.filter(missingFeedback).length;
                 return (
                   <div key={g.key}>
                     <div className="flex items-center gap-2 p-3">
@@ -536,6 +567,11 @@ export default function ReportsPage() {
                             {g.sessions} 堂
                             {unsettledIds.length > 0 && ` · 未結清 ${unsettledIds.length}`}
                           </div>
+                          {missing > 0 && (
+                            <div className="mt-0.5 text-xs font-medium text-red-600 dark:text-red-400">
+                              缺回饋 {missing} 堂，暫不付款
+                            </div>
+                          )}
                           {g.lessons.length > 0 && (
                             <div className="mt-0.5 flex flex-wrap gap-1 text-[11px] text-muted-foreground">
                               {g.lessons.map((l) => (
@@ -558,7 +594,11 @@ export default function ReportsPage() {
                           variant="outline"
                           size="sm"
                           disabled={pending}
-                          onClick={() => settle(unsettledIds, true)}
+                          onClick={() =>
+                            missing > 0
+                              ? setSettleConfirm({ name: g.name, missing, ids: unsettledIds })
+                              : settle(unsettledIds, true)
+                          }
                         >
                           全部結清
                         </Button>
@@ -601,6 +641,11 @@ export default function ReportsPage() {
                                   </span>
                                 )}
                               </span>
+                              {missingFeedback(item) && (
+                                <span className="shrink-0 rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-600 dark:bg-red-950/40 dark:text-red-400">
+                                  缺回饋
+                                </span>
+                              )}
                               <span className="shrink-0 tabular-nums">{twd(item.amount)}</span>
                               <span
                                 className={cn(
@@ -849,6 +894,30 @@ export default function ReportsPage() {
           </div>
         )}
       </section>
+      <AlertDialog open={!!settleConfirm} onOpenChange={(o) => !o && setSettleConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {settleConfirm?.name} 還有 {settleConfirm?.missing} 堂沒有回饋
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              照規定缺回饋暫不付款。展開明細可以看到是哪幾堂（標「缺回饋」）。確定還是要全部結清嗎？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>先不要</AlertDialogCancel>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (settleConfirm) settle(settleConfirm.ids, true);
+                setSettleConfirm(null);
+              }}
+            >
+              照樣結清
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -30,6 +30,10 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
   await ensureBootstrap(user);
 
+  // 老師帳號（人物管理建立的）只用來寫回饋：一律進老師頁（0021 未套用時查詢失敗，照常進行事曆）
+  const { data: teacherLinks } = await supabase.rpc("my_teacher_links");
+  if (teacherLinks && teacherLinks.length > 0) redirect("/teach");
+
   const [calendars, profileRes] = await Promise.all([
     getAccessibleCalendars(user.id),
     supabase.from("profiles").select("display_name").eq("id", user.id).single(),

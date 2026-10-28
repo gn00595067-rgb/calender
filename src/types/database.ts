@@ -187,6 +187,9 @@ export interface Database {
           // 0020 排行程預設
           default_calendar_id?: string | null;
           default_tag_names?: string[];
+          // 0021 老師自填回饋
+          needs_feedback?: boolean;
+          teacher_user_id?: string | null;
           default_payment_method:
             | "monthly"
             | "per_time"
@@ -218,6 +221,9 @@ export interface Database {
           // 0020 排行程預設
           default_calendar_id?: string | null;
           default_tag_names?: string[];
+          // 0021 老師自填回饋
+          needs_feedback?: boolean;
+          teacher_user_id?: string | null;
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -249,6 +255,9 @@ export interface Database {
           // 0020 排行程預設
           default_calendar_id?: string | null;
           default_tag_names?: string[];
+          // 0021 老師自填回饋
+          needs_feedback?: boolean;
+          teacher_user_id?: string | null;
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -671,7 +680,27 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      // 0021 老師自填回饋
+      teacher_lessons: {
+        Args: { p_from: string; p_to: string };
+        Returns: {
+          event_id: string;
+          title: string;
+          starts_at: string;
+          ends_at: string;
+          all_day: boolean;
+          location: string | null;
+          subject_names: string[];
+          my_note_count: number;
+          note_count: number;
+        }[];
+      };
+      my_teacher_links: {
+        Args: Record<string, never>;
+        Returns: { contact_id: string; contact_name: string; owner_name: string }[];
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

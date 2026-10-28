@@ -61,6 +61,7 @@ import {
   updateContactAction,
   deleteContactAction,
 } from "@/lib/actions/contacts";
+import { TeacherAccountPanel } from "@/components/app/teacher-account-panel";
 
 interface FullContact {
   id: string;
@@ -92,6 +93,9 @@ interface FullContact {
   /** 排行程預設（0020）：選到此人自動帶入的分類與標籤 */
   default_calendar_id: string | null;
   default_tag_names: string[];
+  /** 0021：每堂課要寫回饋（報表檢查缺回饋）、老師登入帳號 */
+  needs_feedback: boolean;
+  teacher_user_id: string | null;
 }
 
 /** 表單中的一列方案（金額以字串暫存，方便輸入） */
@@ -140,6 +144,8 @@ function useContactsFull() {
         is_self: c.is_self ?? false,
         default_calendar_id: c.default_calendar_id ?? null,
         default_tag_names: Array.isArray(c.default_tag_names) ? c.default_tag_names : [],
+        needs_feedback: c.needs_feedback ?? false,
+        teacher_user_id: c.teacher_user_id ?? null,
         plans: plans.get(c.id) ?? [],
       }));
     },
@@ -323,6 +329,7 @@ function ContactFormDialog({
   const [isSelf, setIsSelf] = useState(false);
   const [defaultCalendarId, setDefaultCalendarId] = useState<string | null>(null);
   const [defaultTagNames, setDefaultTagNames] = useState<string[]>([]);
+  const [needsFeedback, setNeedsFeedback] = useState(false);
   const { ownedCalendars, sharedCalendars } = useAppData();
   const [pending, startTransition] = useTransition();
   const [init, setInit] = useState(false);
@@ -356,6 +363,7 @@ function ContactFormDialog({
     setDefaultPaymentMethod(contact?.default_payment_method ?? "");
     setDefaultCalendarId(contact?.default_calendar_id ?? null);
     setDefaultTagNames(contact?.default_tag_names ?? []);
+    setNeedsFeedback(contact?.needs_feedback ?? false);
     setInit(true);
   }
   if (!open && init) setInit(false);
@@ -400,6 +408,7 @@ function ContactFormDialog({
         defaultPaymentMethod: defaultPaymentMethod || null,
         defaultCalendarId,
         defaultTagNames,
+        needsFeedback: isFamily ? false : needsFeedback,
       };
       const res =
         mode === "create"
@@ -629,6 +638,37 @@ function ContactFormDialog({
                 <Label className="text-xs">標籤</Label>
                 <TagInput value={defaultTagNames} onChange={setDefaultTagNames} />
               </div>
+            </div>
+          )}
+
+          {/* 學習回饋：缺回饋不付款＋老師自己登入填（回饋 22） */}
+          {!isFamily && (
+            <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={needsFeedback}
+                  onCheckedChange={(c) => setNeedsFeedback(!!c)}
+                />
+                <span>
+                  <span className="font-medium">每堂課都要寫學習回饋</span>
+                  <span className="block text-xs text-muted-foreground">
+                    報表結算時會列出缺回饋的堂數，提醒「缺回饋，暫不付款」
+                  </span>
+                </span>
+              </label>
+              {mode === "edit" && contact ? (
+                <TeacherAccountPanel
+                  contactId={contact.id}
+                  contactName={contact.name}
+                  linked={!!contact.teacher_user_id}
+                  onChanged={onDone}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  存好這位人物後，再打開編輯就能建立「老師帳號」，讓老師自己登入寫回饋。
+                </p>
+              )}
             </div>
           )}
         </div>

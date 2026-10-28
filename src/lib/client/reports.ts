@@ -333,3 +333,33 @@ export function useNotesRange(
     },
   });
 }
+
+/**
+ * 缺回饋檢查（回饋 22）：哪些老師要寫回饋、哪些堂課已經有回饋。
+ * 0021 未套用時 needs_feedback 不存在 → 視為都不用檢查。
+ */
+export function useFeedbackCheck(eventIds: string[]) {
+  const ids = [...new Set(eventIds)].sort();
+  return useQuery({
+    queryKey: ["report-feedback", ids],
+    queryFn: async (): Promise<{ needIds: Set<string>; noted: Set<string> }> => {
+      const supabase = createClient();
+      const { data: contacts } = await supabase.from("contacts").select("*");
+      const needIds = new Set(
+        (contacts ?? []).filter((c) => c.needs_feedback).map((c) => c.id),
+      );
+      const noted = new Set<string>();
+      if (needIds.size && ids.length) {
+        // 分批查，避免網址太長
+        for (let i = 0; i < ids.length; i += 200) {
+          const { data } = await supabase
+            .from("event_notes")
+            .select("event_id")
+            .in("event_id", ids.slice(i, i + 200));
+          for (const r of data ?? []) noted.add(r.event_id);
+        }
+      }
+      return { needIds, noted };
+    },
+  });
+}
