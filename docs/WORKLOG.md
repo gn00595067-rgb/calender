@@ -580,3 +580,5 @@ spec：`docs/specs/時間衝突提醒.md`。
 **驗證**：tsc 0 錯誤、eslint 0 錯誤（1 個原有警告）、next build 過（含 /teach）。
 **未驗證**：0021 未套用，老師登入與權限尚未實測。
 **下一步**：套 0021 → 用測試老師驗證：只看到自己的課、看不到費用與別人的回饋、送出後家長端看得到。
+
+**追加（10/29）**：使用者已套 0021。驗證：contacts.needs_feedback／teacher_user_id 在；測試帳號（非老師）呼叫 my_teacher_links、teacher_lessons 皆 0 筆；未登入呼叫 teacher_lessons 被擋（42501）。老師端完整流程待實測。
