@@ -37,7 +37,9 @@ const PERIODS = [
 ];
 
 /** 每小時高度（px）：一小時塞得下兩行字 */
-const PX_PER_HOUR = 34;
+const PX_PER_HOUR = 40;
+/** 色塊每行字高（12px 字、行高 1.25） */
+const LINE_PX = 15;
 /** 預設顯示 8:00–21:00，有更早／更晚的行程再自動撐開 */
 const DEFAULT_FROM = 8;
 const DEFAULT_TO = 21;
@@ -153,7 +155,7 @@ function WeekSheetInner() {
   const weeks = Array.from({ length: Math.ceil(span / 7) }, (_, w) => days.slice(w * 7, w * 7 + 7));
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-[1600px]">
       <div className="print:hidden">
         <PageHeader
           title="週行程表"
@@ -240,7 +242,7 @@ function WeekSheetInner() {
               onCreateAt={canCreate ? openCreate : undefined}
             />
           ))}
-          <p className="text-[10px] text-muted-foreground print:hidden">
+          <p className="text-xs text-muted-foreground print:hidden">
             色塊的上下位置＝實際時間；只列左側選單勾選的分類。點行程可看詳情或修改{canCreate && "；點空白處可在那個時間新增行程"}。
           </p>
         </div>
@@ -298,25 +300,25 @@ function WeekBlock({
   const hours = toH - fromH;
   const height = hours * PX_PER_HOUR;
   // 不足 7 天的最後一段也維持 7 欄寬，欄寬才和上面對齊
-  const cols = `3.75rem repeat(7, minmax(0, 1fr))`;
+  const cols = `4rem repeat(7, minmax(0, 1fr))`;
   const anyAllDay = days.some((ds) => allDayOnDay(events, ds).length > 0);
   const nowWall = taipeiNowWall();
   const nowMin = Number(nowWall.slice(11, 13)) * 60 + Number(nowWall.slice(14, 16));
 
   return (
     <section className="print:break-inside-avoid">
-      <h2 className="mb-1 text-sm font-bold">
+      <h2 className="mb-1 text-base font-bold">
         {md(days[0])}（{dow(days[0])}）– {md(days[days.length - 1])}（{dow(days[days.length - 1])}）
       </h2>
       <div className="overflow-x-auto rounded-lg border bg-card print:overflow-visible">
-        <div className="min-w-[720px] print:min-w-0">
+        <div className="min-w-[760px] print:min-w-0">
           {/* 表頭 */}
           <div className="grid border-b bg-muted/40" style={{ gridTemplateColumns: cols }}>
             <div className="border-r" />
             {days.map((ds) => (
               <div
                 key={ds}
-                className={cn("border-r py-1 text-center text-xs last:border-r-0", ds === today && "bg-primary/15")}
+                className={cn("border-r py-1.5 text-center text-sm last:border-r-0", ds === today && "bg-primary/15")}
               >
                 <span className="font-semibold">週{dow(ds)}</span>{" "}
                 <span className="text-muted-foreground">{md(ds)}</span>
@@ -327,7 +329,7 @@ function WeekBlock({
           {/* 整天 */}
           {anyAllDay && (
             <div className="grid border-b" style={{ gridTemplateColumns: cols }}>
-              <div className="flex items-center justify-center border-r text-[10px] text-muted-foreground">整天</div>
+              <div className="flex items-center justify-center border-r text-xs text-muted-foreground">整天</div>
               {days.map((ds) => (
                 <div key={ds} className="space-y-0.5 border-r p-0.5 last:border-r-0">
                   {allDayOnDay(events, ds).map((e) => (
@@ -337,7 +339,7 @@ function WeekBlock({
                       onClick={() => onSelect(e)}
                       style={eventStyle(colorOf(e.calendar_id))}
                       className={cn(
-                        "block w-full truncate rounded px-1 text-left text-[11px] font-medium",
+                        "block w-full truncate rounded px-1 text-left text-xs font-medium",
                         e.is_important && "text-red-600",
                       )}
                     >
@@ -353,7 +355,7 @@ function WeekBlock({
           <div className="grid" style={{ gridTemplateColumns: cols }}>
             <div className="relative flex border-r" style={{ height }}>
               {/* 時段帶 */}
-              <div className="relative w-5 border-r">
+              <div className="relative w-6 border-r">
                 {PERIODS.map((p, i) => {
                   const a = Math.max(p.from, fromH);
                   const b = Math.min(p.to, toH);
@@ -362,7 +364,7 @@ function WeekBlock({
                     <div
                       key={p.label}
                       className={cn(
-                        "absolute inset-x-0 flex items-center justify-center border-b text-[10px] font-semibold text-muted-foreground [writing-mode:vertical-rl]",
+                        "absolute inset-x-0 flex items-center justify-center border-b text-xs font-semibold text-muted-foreground [writing-mode:vertical-rl]",
                         i % 2 ? "bg-muted/50" : "bg-muted/20",
                       )}
                       style={{ top: (a - fromH) * PX_PER_HOUR, height: (b - a) * PX_PER_HOUR }}
@@ -375,7 +377,7 @@ function WeekBlock({
               {/* 每小時刻度 */}
               <div className="flex-1">
                 {Array.from({ length: hours }, (_, i) => (
-                  <div key={i} className="border-b pr-1 text-right text-[10px] tabular-nums text-muted-foreground" style={{ height: PX_PER_HOUR }}>
+                  <div key={i} className="border-b pr-1 text-right text-xs tabular-nums text-muted-foreground" style={{ height: PX_PER_HOUR }}>
                     {fromH + i}
                   </div>
                 ))}
@@ -417,6 +419,10 @@ function WeekBlock({
                     const h = Math.max(14, ((seg.end - seg.start) / 60) * PX_PER_HOUR);
                     const w = 100 / n;
                     const time = `${hm(seg.start)}–${hm(seg.end)}`;
+                    // 名稱可折多行填滿色塊（並排變窄時不會只剩「Phoe…」）；還有空間才加一行起訖小字
+                    const lines = Math.max(1, Math.floor((h - 2) / LINE_PX));
+                    const showTime = lines >= 2;
+                    const titleLines = showTime ? lines - 1 : lines;
                     return (
                       <button
                         key={event.id}
@@ -434,21 +440,21 @@ function WeekBlock({
                           left: `calc(${col * w}% + 1px)`,
                           width: `calc(${span * w}% - 2px)`,
                         }}
-                        className="flex flex-col overflow-hidden rounded px-1 text-left leading-[1.2] hover:brightness-95"
+                        className="flex flex-col overflow-hidden rounded px-1 py-px text-left leading-[1.25] hover:brightness-95"
                       >
                         <span
                           className={cn(
-                            "truncate text-[11px] font-medium",
-                            n > 1 && "text-[10px]",
+                            "overflow-hidden text-xs font-medium [overflow-wrap:anywhere]",
                             event.is_important && "text-red-600",
                           )}
+                          style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: titleLines }}
                         >
                           {event.is_important && (
-                            <Star className="mr-0.5 inline size-2.5 fill-amber-400 align-[-1px] text-amber-500" />
+                            <Star className="mr-0.5 inline size-3 fill-amber-400 align-[-1px] text-amber-500" />
                           )}
                           {shortTitle(event)}
                         </span>
-                        {h >= 26 && <span className="truncate text-[9px] tabular-nums opacity-70">{time}</span>}
+                        {showTime && <span className="truncate text-[11px] tabular-nums opacity-70">{time}</span>}
                       </button>
                     );
                   })}
