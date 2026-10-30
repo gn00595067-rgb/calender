@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Mic, Loader2, Sparkles } from "lucide-react";
+import { Mic, Loader2, Sparkles, Square } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { MicButton } from "./mic-button";
+import { useSpeech } from "@/lib/voice/use-speech";
 import { useAppData } from "@/components/app/app-data";
 import { can } from "@/lib/permissions";
 import { EventModal, type EventDraft } from "@/components/calendar/event-modal";
@@ -85,8 +85,57 @@ export function VoiceAddButton({
   const [editing, setEditing] = useState<{ event: CalEvent; draft: EventDraft } | null>(null);
   /** 這次關閉表單是因為存檔成功（表單先關閉、後呼叫 onSaved） */
   const savedRef = useRef(false);
+  /** 使用者自己按停止（要再改字）→ 不自動送出 */
+  const manualStopRef = useRef(false);
+
+  // 語音：按下語音助理就開始聽；停頓 4 秒沒講話自動結束並送出解析
+  const speech = useSpeech({
+    silenceMs: 4000,
+    onInterim: (t) => setText(t),
+    onFinal: (t) => {
+      setText(t);
+      if (!manualStopRef.current) void submit(t);
+    },
+    onError: (code) => {
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        toast.error("麥克風被拒絕，請在瀏覽器允許麥克風權限");
+      } else if (code === "audio-capture") {
+        toast.error("抓不到麥克風，可能被其他 App 占用，請再按一次麥克風");
+      } else if (code === "network") {
+        toast.error("語音辨識需要網路，請確認連線後再試");
+      }
+    },
+  });
 
   if (!canCreate) return null;
+
+  /** 開語音助理並直接開始聽（在點擊當下啟動，手機瀏覽器才允許收音） */
+  function openVoice() {
+    setText("");
+    setOpen(true);
+    if (speech.supported) {
+      manualStopRef.current = false;
+      speech.start("");
+    }
+  }
+
+  function toggleListen() {
+    if (speech.listening) {
+      manualStopRef.current = true;
+      speech.stop();
+    } else {
+      manualStopRef.current = false;
+      speech.start(text);
+    }
+  }
+
+  function closeVoice(o: boolean) {
+    if (!o) {
+      manualStopRef.current = true;
+      speech.stop();
+    }
+    setOpen(o);
+  }
 
   const calendars = editable.map((c) => ({ id: c.id, name: c.name }));
 
@@ -168,7 +217,16 @@ export function VoiceAddButton({
     setTimeout(() => {
       const saved = savedRef.current;
       savedRef.current = false;
-      if (queue.length === 0) return;
+      if (queue.length === 0) {
+        // 存好最後一筆：給一顆「再說一筆」，按了直接開始聽
+        if (saved) {
+          toast.success("已新增，要再說一筆嗎？", {
+            duration: 10000,
+            action: { label: "🎤 再說一筆", onClick: openVoice },
+          });
+        }
+        return;
+      }
       if (saved) {
         openNext(queue);
         return;
@@ -183,8 +241,8 @@ export function VoiceAddButton({
     }, 300);
   }
 
-  async function submit() {
-    const transcript = text.trim();
+  async function submit(spoken?: string) {
+    const transcript = (spoken ?? text).trim();
     if (!transcript || loading) return;
     setLoading(true);
     try {
@@ -236,7 +294,7 @@ export function VoiceAddButton({
           variant="outline"
           size="icon"
           className={cn("h-9 w-9 touch:size-11", className)}
-          onClick={() => setOpen(true)}
+          onClick={openVoice}
           aria-label="語音助理（搜尋或新增行程）"
           title="語音助理（搜尋或新增行程）"
         >
@@ -246,7 +304,7 @@ export function VoiceAddButton({
         <Button
           variant="outline"
           className={cn("gap-2", className)}
-          onClick={() => setOpen(true)}
+          onClick={openVoice}
         >
           <Mic className="size-4" />
           語音助理
@@ -254,7 +312,7 @@ export function VoiceAddButton({
       )}
 
       {/* 語音／文字輸入對話框 */}
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={closeVoice}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -262,41 +320,67 @@ export function VoiceAddButton({
               語音助理
             </DialogTitle>
             <DialogDescription>
-              說一句話即可，會自動判斷要「新增」「搜尋」「修改」還是「刪除」。講得越完整越準：誰、什麼時間、做什麼、跟誰、在哪、要不要司機。
-              例如「週二晚上六點哥哥桌球，郭老師，要司機接送」；沒講的部分會參考過去同類行程自動補上，並在確認畫面提醒你。
-              也可用鍵盤上的 🎤 聽寫或手動打字。
+              直接講，停頓 4 秒會自動送出。講得越完整越準：誰、什麼時間、做什麼、跟誰、在哪、要不要司機。
+              例如「週二晚上六點哥哥桌球，郭老師，要司機接送」。也可以修改、刪除或搜尋行程。
             </DialogDescription>
           </DialogHeader>
 
-          <div className="relative">
-            <Textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                  e.preventDefault();
-                  void submit();
-                }
-              }}
-              placeholder="新增：週二晚上六點哥哥桌球，要司機接送／修改：下週三的會議改到下午三點／刪除：取消11月每週二的線上會議"
-              rows={3}
-              autoFocus
-              className="pr-11"
-            />
-            <div className="absolute right-2 top-2">
-              <MicButton
-                title="開始語音辨識"
-                onInterim={(t) => setText(t)}
-                onFinal={(t) => setText(t)}
-              />
+          {speech.supported && (
+            <div className="flex flex-col items-center gap-2 py-1">
+              <button
+                type="button"
+                onClick={toggleListen}
+                disabled={loading}
+                aria-pressed={speech.listening}
+                aria-label={speech.listening ? "停止收音" : "開始講話"}
+                className={cn(
+                  "flex size-20 items-center justify-center rounded-full border-2 transition disabled:opacity-40",
+                  speech.listening
+                    ? "animate-pulse border-red-500 bg-red-500 text-white"
+                    : "border-primary bg-primary/10 text-primary hover:bg-primary/20",
+                )}
+              >
+                {speech.listening ? <Square className="size-7 fill-current" /> : <Mic className="size-9" />}
+              </button>
+              <p className="text-sm text-muted-foreground">
+                {loading
+                  ? "解析中…"
+                  : speech.listening
+                    ? "正在聽…講完停一下就會送出（點紅鈕改成手動）"
+                    : text
+                      ? "點麥克風可以接著補充"
+                      : "點麥克風開始講"}
+              </p>
             </div>
-          </div>
+          )}
+
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+            placeholder="也可以打字：週二晚上六點哥哥桌球，要司機接送"
+            rows={3}
+            // 支援語音時不自動聚焦：手機鍵盤彈出會蓋住麥克風
+            autoFocus={!speech.supported}
+          />
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+            <Button variant="outline" onClick={() => closeVoice(false)} disabled={loading}>
               取消
             </Button>
-            <Button onClick={() => void submit()} disabled={loading || !text.trim()}>
+            <Button
+              onClick={() => {
+                manualStopRef.current = true;
+                speech.stop();
+                void submit();
+              }}
+              disabled={loading || !text.trim()}
+            >
               {loading ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
