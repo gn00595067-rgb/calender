@@ -11,7 +11,6 @@ import { EventModal } from "@/components/calendar/event-modal";
 import { eventStyle, stripLeadingTime } from "@/components/calendar/event-visuals";
 import { useAppData } from "@/components/app/app-data";
 import { useCalendarEvents, type CalEvent } from "@/lib/client/events";
-import { useContacts, useGapProfiles } from "@/lib/client/lookups";
 import { layoutDay } from "@/lib/calendar-utils";
 import { allDayOnDay, eventSegmentOnDay } from "@/lib/availability";
 import { taipeiDateStartUtcISO, taipeiNowWall, taipeiTodayStr } from "@/lib/date";
@@ -41,8 +40,10 @@ const PX_PER_HOUR = 34;
 const DEFAULT_FROM = 8;
 const DEFAULT_TO = 21;
 
-/** 「沒指定主角」的行程算本人；沒設本人人物時用這個鍵 */
-const SELF_KEY = "__self";
+/** 「看誰的」只列這四位（人物設定裡的名字）；第一位是本人，沒指定這四位當主角的行程都算她的 */
+const PEOPLE = ["Peggy姐", "豪哥", "哥哥", "妹妹"];
+const SELF_KEY = PEOPLE[0];
+const PEOPLE_SET = new Set(PEOPLE);
 const HIDDEN_KEY = "week-sheet.hidden-people";
 
 function addDaysStr(ds: string, n: number): string {
@@ -70,8 +71,6 @@ function WeekSheetInner() {
     return RANGES.some((r) => r.days === d) ? d : 7;
   });
   const { calendarById } = useAppData();
-  const { data: contacts = [] } = useContacts();
-  const { data: gapProfiles } = useGapProfiles();
   const [detail, setDetail] = useState<CalEvent | null>(null);
   const [editing, setEditing] = useState<CalEvent | null>(null);
 
@@ -98,28 +97,19 @@ function WeekSheetInner() {
     }
   };
 
-  // 可選的主角：本人排第一，其他家人依名字
-  const selfName = gapProfiles?.selfName ?? contacts.find((c) => c.is_self)?.name ?? null;
-  const selfKey = selfName ?? SELF_KEY;
-  const people = useMemo(() => {
-    const fam = contacts.filter((c) => c.is_family && c.name !== selfName).map((c) => c.name);
-    return [{ key: selfKey, label: selfName ?? "本人" }, ...fam.map((n) => ({ key: n, label: n }))];
-  }, [contacts, selfName, selfKey]);
-  const familyNames = useMemo(() => new Set(people.map((p) => p.key)), [people]);
-
   const days = Array.from({ length: span }, (_, i) => addDaysStr(start, i));
   const startIso = taipeiDateStartUtcISO(start);
   const endIso = taipeiDateStartUtcISO(addDaysStr(start, span));
   const { data: events = [], isLoading, isError, error, refetch } = useCalendarEvents(startIso, endIso);
 
-  /** 這筆行程屬於誰：主角裡的家人；沒有家人主角就算本人 */
+  /** 這筆行程屬於誰：主角裡的這四位；都沒有就算本人 */
   const visible = useMemo(() => {
     if (hidden.size === 0) return events;
     return events.filter((e) => {
-      const owners = e.subjectNames.filter((n) => familyNames.has(n));
-      return (owners.length ? owners : [selfKey]).some((k) => !hidden.has(k));
+      const owners = e.subjectNames.filter((n) => PEOPLE_SET.has(n));
+      return (owners.length ? owners : [SELF_KEY]).some((k) => !hidden.has(k));
     });
-  }, [events, hidden, familyNames, selfKey]);
+  }, [events, hidden]);
 
   // 時間範圍：整段期間共用，週與週之間上下對齊好比較
   const [fromH, toH] = useMemo(() => {
@@ -178,28 +168,26 @@ function WeekSheetInner() {
             ))}
           </div>
         </div>
-        {people.length > 1 && (
-          <div className="mb-3 flex flex-wrap items-center gap-1.5 text-sm">
-            <span className="text-muted-foreground">看誰的：</span>
-            {people.map((p) => {
-              const on = !hidden.has(p.key);
-              return (
-                <button
-                  key={p.key}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => toggle(p.key)}
-                  className={cn(
-                    "rounded-full border px-3 py-0.5",
-                    on ? "border-primary bg-primary/10 font-medium text-primary" : "text-muted-foreground line-through",
-                  )}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <div className="mb-3 flex flex-wrap items-center gap-1.5 text-sm">
+          <span className="text-muted-foreground">看誰的：</span>
+          {PEOPLE.map((name) => {
+            const on = !hidden.has(name);
+            return (
+              <button
+                key={name}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggle(name)}
+                className={cn(
+                  "rounded-full border px-3 py-0.5",
+                  on ? "border-primary bg-primary/10 font-medium text-primary" : "text-muted-foreground line-through",
+                )}
+              >
+                {name}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {isError ? (
