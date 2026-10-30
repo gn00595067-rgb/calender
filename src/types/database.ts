@@ -86,6 +86,10 @@ export interface Database {
           reminder_minutes: number | null;
           reminder_email_sent_at: string | null;
           reminder_push_sent_at?: string | null;
+          // 0022 第二個提醒
+          reminder2_minutes?: number | null;
+          reminder2_email_sent_at?: string | null;
+          reminder2_push_sent_at?: string | null;
           created_at: string;
           updated_at: string;
           // 0009 司機接送（套 migration 前查不到，故標為可選）
@@ -116,6 +120,10 @@ export interface Database {
           reminder_minutes?: number | null;
           reminder_email_sent_at?: string | null;
           reminder_push_sent_at?: string | null;
+          // 0022 第二個提醒
+          reminder2_minutes?: number | null;
+          reminder2_email_sent_at?: string | null;
+          reminder2_push_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
           // 0009 司機接送（套 migration 前查不到，故標為可選）
@@ -146,6 +154,10 @@ export interface Database {
           reminder_minutes?: number | null;
           reminder_email_sent_at?: string | null;
           reminder_push_sent_at?: string | null;
+          // 0022 第二個提醒
+          reminder2_minutes?: number | null;
+          reminder2_email_sent_at?: string | null;
+          reminder2_push_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
           // 0009 司機接送（套 migration 前查不到，故標為可選）

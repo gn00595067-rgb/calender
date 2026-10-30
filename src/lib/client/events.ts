@@ -19,6 +19,8 @@ export interface CalEvent {
   recurrence_rule: string | null;
   recurrence_group_id: string | null;
   reminder_minutes: number | null;
+  /** 第二個提醒（0022 前為 null） */
+  reminder2_minutes: number | null;
   /** 全部相關者（主角＋相關人物），供顯示與搜尋相容 */
   contactNames: string[];
   /** 主角（誰的行程） */
@@ -56,6 +58,8 @@ type EventRowLite = {
   recurrence_rule: string | null;
   recurrence_group_id: string | null;
   reminder_minutes: number | null;
+  // 0022 第二個提醒（套 migration 前查不到）
+  reminder2_minutes?: number | null;
   // 0009 司機接送（套 migration 前查不到）
   needs_driver?: boolean;
   driver_trip?: DriverTrip | null;
@@ -153,6 +157,7 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
     recurrence_rule: e.recurrence_rule,
     recurrence_group_id: e.recurrence_group_id,
     reminder_minutes: e.reminder_minutes,
+    reminder2_minutes: e.reminder2_minutes ?? null,
     subjectNames: subjectsByEvent.get(e.id) ?? [],
     participantNames: participantsByEvent.get(e.id) ?? [],
     contactNames: [

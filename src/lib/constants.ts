@@ -202,6 +202,8 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
 /** 行程提醒：提前幾分鐘（null＝不提醒） */
 /** 新增行程的預設提醒（分鐘前）：活動前 2 小時（Peggy 10/30 指定）；整日行程不套用，避免前一晚跳通知 */
 export const DEFAULT_REMINDER_MINUTES = 120;
+/** 新增行程的預設「再提醒一次」：1 天前（Peggy 10/30 指定） */
+export const DEFAULT_REMINDER2_MINUTES = 1440;
 
 export const REMINDER_OPTIONS: { value: number | null; label: string }[] = [
   { value: null, label: "不提醒" },

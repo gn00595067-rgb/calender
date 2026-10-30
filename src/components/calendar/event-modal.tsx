@@ -51,6 +51,7 @@ import {
   PAYMENT_METHODS,
   REMINDER_OPTIONS,
   DEFAULT_REMINDER_MINUTES,
+  DEFAULT_REMINDER2_MINUTES,
   type PaymentMethod,
 } from "@/lib/constants";
 import { createEventAction, updateEventAction, deleteEventAction } from "@/lib/actions/events";
@@ -95,6 +96,8 @@ interface FormValues {
   /** 指定日期（多選）：開始日以外的其他日期 yyyy-MM-dd */
   recurrenceDates: string[];
   reminderMinutes: number | null;
+  /** 再提醒一次（例如 1 天前） */
+  reminder2Minutes: number | null;
   scope: "this" | "following";
   subjectIds: string[];
   participantIds: string[];
@@ -245,6 +248,7 @@ export function EventModal({
         : [wallWeekday(start)],
       recurrenceDates: draft?.recurrenceDates ?? [],
       reminderMinutes: DEFAULT_REMINDER_MINUTES,
+      reminder2Minutes: DEFAULT_REMINDER2_MINUTES,
       scope: "this",
       subjectIds: draft?.subjectIds ?? [],
       participantIds: draft?.participantIds ?? [],
@@ -300,6 +304,7 @@ export function EventModal({
         recurrenceWeekdays: [wallWeekday(utcToTaipeiWall(event.starts_at))],
         recurrenceDates: [],
         reminderMinutes: event.reminder_minutes ?? null,
+        reminder2Minutes: event.reminder2_minutes ?? null,
         scope: draft?.scope ?? "this",
         subjectIds: [],
         participantIds: [],
@@ -381,10 +386,11 @@ export function EventModal({
       .filter((c) => c.is_family && c.name && calName.includes(c.name))
       .map((c) => c.id);
   }, [calendarId, calendarById, allContacts]);
-  // 新增時預設 10 分鐘前提醒；整日行程改為不提醒（否則前一晚 23:50 會跳通知）
+  // 新增時預設 2 小時前＋1 天前提醒；整日行程改為不提醒（否則前一晚會跳通知）
   useEffect(() => {
     if (!open || mode !== "create" || reminderTouchedRef.current) return;
     setValue("reminderMinutes", allDay ? null : DEFAULT_REMINDER_MINUTES);
+    setValue("reminder2Minutes", allDay ? null : DEFAULT_REMINDER2_MINUTES);
   }, [open, mode, allDay, setValue]);
   const [autoSubjectNote, setAutoSubjectNote] = useState<string | null>(null);
   useEffect(() => {
@@ -716,6 +722,7 @@ export function EventModal({
                   ? v.recurrenceWeekdays
                   : null,
               reminderMinutes: v.reminderMinutes,
+              reminder2Minutes: v.reminder2Minutes,
               subjectIds: v.subjectIds,
               participantIds: v.participantIds,
               suffixSubjects: v.suffixSubjects,
@@ -734,6 +741,7 @@ export function EventModal({
               endWall: v.endWall,
               isImportant: v.isImportant,
               reminderMinutes: v.reminderMinutes,
+              reminder2Minutes: v.reminder2Minutes,
               scope: v.scope,
               subjectIds: v.subjectIds,
               participantIds: v.participantIds,
@@ -1138,33 +1146,39 @@ export function EventModal({
             {!allDay && (
               <div className="space-y-2">
                 <Label>提醒</Label>
-                <Controller
-                  control={control}
-                  name="reminderMinutes"
-                  render={({ field }) => (
-                    <Select
-                      value={field.value == null ? "none" : String(field.value)}
-                      onValueChange={(v) => {
-                        reminderTouchedRef.current = true;
-                        field.onChange(v === "none" ? null : Number(v));
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {REMINDER_OPTIONS.map((o) => (
-                          <SelectItem
-                            key={o.label}
-                            value={o.value == null ? "none" : String(o.value)}
-                          >
-                            {o.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
+                {/* 兩個提醒並排：預設 2 小時前＋1 天前 */}
+                <div className="grid grid-cols-2 gap-2">
+                  {(["reminderMinutes", "reminder2Minutes"] as const).map((name) => (
+                    <Controller
+                      key={name}
+                      control={control}
+                      name={name}
+                      render={({ field }) => (
+                        <Select
+                          value={field.value == null ? "none" : String(field.value)}
+                          onValueChange={(v) => {
+                            reminderTouchedRef.current = true;
+                            field.onChange(v === "none" ? null : Number(v));
+                          }}
+                        >
+                          <SelectTrigger className="w-full" aria-label={name === "reminderMinutes" ? "提醒" : "再提醒一次"}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {REMINDER_OPTIONS.map((o) => (
+                              <SelectItem
+                                key={o.label}
+                                value={o.value == null ? "none" : String(o.value)}
+                              >
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  ))}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   可提前提醒；桌面通知需開啟瀏覽器通知權限，Email 提醒依帳號設定寄送。
                 </p>

@@ -108,6 +108,8 @@ const baseEventSchema = z.object({
   weekdays: z.array(z.number().int().min(0).max(6)).optional().nullable(),
   // 提前幾分鐘提醒（null＝不提醒）
   reminderMinutes: z.number().int().min(0).max(43200).optional().nullable(),
+  // 再提醒一次（例如 1 天前）；0022 前的庫存不進去
+  reminder2Minutes: z.number().int().min(0).max(43200).optional().nullable(),
   // 主角（誰的行程）與相關人物（拜訪／參與／對象）
   subjectIds: z.array(z.uuid()).default([]),
   participantIds: z.array(z.uuid()).default([]),
@@ -150,6 +152,12 @@ const DRIVER_KEYS = [
   "driver_note",
 ] as const;
 
+/** 0022 新增的 events 欄位：第二個提醒 */
+const V22_KEYS = ["reminder2_minutes", "reminder2_email_sent_at"] as const;
+/** 0022 未套用時的警告 */
+const REMINDER2_NOT_SAVED =
+  "行程已儲存，但「再提醒一次」沒有存到：資料庫尚未更新（0022），請通知管理者";
+
 /** 0019 新增的 events 欄位：回程下車地點、修改紀錄 */
 const V19_KEYS = ["driver_dropoff_location", "edited_at", "edited_by"] as const;
 
@@ -168,15 +176,20 @@ type Strip = <T extends Record<string, unknown>>(row: T) => T;
 async function writeEvents<R extends { error: { code?: string; message?: string } | null }>(
   run: (strip: Strip) => PromiseLike<R>,
   drv: EventInput["driver"],
+  reminder2?: number | null,
 ): Promise<{ res: R; warning?: string }> {
   let res = await run((r) => r);
   let warning: string | undefined;
+  if (isMissingColumn(res.error, V22_KEYS)) {
+    res = await run((r) => omitKeys(r, V22_KEYS));
+    if (reminder2 != null) warning = REMINDER2_NOT_SAVED;
+  }
   if (isMissingColumn(res.error, V19_KEYS)) {
-    res = await run((r) => omitKeys(r, V19_KEYS));
+    res = await run((r) => omitKeys(r, [...V22_KEYS, ...V19_KEYS]));
     if (drv?.dropoffLocation) warning = DROPOFF_NOT_SAVED;
   }
   if (isMissingColumn(res.error, DRIVER_KEYS)) {
-    res = await run((r) => omitKeys(r, [...V19_KEYS, ...DRIVER_KEYS]));
+    res = await run((r) => omitKeys(r, [...V22_KEYS, ...V19_KEYS, ...DRIVER_KEYS]));
     if (drv) warning = DRIVER_NOT_SAVED;
   }
   return { res, warning };
@@ -347,6 +360,7 @@ async function insertOccurrences(
       recurrence_rule: args.rule,
       recurrence_group_id: args.groupId,
       reminder_minutes: d.reminderMinutes ?? null,
+      reminder2_minutes: d.reminder2Minutes ?? null,
       ...driverColumns(d.driver),
     };
   });
@@ -355,6 +369,7 @@ async function insertOccurrences(
   const { res, warning } = await writeEvents(
     (strip) => supabase.from("events").insert(rows.map(strip)).select("id, starts_at"),
     d.driver,
+    d.reminder2Minutes,
   );
   if (res.error) return { error: res.error.message };
   const events = res.data ?? [];
@@ -474,6 +489,8 @@ export async function updateEventAction(
       reminder_minutes: d.reminderMinutes ?? null,
       // 改動後重置 Email 已寄旗標，讓提醒重新評估
       reminder_email_sent_at: null,
+      reminder2_minutes: d.reminder2Minutes ?? null,
+      reminder2_email_sent_at: null,
       // 「修改紀錄」用（updated_at 會被提醒排程碰到，不能拿來判斷有沒有人改過）
       edited_at: new Date().toISOString(),
       edited_by: user.id,
@@ -515,6 +532,7 @@ export async function updateEventAction(
       const w = await writeEvents(
         (strip) => supabase.from("events").update(strip(patch)).eq("id", t.id),
         d.driver,
+        d.reminder2Minutes,
       );
       if (w.res.error) return fail(w.res.error.message);
       warning = w.warning ?? warning;
@@ -522,6 +540,8 @@ export async function updateEventAction(
     const targetIds = targets.map((t) => t.id);
     // 改過時間 → 推播也要重新提醒（欄位在 0016；未套用時這行失敗不影響存檔）
     await supabase.from("events").update({ reminder_push_sent_at: null }).in("id", targetIds);
+    // 第二個提醒的推播旗標（0022；未套用時失敗不影響）
+    await supabase.from("events").update({ reminder2_push_sent_at: null }).in("id", targetIds);
 
     // 人物、標籤、財務跟著套用範圍走：選「此筆與之後全部」就之後每一筆都改
     // （Peggy 回饋：改了 10/6 起的費用，10/13 之後仍是舊金額、報表也沒變）
