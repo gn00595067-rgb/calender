@@ -2,7 +2,7 @@
 
 import { Star } from "lucide-react";
 import { layoutDay } from "@/lib/calendar-utils";
-import { eventStyle } from "@/components/calendar/event-visuals";
+import { eventStyle, stripLeadingTime } from "@/components/calendar/event-visuals";
 import { D, taipeiDateStartUtcISO } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import type { CalEvent } from "@/lib/client/events";
@@ -254,15 +254,6 @@ function AllDayRow({
 
 /** 每行字高（px）：11px 字、行高 1.2 */
 const LINE_PX = 13;
-
-/** 去掉標題開頭的時間（「0730-0900小游」→「小游」）；位置已代表時間，色塊只放內容 */
-function stripLeadingTime(title: string): string {
-  // 「0730」「07:30」「0730-0900」「17-22」；時、分要合理，避免把「2026計畫」當時間
-  const m = title.match(/^(\d{1,2})(?:[:：]?(\d{2}))?(\s*[-~～–]\s*\d{1,2}(?:[:：]?\d{2})?)?\s*/);
-  if (!m || (!m[2] && !m[3]) || Number(m[1]) > 23 || Number(m[2] ?? 0) > 59) return title;
-  const rest = title.slice(m[0].length).replace(/^[\s\-–~～、,，]+/, "");
-  return rest || title;
-}
 
 /**
  * 行程塊內容：只放內容、不放時間（回饋 5-2／18：只看到時間、看不到行程）。

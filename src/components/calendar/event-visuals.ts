@@ -46,3 +46,12 @@ export function displayTitle(title: string, startHHmm: string): string {
   const rest = title.slice(m[0].length).replace(/^[\s\-–~～、,，]+/, "");
   return rest || title;
 }
+
+/** 去掉標題開頭的時間（「0730-0900小游」→「小游」）；位置已代表時間，色塊只放內容 */
+export function stripLeadingTime(title: string): string {
+  // 「0730」「07:30」「0730-0900」「17-22」；時、分要合理，避免把「2026計畫」當時間
+  const m = title.match(/^(\d{1,2})(?:[:：]?(\d{2}))?(\s*[-~～–]\s*\d{1,2}(?:[:：]?\d{2})?)?\s*/);
+  if (!m || (!m[2] && !m[3]) || Number(m[1]) > 23 || Number(m[2] ?? 0) > 59) return title;
+  const rest = title.slice(m[0].length).replace(/^[\s\-–~～、,，]+/, "");
+  return rest || title;
+}

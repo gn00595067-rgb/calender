@@ -1,104 +1,150 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, Printer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Printer, Star } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { ErrorState, ListSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
 import { EventDetailDialog } from "@/components/calendar/event-detail-dialog";
 import { EventModal } from "@/components/calendar/event-modal";
+import { eventStyle, stripLeadingTime } from "@/components/calendar/event-visuals";
 import { useAppData } from "@/components/app/app-data";
 import { useCalendarEvents, type CalEvent } from "@/lib/client/events";
-import {
-  taipeiDateStartUtcISO,
-  taipeiTodayStr,
-  utcToTaipeiWall,
-} from "@/lib/date";
+import { useContacts, useGapProfiles } from "@/lib/client/lookups";
+import { layoutDay } from "@/lib/calendar-utils";
+import { allDayOnDay, eventSegmentOnDay } from "@/lib/availability";
+import { taipeiDateStartUtcISO, taipeiNowWall, taipeiTodayStr } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
-const WD = ["一", "二", "三", "四", "五", "六", "日"];
+const WD = "日一二三四五六";
 
-/** 時段（依開始時刻）：仿 Peggy 手做的週表 */
-const PERIODS = [
-  { key: "am", label: "上午", until: "11:30" },
-  { key: "noon", label: "中午", until: "13:30" },
-  { key: "pm", label: "下午", until: "17:00" },
-  { key: "eve", label: "晚上", until: "24:00" },
+/** 快捷範圍：都從「起始日」（預設今天）往後算 */
+const RANGES = [
+  { days: 7, label: "1 週" },
+  { days: 14, label: "2 週" },
+  { days: 30, label: "1 個月" },
+  { days: 182, label: "半年" },
 ] as const;
+
+/** 左側時段帶（仿 Peggy 手做的週表）；只當底色分區，行程位置一律依實際時刻 */
+const PERIODS = [
+  { label: "上午", from: 0, to: 12 },
+  { label: "中午", from: 12, to: 13 },
+  { label: "下午", from: 13, to: 17 },
+  { label: "晚上", from: 17, to: 24 },
+];
+
+/** 每小時高度（px）：一小時塞得下兩行字 */
+const PX_PER_HOUR = 34;
+/** 預設顯示 8:00–21:00，有更早／更晚的行程再自動撐開 */
+const DEFAULT_FROM = 8;
+const DEFAULT_TO = 21;
+
+/** 「沒指定主角」的行程算本人；沒設本人人物時用這個鍵 */
+const SELF_KEY = "__self";
+const HIDDEN_KEY = "week-sheet.hidden-people";
 
 function addDaysStr(ds: string, n: number): string {
   return new Date(Date.parse(`${ds}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 }
-function mondayOf(ds: string): string {
-  const d = new Date(`${ds}T12:00:00Z`);
-  return addDaysStr(ds, -((d.getUTCDay() + 6) % 7));
-}
 function md(ds: string): string {
   return `${Number(ds.slice(5, 7))}/${Number(ds.slice(8, 10))}`;
 }
-
-/** 卡片上的時間：短行程只寫開始；兩小時以上寫起訖（17:00–22:00 Phoenix） */
-function timeText(e: CalEvent): string {
-  const s = utcToTaipeiWall(e.starts_at);
-  const en = utcToTaipeiWall(e.ends_at);
-  const long = Date.parse(e.ends_at) - Date.parse(e.starts_at) >= 2 * 3600000;
-  if (!long) return s.slice(11);
-  return `${s.slice(11)}–${en.slice(0, 10) !== s.slice(0, 10) ? `${md(en.slice(0, 10))} ` : ""}${en.slice(11)}`;
+function dow(ds: string): string {
+  return WD[new Date(`${ds}T12:00:00Z`).getUTCDay()];
 }
-
-/** 標題開頭已自帶時間（0730小游、17:30小杜、17-22 Phoenix）→ 不再重複加時間 */
-function titleHasTime(title: string): boolean {
-  return /^(\d{3,4}|\d{1,2}[:：\-–])/.test(title.trim());
+/** 分鐘 → 精簡時刻：450→「7:30」、1020→「17」 */
+function hm(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h}:${String(m).padStart(2, "0")}` : `${h}`;
 }
 
 function WeekSheetInner() {
   const params = useSearchParams();
   const today = taipeiTodayStr();
-  const [monday, setMonday] = useState(() => mondayOf(params.get("start") ?? today));
+  const [start, setStart] = useState(() => params.get("start") ?? today);
+  const [span, setSpan] = useState<number>(() => {
+    const d = Number(params.get("days"));
+    return RANGES.some((r) => r.days === d) ? d : 7;
+  });
   const { calendarById } = useAppData();
+  const { data: contacts = [] } = useContacts();
+  const { data: gapProfiles } = useGapProfiles();
   const [detail, setDetail] = useState<CalEvent | null>(null);
   const [editing, setEditing] = useState<CalEvent | null>(null);
 
-  const days = Array.from({ length: 7 }, (_, i) => addDaysStr(monday, i));
-  const startIso = taipeiDateStartUtcISO(monday);
-  const endIso = taipeiDateStartUtcISO(addDaysStr(monday, 7));
+  // 主角多選：記「隱藏了誰」，之後新增的家人預設會出現
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HIDDEN_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 掛載時自 localStorage 同步一次（避免 SSR 不一致）
+      if (raw) setHidden(new Set(JSON.parse(raw) as string[]));
+    } catch {
+      /* 無痕模式等讀不到就全部顯示 */
+    }
+  }, []);
+  const toggle = (key: string) => {
+    const next = new Set(hidden);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setHidden(next);
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]));
+    } catch {
+      /* 存不了只影響下次預設 */
+    }
+  };
+
+  // 可選的主角：本人排第一，其他家人依名字
+  const selfName = gapProfiles?.selfName ?? contacts.find((c) => c.is_self)?.name ?? null;
+  const selfKey = selfName ?? SELF_KEY;
+  const people = useMemo(() => {
+    const fam = contacts.filter((c) => c.is_family && c.name !== selfName).map((c) => c.name);
+    return [{ key: selfKey, label: selfName ?? "本人" }, ...fam.map((n) => ({ key: n, label: n }))];
+  }, [contacts, selfName, selfKey]);
+  const familyNames = useMemo(() => new Set(people.map((p) => p.key)), [people]);
+
+  const days = Array.from({ length: span }, (_, i) => addDaysStr(start, i));
+  const startIso = taipeiDateStartUtcISO(start);
+  const endIso = taipeiDateStartUtcISO(addDaysStr(start, span));
   const { data: events = [], isLoading, isError, error, refetch } = useCalendarEvents(startIso, endIso);
 
-  // cells[dayIndex][periodKey | "allDay"] = 行程
-  const cells = useMemo(() => {
-    const m = days.map(() => new Map<string, CalEvent[]>());
-    for (const e of events) {
-      if (e.all_day) {
-        // 整天：每個涵蓋到的日子都列
-        days.forEach((ds, i) => {
-          const ds0 = Date.parse(taipeiDateStartUtcISO(ds));
-          if (Date.parse(e.starts_at) < ds0 + 86400000 && Date.parse(e.ends_at) > ds0) {
-            m[i].set("allDay", [...(m[i].get("allDay") ?? []), e]);
-          }
-        });
-        continue;
-      }
-      const wall = utcToTaipeiWall(e.starts_at);
-      const i = days.indexOf(wall.slice(0, 10));
-      if (i < 0) continue;
-      const hm = wall.slice(11);
-      const p = PERIODS.find((x) => hm < x.until) ?? PERIODS[3];
-      m[i].set(p.key, [...(m[i].get(p.key) ?? []), e]);
-    }
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, monday]);
+  /** 這筆行程屬於誰：主角裡的家人；沒有家人主角就算本人 */
+  const visible = useMemo(() => {
+    if (hidden.size === 0) return events;
+    return events.filter((e) => {
+      const owners = e.subjectNames.filter((n) => familyNames.has(n));
+      return (owners.length ? owners : [selfKey]).some((k) => !hidden.has(k));
+    });
+  }, [events, hidden, familyNames, selfKey]);
 
-  const rows = [{ key: "allDay", label: "整天" }, ...PERIODS];
-  const isThisWeek = monday === mondayOf(today);
+  // 時間範圍：整段期間共用，週與週之間上下對齊好比較
+  const [fromH, toH] = useMemo(() => {
+    let lo = DEFAULT_FROM * 60;
+    let hi = DEFAULT_TO * 60;
+    for (const ds of days) {
+      for (const e of visible) {
+        const seg = eventSegmentOnDay(e, ds);
+        if (!seg) continue;
+        lo = Math.min(lo, seg.start);
+        hi = Math.max(hi, seg.end);
+      }
+    }
+    return [Math.floor(lo / 60), Math.ceil(hi / 60)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, start, span]);
+
+  const weeks = Array.from({ length: Math.ceil(span / 7) }, (_, w) => days.slice(w * 7, w * 7 + 7));
 
   return (
     <div className="mx-auto max-w-6xl">
       <div className="print:hidden">
         <PageHeader
           title="週行程表"
-          description="一週七天、分上午／中午／下午／晚上，可列印或存成 PDF 傳給別人"
+          description="每小時對齊，一眼看出幾點到幾點有事；可列印或存 PDF"
           actions={
             <Button onClick={() => window.print()}>
               <Printer className="size-4" />
@@ -106,20 +152,54 @@ function WeekSheetInner() {
             </Button>
           }
         />
-        <div className="mb-3 flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => setMonday(addDaysStr(monday, -7))} aria-label="上一週">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="icon" onClick={() => setStart(addDaysStr(start, -span))} aria-label="往前">
             <ChevronLeft className="size-4" />
           </Button>
-          <Button variant="outline" onClick={() => setMonday(mondayOf(today))} disabled={isThisWeek}>
-            本週
+          <Button variant="outline" onClick={() => setStart(today)} disabled={start === today}>
+            今天
           </Button>
-          <Button variant="outline" onClick={() => setMonday(mondayOf(addDaysStr(today, 7)))}>
-            下週
-          </Button>
-          <Button variant="outline" size="icon" onClick={() => setMonday(addDaysStr(monday, 7))} aria-label="下一週">
+          <Button variant="outline" size="icon" onClick={() => setStart(addDaysStr(start, span))} aria-label="往後">
             <ChevronRight className="size-4" />
           </Button>
+          <div className="flex rounded-md border p-0.5">
+            {RANGES.map((r) => (
+              <button
+                key={r.days}
+                type="button"
+                onClick={() => setSpan(r.days)}
+                className={cn(
+                  "rounded px-2.5 py-1 text-sm",
+                  span === r.days ? "bg-primary text-primary-foreground" : "hover:bg-muted",
+                )}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
         </div>
+        {people.length > 1 && (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5 text-sm">
+            <span className="text-muted-foreground">看誰的：</span>
+            {people.map((p) => {
+              const on = !hidden.has(p.key);
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggle(p.key)}
+                  className={cn(
+                    "rounded-full border px-3 py-0.5",
+                    on ? "border-primary bg-primary/10 font-medium text-primary" : "text-muted-foreground line-through",
+                  )}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {isError ? (
@@ -127,89 +207,21 @@ function WeekSheetInner() {
       ) : isLoading ? (
         <ListSkeleton rows={6} />
       ) : (
-        <div id="print-area">
-          <h2 className="mb-2 text-base font-bold">
-            {md(days[0])}（一）– {md(days[6])}（日） 一週行程
-          </h2>
-          {/* 手機上表格可左右滑，頁面本身不會橫向捲動 */}
-          <div className="overflow-x-auto print:overflow-visible">
-            <table className="w-full min-w-[760px] table-fixed border-collapse text-xs print:min-w-0 print:text-[8pt]">
-              <colgroup>
-                <col className="w-10" />
-                {days.map((d) => (
-                  <col key={d} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr>
-                  <th className="border bg-muted/50 p-1" />
-                  {days.map((ds, i) => (
-                    <th
-                      key={ds}
-                      className={cn(
-                        "border bg-muted/50 p-1 text-center font-semibold",
-                        ds === today && "bg-primary/15",
-                      )}
-                    >
-                      <div>週{WD[i]}</div>
-                      <div className="font-normal text-muted-foreground">{md(ds)}</div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const empty = cells.every((c) => !(c.get(r.key)?.length));
-                  if (r.key === "allDay" && empty) return null;
-                  return (
-                    <tr key={r.key}>
-                      <th className="border bg-muted/30 p-1 text-center align-middle font-semibold [writing-mode:vertical-rl] sm:[writing-mode:horizontal-tb]">
-                        {r.label}
-                      </th>
-                      {days.map((ds, i) => (
-                        <td key={ds} className="border p-1 align-top">
-                          <div className="space-y-1">
-                            {(cells[i].get(r.key) ?? []).map((e) => {
-                              const color = calendarById.get(e.calendar_id)?.color ?? "#64748B";
-                              return (
-                                <button
-                                  key={e.id}
-                                  type="button"
-                                  onClick={() => setDetail(e)}
-                                  className="block w-full rounded px-1 py-0.5 text-left leading-snug print:break-inside-avoid"
-                                  style={{
-                                    backgroundColor: `${color}26`,
-                                    borderLeft: `3px solid ${color}`,
-                                  }}
-                                >
-                                  <span className={cn("font-medium", e.is_important && "text-red-600")}>
-                                    {r.key !== "allDay" && !titleHasTime(e.title) && (
-                                      <span className="tabular-nums">{timeText(e)} </span>
-                                    )}
-                                    {e.title}
-                                  </span>
-                                  {e.location && !e.title.includes(e.location) && (
-                                    <span className="text-muted-foreground">（{e.location}）</span>
-                                  )}
-                                  {e.description && (
-                                    <span className="mt-0.5 block whitespace-pre-line text-[10px] text-muted-foreground print:text-[7pt]">
-                                      {e.description.length > 80 ? `${e.description.slice(0, 80)}…` : e.description}
-                                    </span>
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-2 text-[10px] text-muted-foreground print:hidden">
-            只會列出左側選單目前勾選顯示的分類；行程下方灰字是行程的備註。點行程可看詳情或修改。
+        <div id="print-area" className="space-y-5">
+          {weeks.map((wk) => (
+            <WeekBlock
+              key={wk[0]}
+              days={wk}
+              events={visible}
+              fromH={fromH}
+              toH={toH}
+              today={today}
+              colorOf={(id) => calendarById.get(id)?.color ?? "#64748B"}
+              onSelect={setDetail}
+            />
+          ))}
+          <p className="text-[10px] text-muted-foreground print:hidden">
+            色塊的上下位置＝實際時間；只列左側選單勾選的分類。點行程可看詳情或修改。
           </p>
         </div>
       )}
@@ -235,9 +247,185 @@ function WeekSheetInner() {
   );
 }
 
+/** 一段（最多 7 天）：左邊時段＋每小時刻度，每天一欄，行程依起訖時刻定位 */
+function WeekBlock({
+  days,
+  events,
+  fromH,
+  toH,
+  today,
+  colorOf,
+  onSelect,
+}: {
+  days: string[];
+  events: CalEvent[];
+  fromH: number;
+  toH: number;
+  today: string;
+  colorOf: (id: string) => string;
+  onSelect: (e: CalEvent) => void;
+}) {
+  const hours = toH - fromH;
+  const height = hours * PX_PER_HOUR;
+  // 不足 7 天的最後一段也維持 7 欄寬，欄寬才和上面對齊
+  const cols = `3.75rem repeat(7, minmax(0, 1fr))`;
+  const anyAllDay = days.some((ds) => allDayOnDay(events, ds).length > 0);
+  const nowWall = taipeiNowWall();
+  const nowMin = Number(nowWall.slice(11, 13)) * 60 + Number(nowWall.slice(14, 16));
+
+  return (
+    <section className="print:break-inside-avoid">
+      <h2 className="mb-1 text-sm font-bold">
+        {md(days[0])}（{dow(days[0])}）– {md(days[days.length - 1])}（{dow(days[days.length - 1])}）
+      </h2>
+      <div className="overflow-x-auto rounded-lg border bg-card print:overflow-visible">
+        <div className="min-w-[720px] print:min-w-0">
+          {/* 表頭 */}
+          <div className="grid border-b bg-muted/40" style={{ gridTemplateColumns: cols }}>
+            <div className="border-r" />
+            {days.map((ds) => (
+              <div
+                key={ds}
+                className={cn("border-r py-1 text-center text-xs last:border-r-0", ds === today && "bg-primary/15")}
+              >
+                <span className="font-semibold">週{dow(ds)}</span>{" "}
+                <span className="text-muted-foreground">{md(ds)}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* 整天 */}
+          {anyAllDay && (
+            <div className="grid border-b" style={{ gridTemplateColumns: cols }}>
+              <div className="flex items-center justify-center border-r text-[10px] text-muted-foreground">整天</div>
+              {days.map((ds) => (
+                <div key={ds} className="space-y-0.5 border-r p-0.5 last:border-r-0">
+                  {allDayOnDay(events, ds).map((e) => (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => onSelect(e)}
+                      style={eventStyle(colorOf(e.calendar_id))}
+                      className={cn(
+                        "block w-full truncate rounded px-1 text-left text-[11px] font-medium",
+                        e.is_important && "text-red-600",
+                      )}
+                    >
+                      {e.title}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 時間軸 */}
+          <div className="grid" style={{ gridTemplateColumns: cols }}>
+            <div className="relative flex border-r" style={{ height }}>
+              {/* 時段帶 */}
+              <div className="relative w-5 border-r">
+                {PERIODS.map((p, i) => {
+                  const a = Math.max(p.from, fromH);
+                  const b = Math.min(p.to, toH);
+                  if (b <= a) return null;
+                  return (
+                    <div
+                      key={p.label}
+                      className={cn(
+                        "absolute inset-x-0 flex items-center justify-center border-b text-[10px] font-semibold text-muted-foreground [writing-mode:vertical-rl]",
+                        i % 2 ? "bg-muted/50" : "bg-muted/20",
+                      )}
+                      style={{ top: (a - fromH) * PX_PER_HOUR, height: (b - a) * PX_PER_HOUR }}
+                    >
+                      {p.label}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* 每小時刻度 */}
+              <div className="flex-1">
+                {Array.from({ length: hours }, (_, i) => (
+                  <div key={i} className="border-b pr-1 text-right text-[10px] tabular-nums text-muted-foreground" style={{ height: PX_PER_HOUR }}>
+                    {fromH + i}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {days.map((ds) => {
+              const dayEvents = events.filter((e) => eventSegmentOnDay(e, ds));
+              return (
+                <div
+                  key={ds}
+                  className={cn("relative border-r last:border-r-0", ds === today && "bg-primary/[0.04]")}
+                  style={{ height }}
+                >
+                  {Array.from({ length: hours }, (_, i) => (
+                    <div
+                      key={i}
+                      className={cn("border-b", fromH + i === 12 || fromH + i === 13 || fromH + i === 17 ? "border-b-foreground/20" : "")}
+                      style={{ height: PX_PER_HOUR }}
+                    />
+                  ))}
+                  {layoutDay(dayEvents).map(({ event, col, cols: n, span }) => {
+                    const seg = eventSegmentOnDay(event, ds)!;
+                    const top = (seg.start / 60 - fromH) * PX_PER_HOUR;
+                    const h = Math.max(14, ((seg.end - seg.start) / 60) * PX_PER_HOUR);
+                    const w = 100 / n;
+                    const time = `${hm(seg.start)}–${hm(seg.end)}`;
+                    return (
+                      <button
+                        key={event.id}
+                        type="button"
+                        onClick={() => onSelect(event)}
+                        title={`${time} ${event.title}`}
+                        style={{
+                          ...eventStyle(colorOf(event.calendar_id)),
+                          position: "absolute",
+                          top,
+                          height: h,
+                          left: `calc(${col * w}% + 1px)`,
+                          width: `calc(${span * w}% - 2px)`,
+                        }}
+                        className="flex flex-col overflow-hidden rounded px-1 text-left leading-[1.2] hover:brightness-95"
+                      >
+                        <span
+                          className={cn(
+                            "truncate text-[11px] font-medium",
+                            n > 1 && "text-[10px]",
+                            event.is_important && "text-red-600",
+                          )}
+                        >
+                          {event.is_important && (
+                            <Star className="mr-0.5 inline size-2.5 fill-amber-400 align-[-1px] text-amber-500" />
+                          )}
+                          {stripLeadingTime(event.title)}
+                        </span>
+                        {h >= 26 && <span className="truncate text-[9px] tabular-nums opacity-70">{time}</span>}
+                      </button>
+                    );
+                  })}
+                  {/* 現在時刻 */}
+                  {ds === today && nowMin >= fromH * 60 && nowMin <= toH * 60 && (
+                    <div
+                      className="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-red-500 print:hidden"
+                      style={{ top: (nowMin / 60 - fromH) * PX_PER_HOUR }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /**
- * 週行程表：仿 Peggy 手做的一週表（七天 × 上午／中午／下午／晚上＋備註），
- * 比 Google 週檢視好讀，可列印或存 PDF 分享。spec：docs/specs/多週總覽與週行程表.md
+ * 週行程表：從今天起往後 1 週／2 週／1 個月／半年，每 7 天一段；
+ * 行程依起訖時刻對齊每小時刻度，名稱極簡（去掉開頭時間）；可依主角篩選。
+ * spec：docs/specs/週行程表-每小時對齊與主角篩選.md
  */
 export default function WeekSheetPage() {
   return (
