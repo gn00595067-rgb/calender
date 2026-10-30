@@ -15,6 +15,7 @@ import { layoutDay } from "@/lib/calendar-utils";
 import { allDayOnDay, eventSegmentOnDay } from "@/lib/availability";
 import { taipeiDateStartUtcISO, taipeiNowWall, taipeiTodayStr } from "@/lib/date";
 import { can } from "@/lib/permissions";
+import { stripSubjectSuffix } from "@/lib/subject-title";
 import { cn } from "@/lib/utils";
 
 const WD = "日一二三四五六";
@@ -46,6 +47,22 @@ const PEOPLE = ["Peggy姐", "豪哥", "哥哥", "妹妹"];
 const SELF_KEY = PEOPLE[0];
 const PEOPLE_SET = new Set(PEOPLE);
 const HIDDEN_KEY = "week-sheet.hidden-people";
+
+/**
+ * 表上的極簡名稱（仿 Peggy 手做週表）：
+ * 去開頭時間、去「-主角名」後綴、去括號（地點／補充），非 Peggy姐 的行程前面加「(豪)」「(哥妹)」。
+ * 例：「0730-0900羽球(延吉街)-豪哥」→「(豪)羽球」。只影響這張表的顯示。
+ */
+function shortTitle(e: CalEvent): string {
+  let t = stripLeadingTime(e.title.trim());
+  t = stripSubjectSuffix(t, [...PEOPLE, ...e.subjectNames]);
+  t = stripLeadingTime(t.replace(/[（(][^（()）]*[)）]/g, "").trim()).replace(/[\s\-–、,，]+$/, "").trim() || stripLeadingTime(e.title.trim());
+  const tag = e.subjectNames
+    .filter((n) => PEOPLE_SET.has(n) && n !== SELF_KEY)
+    .map((n) => n[0])
+    .join("");
+  return tag && !t.startsWith(`(${tag})`) ? `(${tag})${t}` : t;
+}
 
 function addDaysStr(ds: string, n: number): string {
   return new Date(Date.parse(`${ds}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
@@ -324,7 +341,7 @@ function WeekBlock({
                         e.is_important && "text-red-600",
                       )}
                     >
-                      {e.title}
+                      {shortTitle(e)}
                     </button>
                   ))}
                 </div>
@@ -429,7 +446,7 @@ function WeekBlock({
                           {event.is_important && (
                             <Star className="mr-0.5 inline size-2.5 fill-amber-400 align-[-1px] text-amber-500" />
                           )}
-                          {stripLeadingTime(event.title)}
+                          {shortTitle(event)}
                         </span>
                         {h >= 26 && <span className="truncate text-[9px] tabular-nums opacity-70">{time}</span>}
                       </button>
