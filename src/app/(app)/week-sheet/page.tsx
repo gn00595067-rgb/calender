@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, Printer, Star } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Printer, Star } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { ErrorState, ListSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { useCalendarEvents, type CalEvent } from "@/lib/client/events";
 import { layoutDay } from "@/lib/calendar-utils";
 import { allDayOnDay, eventSegmentOnDay } from "@/lib/availability";
 import { taipeiDateStartUtcISO, taipeiNowWall, taipeiTodayStr } from "@/lib/date";
+import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
 const WD = "日一二三四五六";
@@ -70,9 +71,14 @@ function WeekSheetInner() {
     const d = Number(params.get("days"));
     return RANGES.some((r) => r.days === d) ? d : 7;
   });
-  const { calendarById } = useAppData();
+  const { calendars, calendarById } = useAppData();
   const [detail, setDetail] = useState<CalEvent | null>(null);
   const [editing, setEditing] = useState<CalEvent | null>(null);
+  // 點空白處新增：帶入點到的日期與時刻（每半小時一格）
+  const canCreate = calendars.some((c) => can.editEvents(c.effectiveRole));
+  const [createStart, setCreateStart] = useState<string | null>(null);
+  const openCreate = (ds: string, min = 9 * 60) =>
+    setCreateStart(`${ds}T${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`);
 
   // 主角多選：記「隱藏了誰」，之後新增的家人預設會出現
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -136,10 +142,18 @@ function WeekSheetInner() {
           title="週行程表"
           description="每小時對齊，一眼看出幾點到幾點有事；可列印或存 PDF"
           actions={
-            <Button onClick={() => window.print()}>
-              <Printer className="size-4" />
-              列印／存 PDF
-            </Button>
+            <div className="flex gap-2">
+              {canCreate && (
+                <Button onClick={() => openCreate(today)}>
+                  <Plus className="size-4" />
+                  新增行程
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => window.print()}>
+                <Printer className="size-4" />
+                列印／存 PDF
+              </Button>
+            </div>
           }
         />
         <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -206,10 +220,11 @@ function WeekSheetInner() {
               today={today}
               colorOf={(id) => calendarById.get(id)?.color ?? "#64748B"}
               onSelect={setDetail}
+              onCreateAt={canCreate ? openCreate : undefined}
             />
           ))}
           <p className="text-[10px] text-muted-foreground print:hidden">
-            色塊的上下位置＝實際時間；只列左側選單勾選的分類。點行程可看詳情或修改。
+            色塊的上下位置＝實際時間；只列左側選單勾選的分類。點行程可看詳情或修改{canCreate && "；點空白處可在那個時間新增行程"}。
           </p>
         </div>
       )}
@@ -223,6 +238,13 @@ function WeekSheetInner() {
           setDetail(null);
         }}
         onChanged={() => refetch()}
+      />
+      <EventModal
+        open={!!createStart}
+        onOpenChange={(o) => !o && setCreateStart(null)}
+        mode="create"
+        defaultStartWall={createStart ?? undefined}
+        onSaved={() => refetch()}
       />
       <EventModal
         open={!!editing}
@@ -244,6 +266,7 @@ function WeekBlock({
   today,
   colorOf,
   onSelect,
+  onCreateAt,
 }: {
   days: string[];
   events: CalEvent[];
@@ -252,6 +275,8 @@ function WeekBlock({
   today: string;
   colorOf: (id: string) => string;
   onSelect: (e: CalEvent) => void;
+  /** 點空白處新增（ds 台北曆日、min 當天第幾分鐘）；沒權限不傳 */
+  onCreateAt?: (ds: string, min: number) => void;
 }) {
   const hours = toH - fromH;
   const height = hours * PX_PER_HOUR;
@@ -345,8 +370,22 @@ function WeekBlock({
               return (
                 <div
                   key={ds}
-                  className={cn("relative border-r last:border-r-0", ds === today && "bg-primary/[0.04]")}
+                  className={cn(
+                    "relative border-r last:border-r-0",
+                    ds === today && "bg-primary/[0.04]",
+                    onCreateAt && "cursor-pointer print:cursor-auto",
+                  )}
                   style={{ height }}
+                  title={onCreateAt ? "點空白處新增行程" : undefined}
+                  onClick={
+                    onCreateAt
+                      ? (ev) => {
+                          const y = ev.clientY - ev.currentTarget.getBoundingClientRect().top;
+                          const half = Math.floor((y / PX_PER_HOUR) * 2);
+                          onCreateAt(ds, Math.min(23 * 60 + 30, Math.max(0, fromH * 60 + half * 30)));
+                        }
+                      : undefined
+                  }
                 >
                   {Array.from({ length: hours }, (_, i) => (
                     <div
@@ -365,7 +404,10 @@ function WeekBlock({
                       <button
                         key={event.id}
                         type="button"
-                        onClick={() => onSelect(event)}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          onSelect(event);
+                        }}
                         title={`${time} ${event.title}`}
                         style={{
                           ...eventStyle(colorOf(event.calendar_id)),
