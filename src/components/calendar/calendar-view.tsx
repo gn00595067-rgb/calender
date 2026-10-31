@@ -172,6 +172,17 @@ export function CalendarView() {
     setCreateOpen(true);
   };
 
+  // 切換日／週／月：目前畫面看得到今天 → 以今天為準（Peggy 10/31：今天是 10/31，
+  // 先前點過 11/4，切週、日卻跑到 11/2–11/8、11/4）；特地翻到別月（看不到今天）才沿用目前位置
+  const switchView = (v: ViewMode) => {
+    const now = new Date();
+    const todayVisible =
+      now.getTime() >= Date.parse(range.startIso) &&
+      now.getTime() < Date.parse(range.endIso);
+    if (todayVisible) setAnchor(now);
+    setView(v);
+  };
+
   // 從月視圖點某天 → 切到「日視圖」展開整天（中午為錨，避開時區邊界）。
   const openDay = (dateStr: string) => {
     setAnchor(new Date(zonedToIso(new Date(`${dateStr}T12:00:00`))));
@@ -223,7 +234,7 @@ export function CalendarView() {
               <button
                 key={v}
                 type="button"
-                onClick={() => setView(v)}
+                onClick={() => switchView(v)}
                 className={
                   "rounded-md px-3 py-1 text-sm font-medium transition touch:px-4 touch:py-2 touch:text-base " +
                   (view === v
