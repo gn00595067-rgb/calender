@@ -79,19 +79,21 @@ export async function POST(req: Request) {
   }
 
   // 3) 脈絡：人物、標籤、過去習慣（伺服器端查，RLS 只會給看得到的資料）
-  const [ctRes, tagRes] = await Promise.all([
+  // 三組查詢同時進行（原本依序等，語音解析前多卡一兩秒）
+  const contactsP = Promise.resolve(
     supabase.from("contacts").select("id, name, role_label, is_family, is_self, aliases").order("name"),
+  ).then((r) => (r.data ?? []) as ContactRow[]);
+  const contactByIdP = contactsP.then((cs) => new Map(cs.map((c) => [c.id, c])));
+  const [contacts, contactById, tagRes, habits] = await Promise.all([
+    contactsP,
+    contactByIdP,
     supabase.from("tags").select("name").order("name"),
+    buildHabits(supabase, contactByIdP).catch((err) => {
+      console.error("[voice/parse-event] habits", err);
+      return "（無法讀取過去紀錄）";
+    }),
   ]);
-  const contacts: ContactRow[] = ctRes.data ?? [];
-  const contactById = new Map(contacts.map((c) => [c.id, c]));
   const tagNames = (tagRes.data ?? []).map((t) => t.name);
-  let habits = "（無法讀取過去紀錄）";
-  try {
-    habits = await buildHabits(supabase, contactById);
-  } catch (err) {
-    console.error("[voice/parse-event] habits", err);
-  }
 
   const userMessage = parsed.followUp
     ? buildFollowUpMessage({
@@ -106,25 +108,43 @@ export async function POST(req: Request) {
 
   // 4) 呼叫 Claude 解析（結構化輸出；婉拒時由伺服器端自動改用其他模型）
   const client = new Anthropic();
+  // 快速模式（同一個模型、輸出約快 2.5 倍，單價較高；語音一天幾次、成本可忽略）。
+  // 帳號不能用或被限流 → 不重試、直接改一般速度。VOICE_FAST=0 可關閉。
+  const useFast = process.env.VOICE_FAST !== "0";
+  const parseOnce = (fast: boolean) =>
+    client.beta.messages.parse(
+      {
+        model: MODEL,
+        max_tokens: 6000,
+        betas: fast
+          ? ["server-side-fallback-2026-07-01", "fast-mode-2026-02-01"]
+          : ["server-side-fallback-2026-07-01"],
+        ...(fast ? { speed: "fast" as const } : {}),
+        fallbacks: "default",
+        // 語音要快：低 effort 對這種抽取任務已足夠
+        output_config: { effort: "low", format: betaZodOutputFormat(outputSchema) },
+        // 系統提示詞（人物＋習慣）短時間內不變，標記快取以降低連續使用的成本
+        system: [
+          {
+            type: "text",
+            text: buildSystemPrompt({ calendars: parsed.calendars, contacts, tagNames, habits }),
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+        messages: [{ role: "user", content: userMessage }],
+      },
+      fast ? { maxRetries: 0 } : undefined,
+    );
   let result: Output;
   try {
-    const message = await client.beta.messages.parse({
-      model: MODEL,
-      max_tokens: 6000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      // 語音要快：低 effort 對這種抽取任務已足夠
-      output_config: { effort: "low", format: betaZodOutputFormat(outputSchema) },
-      // 系統提示詞（人物＋習慣）短時間內不變，標記快取以降低連續使用的成本
-      system: [
-        {
-          type: "text",
-          text: buildSystemPrompt({ calendars: parsed.calendars, contacts, tagNames, habits }),
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-      messages: [{ role: "user", content: userMessage }],
-    });
+    let message;
+    try {
+      message = await parseOnce(useFast);
+    } catch (err) {
+      if (!useFast) throw err;
+      console.warn("[voice/parse-event] fast mode failed, retrying standard", err);
+      message = await parseOnce(false);
+    }
     if (message.stop_reason === "refusal" || !message.parsed_output) {
       throw new Error(`無法解析（stop_reason=${message.stop_reason}）`);
     }

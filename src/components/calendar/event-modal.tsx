@@ -6,8 +6,8 @@ import Link from "next/link";
 import { useForm, Controller } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Star, Mic, AlertTriangle, History, Info, Loader2, Plus, X, ChevronUp } from "lucide-react";
-import { MicButton } from "@/components/voice/mic-button";
+import { Star, Mic, AlertTriangle, History, Info, Loader2, Plus, X, ChevronUp, Square } from "lucide-react";
+import { useSpeech } from "@/lib/voice/use-speech";
 import {
   Dialog,
   DialogContent,
@@ -1863,9 +1863,36 @@ function VoicePanel({
   const [answering, setAnswering] = useState(false);
   const [answer, setAnswer] = useState("");
   const [sending, setSending] = useState(false);
+  /** 自己按停止（要改字）→ 不自動送出 */
+  const manualStopRef = useRef(false);
+  // 按「用語音回答」就直接開始聽，停頓 2.5 秒自動送出（影片回饋：原本會跳鍵盤、要再按麥克風）
+  const speech = useSpeech({
+    silenceMs: 2500,
+    onInterim: (t) => setAnswer(t),
+    onFinal: (t) => {
+      setAnswer(t);
+      if (!manualStopRef.current) void send(t);
+    },
+    onError: (code) => {
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        toast.error("麥克風被拒絕，請在瀏覽器允許麥克風權限");
+      }
+    },
+  });
+  const startAnswer = () => {
+    setAnswering(true);
+    if (speech.supported) {
+      manualStopRef.current = false;
+      speech.start(answer);
+    }
+  };
+  const stopListening = () => {
+    manualStopRef.current = true;
+    speech.stop();
+  };
 
-  const send = async () => {
-    const text = answer.trim();
+  const send = async (spoken?: string) => {
+    const text = (spoken ?? answer).trim();
     if (!text || !hints.onAnswer || sending) return;
     setSending(true);
     const err = await hints.onAnswer(text, getCurrent());
@@ -1941,23 +1968,34 @@ function VoicePanel({
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
                 rows={2}
-                autoFocus
-                placeholder="例：是豪哥的，大概一個半小時，地點在信義區"
+                // 支援語音時不自動聚焦：鍵盤彈出會蓋住畫面
+                autoFocus={!speech.supported}
+                placeholder={speech.listening ? "正在聽…講完停一下就會送出" : "例：是豪哥的，大概一個半小時，地點在信義區"}
                 className="bg-background pr-11"
               />
-              <div className="absolute right-2 top-2">
-                <MicButton
-                  title="用語音回答"
-                  onInterim={(t) => setAnswer(t)}
-                  onFinal={(t) => setAnswer(t)}
-                />
-              </div>
+              {speech.supported && (
+                <button
+                  type="button"
+                  onClick={() => (speech.listening ? stopListening() : startAnswer())}
+                  disabled={sending}
+                  aria-label={speech.listening ? "停止收音" : "用語音回答"}
+                  className={cn(
+                    "absolute right-2 top-2 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent disabled:opacity-40",
+                    speech.listening && "animate-pulse bg-red-500 text-white hover:bg-red-600",
+                  )}
+                >
+                  {speech.listening ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}
+                </button>
+              )}
             </div>
             <div className="flex gap-2">
               <Button
                 type="button"
                 size="sm"
-                onClick={() => void send()}
+                onClick={() => {
+                  stopListening();
+                  void send();
+                }}
                 disabled={sending || !answer.trim()}
               >
                 {sending ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
@@ -1967,7 +2005,10 @@ function VoicePanel({
                 type="button"
                 size="sm"
                 variant="ghost"
-                onClick={() => setAnswering(false)}
+                onClick={() => {
+                  stopListening();
+                  setAnswering(false);
+                }}
                 disabled={sending}
               >
                 取消
@@ -1980,7 +2021,7 @@ function VoicePanel({
             size="sm"
             variant={hints.warnings.length ? "default" : "outline"}
             className="w-full"
-            onClick={() => setAnswering(true)}
+            onClick={startAnswer}
           >
             <Mic className="size-4" />
             {hints.warnings.length ? "用語音回答上面的問題" : "用語音補充或修改"}

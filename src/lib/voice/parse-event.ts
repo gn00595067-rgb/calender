@@ -124,15 +124,19 @@ const WEEKDAY_ZH = ["", "一", "二", "三", "四", "五", "六", "日"];
  */
 export async function buildHabits(
   supabase: Supa,
-  contactById: Map<string, ContactRow>,
+  /** 可傳 Promise：讓查行程與查人物同時進行，語音少等一輪資料庫 */
+  contactByIdInput: Map<string, ContactRow> | Promise<Map<string, ContactRow>>,
 ): Promise<string> {
   const since = new Date(Date.now() - HABIT_DAYS * 86400000).toISOString();
-  const { data: events } = await supabase
-    .from("events")
-    .select("*")
-    .gte("starts_at", since)
-    .order("starts_at", { ascending: false })
-    .limit(600);
+  const [{ data: events }, contactById] = await Promise.all([
+    supabase
+      .from("events")
+      .select("*")
+      .gte("starts_at", since)
+      .order("starts_at", { ascending: false })
+      .limit(600),
+    contactByIdInput,
+  ]);
   const evs = events ?? [];
   if (evs.length === 0) return "（尚無過去紀錄）";
   const ids = evs.map((e) => e.id);

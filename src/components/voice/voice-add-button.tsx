@@ -88,9 +88,9 @@ export function VoiceAddButton({
   /** 使用者自己按停止（要再改字）→ 不自動送出 */
   const manualStopRef = useRef(false);
 
-  // 語音：按下語音助理就開始聽；停頓 4 秒沒講話自動結束並送出解析
+  // 語音：按下語音助理就開始聽；停頓 2.5 秒沒講話自動結束並送出解析
   const speech = useSpeech({
-    silenceMs: 4000,
+    silenceMs: 2500,
     onInterim: (t) => setText(t),
     onFinal: (t) => {
       setText(t);
@@ -320,7 +320,7 @@ export function VoiceAddButton({
               語音助理
             </DialogTitle>
             <DialogDescription>
-              直接講，停頓 4 秒會自動送出。講得越完整越準：誰、什麼時間、做什麼、跟誰、在哪、要不要司機。
+              直接講，停頓 2.5 秒會自動送出。講得越完整越準：誰、什麼時間、做什麼、跟誰、在哪、要不要司機。
               例如「週二晚上六點哥哥桌球，郭老師，要司機接送」。也可以修改、刪除或搜尋行程。
             </DialogDescription>
           </DialogHeader>
