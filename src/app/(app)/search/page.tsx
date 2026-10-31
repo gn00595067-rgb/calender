@@ -10,7 +10,7 @@ import {
   endOfWeek,
   differenceInCalendarDays,
 } from "date-fns";
-import { CalendarPlus } from "lucide-react";
+import { CalendarPlus, CheckCircle2, ChevronDown } from "lucide-react";
 import {
   Search as SearchIcon,
   Star,
@@ -82,6 +82,8 @@ function SearchInner() {
   const [editing, setEditing] = useState<CalEvent | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createStart, setCreateStart] = useState<string | undefined>(undefined);
+  // 有關鍵字時先收起「行事曆與空檔」：答案（找到的行程）才會在最上面（Peggy 10/31 影片）
+  const [availOpen, setAvailOpen] = useState(() => !params.get("q"));
 
   // 搜尋範圍：若未指定分類過濾，就是全部可存取的分類
   const scopeIds =
@@ -475,8 +477,55 @@ function SearchInner() {
           </div>
         )}
 
-        {/* 這段期間的空檔（設定起訖日即顯示） */}
-        {hasRange && (
+        {/* 直接回答：「下週哪一天跟工程師面試？」→ 11/2（一）14:00–15:00 面試工程師 */}
+        {q.trim() && !isLoading && results.length > 0 && (
+          <div className="rounded-xl border-2 border-primary/40 bg-primary/5 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-primary">
+              <CheckCircle2 className="size-4" />
+              找到 {results.length} 筆「{q.trim()}」
+              {results.length > 5 && <span className="font-normal text-muted-foreground">（列最近 5 筆，完整在下面）</span>}
+            </div>
+            <div className="space-y-1.5">
+              {[...results]
+                .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+                .slice(0, 5)
+                .map((e) => {
+                  const st = zoned(e.starts_at);
+                  const en = zoned(e.ends_at);
+                  return (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => setDetail(e)}
+                      className="flex w-full flex-wrap items-baseline gap-x-2 rounded-lg bg-background px-3 py-2 text-left hover:bg-accent"
+                    >
+                      <span className="text-base font-bold">
+                        {format(st, "M/d")}（{weekChar(st)}）
+                        {!e.all_day && ` ${format(st, "HH:mm")}–${format(en, "HH:mm")}`}
+                      </span>
+                      <span className="text-base">{e.title}</span>
+                      {e.location && <span className="text-sm text-muted-foreground">· {e.location}</span>}
+                    </button>
+                  );
+                })}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">點一下可看詳情、修改或刪除。</p>
+          </div>
+        )}
+
+        {/* 這段期間的空檔（設定起訖日即顯示；有關鍵字時預設收起） */}
+        {hasRange && !availOpen && (
+          <button
+            type="button"
+            onClick={() => setAvailOpen(true)}
+            className="flex w-full items-center gap-1.5 rounded-xl border bg-card p-3 text-left text-sm font-semibold hover:bg-accent"
+          >
+            <CalendarClock className="size-4 text-emerald-600" />
+            看這段期間的行事曆與空檔（{startDate} – {endDate}）
+            <ChevronDown className="ml-auto size-4 text-muted-foreground" />
+          </button>
+        )}
+        {hasRange && availOpen && (
           <div className="rounded-xl border bg-card p-3">
             <div className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
               <CalendarClock className="size-4 text-emerald-600" />
