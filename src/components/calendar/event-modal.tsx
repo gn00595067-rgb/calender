@@ -187,7 +187,8 @@ export function EventModal({
   defaultStartWall?: string;
   /** create 模式下預先帶入的欄位（語音解析結果）。 */
   draft?: EventDraft;
-  onSaved?: () => void;
+  /** 存檔成功；帶行程開始日（台北 yyyy-MM-dd），語音流程用來跳到那天 */
+  onSaved?: (dateStr?: string) => void;
 }) {
   const { calendars, ownedCalendars, sharedCalendars, calendarById } = useAppData();
   const editableCalendars = [...ownedCalendars, ...sharedCalendars].filter((c) =>
@@ -789,7 +790,7 @@ export function EventModal({
       await qc.invalidateQueries({ queryKey: ["events"] });
       onOpenChange(false);
       router.refresh();
-      onSaved?.();
+      onSaved?.(v.startWall.slice(0, 10));
     });
   }
 

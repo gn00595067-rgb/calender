@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { addDays, addMonths, addWeeks, format } from "date-fns";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
@@ -42,6 +43,18 @@ export function CalendarView() {
 
   const [view, setView] = useState<ViewMode>("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
+
+  // 網址帶 ?date=2026-11-02&view=day（語音新增／修改／刪除後）→ 跳到那天
+  const params = useSearchParams();
+  const focusDate = params.get("date");
+  const focusView = params.get("view");
+  const focusNonce = params.get("t");
+  useEffect(() => {
+    if (!focusDate || !/^\d{4}-\d{2}-\d{2}$/.test(focusDate)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 依網址同步一次定位
+    setAnchor(new Date(zonedToIso(new Date(`${focusDate}T12:00:00`))));
+    if (focusView === "day" || focusView === "week" || focusView === "month") setView(focusView);
+  }, [focusDate, focusView, focusNonce]);
 
   const [detail, setDetail] = useState<CalEvent | null>(null);
   const [editing, setEditing] = useState<CalEvent | null>(null);

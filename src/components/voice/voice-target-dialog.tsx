@@ -22,6 +22,7 @@ import { deleteEventAction } from "@/lib/actions/events";
 import { eventSentence, summaryFromEvents } from "@/lib/event-summary";
 import { addMinutesToWall } from "@/lib/wall-time";
 import { taipeiTodayStr, utcToTaipeiWall } from "@/lib/date";
+import { calendarDayHref } from "@/lib/calendar-utils";
 import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { EventDraft } from "@/components/calendar/event-modal";
@@ -135,7 +136,8 @@ export function VoiceTargetDialog({
         duration: 10000,
       });
       await qc.invalidateQueries({ queryKey: ["events"] });
-      router.refresh();
+      // 跳到被刪那天的日檢視，馬上看得到少了哪筆（Peggy：今天 10/31 刪 11/2，還要翻下個月才能檢查）
+      router.push(calendarDayHref(utcToTaipeiWall(picked.anchor.starts_at).slice(0, 10)));
       onDone?.();
       close();
     });

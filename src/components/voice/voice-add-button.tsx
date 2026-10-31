@@ -21,6 +21,7 @@ import { EventModal, type EventDraft } from "@/components/calendar/event-modal";
 import { VoiceTargetDialog, type VoiceTargetRequest } from "./voice-target-dialog";
 import type { CalEvent } from "@/lib/client/events";
 import { taipeiNowWall, taipeiNowHuman } from "@/lib/date";
+import { calendarDayHref } from "@/lib/calendar-utils";
 import { cn } from "@/lib/utils";
 
 /** API 回傳的一筆行程（route.ts normalizeEvent） */
@@ -406,7 +407,11 @@ export function VoiceAddButton({
         mode="edit"
         event={editing?.event}
         draft={editing?.draft}
-        onSaved={onSaved}
+        onSaved={(ds) => {
+          onSaved?.();
+          // 語音修改後跳到那天，馬上核對
+          if (ds) router.push(calendarDayHref(ds));
+        }}
       />
 
       {/* 帶入解析結果的「新增行程」對話框，供確認後送出 */}
@@ -415,9 +420,11 @@ export function VoiceAddButton({
         onOpenChange={handleModalOpenChange}
         mode="create"
         draft={draft ?? undefined}
-        onSaved={() => {
+        onSaved={(ds) => {
           savedRef.current = true;
           onSaved?.();
+          // 語音新增後跳到那天（例如今天 10/31 新增 11/2，不必自己翻下個月）
+          if (ds) router.push(calendarDayHref(ds));
         }}
       />
     </>

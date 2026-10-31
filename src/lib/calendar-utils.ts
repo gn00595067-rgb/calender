@@ -175,3 +175,11 @@ export function layoutDay<T extends TimeSpan>(events: T[]): PositionedEvent<T>[]
   flush();
   return result;
 }
+
+/**
+ * 跳到行事曆某一天的日檢視（語音新增／修改／刪除後讓人立刻核對那天）。
+ * t 讓同一天連續操作也會重新定位。
+ */
+export function calendarDayHref(dateStr: string): string {
+  return `/calendar?date=${dateStr}&view=day&t=${Date.now()}`;
+}
