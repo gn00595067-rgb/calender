@@ -394,6 +394,17 @@ export function EventModal({
     setValue("reminder2Minutes", allDay ? null : DEFAULT_REMINDER2_MINUTES);
   }, [open, mode, allDay, setValue]);
   const [autoSubjectNote, setAutoSubjectNote] = useState<string | null>(null);
+  // 主角跟分類名稱一致時收成一行字，不用再選（煒喻 19-2：分類已經寫了是誰的行程）
+  const [subjectExpanded, setSubjectExpanded] = useState(false);
+  useEffect(() => {
+    if (open) setSubjectExpanded(false);
+  }, [open]);
+  const subjectIdsNow = watch("subjectIds") ?? [];
+  const subjectCollapsed =
+    !subjectExpanded &&
+    inferredSubjects.length > 0 &&
+    subjectIdsNow.length === inferredSubjects.length &&
+    inferredSubjects.every((id) => subjectIdsNow.includes(id));
   useEffect(() => {
     if (!open || mode !== "create" || subjectsTouchedRef.current) return;
     setValue("subjectIds", inferredSubjects);
@@ -1030,7 +1041,27 @@ export function EventModal({
               <Input id="ev-location" {...register("location")} placeholder="選填" />
             </div>
 
-            <div className="space-y-2">
+            {subjectCollapsed && (() => {
+              const names = inferredSubjects
+                .map((id) => allContacts.find((c) => c.id === id)?.name)
+                .filter(Boolean)
+                .join("、");
+              return (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">誰的行程：</span>
+                  <span className="font-medium">{names}</span>
+                  <span className="text-xs text-muted-foreground">（依分類自動帶入，不用再選）</span>
+                  <button
+                    type="button"
+                    className="ml-auto text-xs text-primary underline"
+                    onClick={() => setSubjectExpanded(true)}
+                  >
+                    只有其中一人／要改
+                  </button>
+                </div>
+              );
+            })()}
+            <div className={cn("space-y-2", subjectCollapsed && "hidden")}>
               <Label>
                 誰的行程（主角）
                 <span className="ml-1 text-xs font-normal text-muted-foreground">
