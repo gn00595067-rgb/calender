@@ -16,6 +16,7 @@ import {
   ClipboardCheck,
   Printer,
   Briefcase,
+  NotebookPen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,6 +33,7 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/search", label: "搜尋", icon: Search },
   { href: "/recent", label: "新增紀錄", icon: ClipboardCheck },
   { href: "/learning", label: "學習回饋", icon: GraduationCap },
+  { href: "/tutoring", label: "家教填報", icon: NotebookPen },
   { href: "/reports", label: "報表結算", icon: BarChart3 },
   { href: "/work", label: "工作效益", icon: Briefcase },
   { href: "/driver", label: "司機行程", icon: Car },

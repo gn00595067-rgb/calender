@@ -56,6 +56,16 @@ const contactSchema = z.object({
   defaultTagNames: z.array(z.string().trim().min(1).max(30)).max(10).optional(),
   // 每堂課要寫回饋（0021）；未提供＝不動
   needsFeedback: z.boolean().optional(),
+  // 家教填報（0023）：老師類型、可填科目、開放給家庭老師、家庭老師時薪；家人是否上課學生
+  tutor: z
+    .object({
+      kind: z.enum(["specialist", "home"]).nullable(),
+      subjects: z.array(z.string().trim().min(1).max(20)).max(10),
+      shared: z.boolean(),
+      rates: z.record(z.string().max(20), z.number().int().min(0).max(100000)),
+    })
+    .optional(),
+  isStudent: z.boolean().optional(),
 });
 
 /**
@@ -74,6 +84,36 @@ async function writeEventDefaults(
       .eq("id", id);
     if (fbErr && d.needsFeedback && /needs_feedback/.test(fbErr.message))
       return "人物已儲存，但「每堂課都要寫學習回饋」需先套用資料庫更新（0021）才能保存";
+  }
+  if (d.tutor !== undefined || d.isStudent !== undefined) {
+    const { error: tErr } = await supabase
+      .from("contacts")
+      .update({
+        ...(d.tutor
+          ? {
+              tutor_kind: d.tutor.kind,
+              tutor_subjects: d.tutor.subjects,
+              tutor_shared: d.tutor.shared,
+            }
+          : {}),
+        ...(d.isStudent !== undefined ? { is_student: d.isStudent } : {}),
+      })
+      .eq("id", id);
+    const set = d.tutor?.kind || d.isStudent;
+    if (tErr && /tutor_|is_student/.test(tErr.message)) {
+      if (set) return "人物已儲存，但「家教老師設定」需先套用資料庫更新（0023）才能保存";
+    } else if (tErr) return tErr.message;
+    // 時薪另存（只有家長讀得到）
+    if (!tErr && d.tutor) {
+      const { user } = await getAuthed();
+      const { error: rErr } = await supabase
+        .from("tutor_rate_settings")
+        .upsert(
+          { contact_id: id, owner_id: user.id, rates: d.tutor.rates, updated_at: new Date().toISOString() },
+          { onConflict: "contact_id" },
+        );
+      if (rErr && Object.keys(d.tutor.rates).length) return `人物已儲存，但時薪沒有存到：${rErr.message}`;
+    }
   }
   if (d.defaultCalendarId === undefined && d.defaultTagNames === undefined) return null;
   const { error } = await supabase

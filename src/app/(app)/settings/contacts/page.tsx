@@ -48,6 +48,7 @@ import {
 } from "@/lib/constants";
 import { twd } from "@/lib/date";
 import { cn } from "@/lib/utils";
+import { SUBJECTS as TUTOR_SUBJECTS, WORK_CATEGORIES as TUTOR_WORK_CATEGORIES } from "@/lib/tutor";
 import {
   fetchPlansByContact,
   isLegacyPlanId,
@@ -96,6 +97,12 @@ interface FullContact {
   /** 0021：每堂課要寫回饋（報表檢查缺回饋）、老師登入帳號 */
   needs_feedback: boolean;
   teacher_user_id: string | null;
+  /** 0023 家教填報 */
+  tutor_kind: "specialist" | "home" | null;
+  tutor_subjects: string[];
+  tutor_shared: boolean;
+  tutor_rates: Record<string, number>;
+  is_student: boolean;
 }
 
 /** 表單中的一列方案（金額以字串暫存，方便輸入） */
@@ -126,6 +133,9 @@ function useContactsFull() {
       if (error) throw new Error(error.message);
       const rows = data ?? [];
       const plans = await fetchPlansByContact(rows);
+      // 家庭老師時薪（0023；未套用時讀不到就當沒設定）
+      const { data: rateRows } = await supabase.from("tutor_rate_settings").select("contact_id, rates");
+      const rates = new Map((rateRows ?? []).map((r) => [r.contact_id, (r.rates ?? {}) as Record<string, number>]));
       return rows.map((c) => ({
         id: c.id,
         name: c.name,
@@ -146,6 +156,11 @@ function useContactsFull() {
         default_tag_names: Array.isArray(c.default_tag_names) ? c.default_tag_names : [],
         needs_feedback: c.needs_feedback ?? false,
         teacher_user_id: c.teacher_user_id ?? null,
+        tutor_kind: c.tutor_kind ?? null,
+        tutor_subjects: c.tutor_subjects ?? [],
+        tutor_shared: c.tutor_shared ?? false,
+        tutor_rates: rates.get(c.id) ?? {},
+        is_student: c.is_student ?? false,
         plans: plans.get(c.id) ?? [],
       }));
     },
@@ -330,6 +345,11 @@ function ContactFormDialog({
   const [defaultCalendarId, setDefaultCalendarId] = useState<string | null>(null);
   const [defaultTagNames, setDefaultTagNames] = useState<string[]>([]);
   const [needsFeedback, setNeedsFeedback] = useState(false);
+  const [tutorKind, setTutorKind] = useState<"" | "specialist" | "home">("");
+  const [tutorSubjects, setTutorSubjects] = useState<string[]>([]);
+  const [tutorShared, setTutorShared] = useState(false);
+  const [tutorRates, setTutorRates] = useState<Record<string, string>>({});
+  const [isStudent, setIsStudent] = useState(false);
   const { ownedCalendars, sharedCalendars } = useAppData();
   const [pending, startTransition] = useTransition();
   const [init, setInit] = useState(false);
@@ -364,6 +384,13 @@ function ContactFormDialog({
     setDefaultCalendarId(contact?.default_calendar_id ?? null);
     setDefaultTagNames(contact?.default_tag_names ?? []);
     setNeedsFeedback(contact?.needs_feedback ?? false);
+    setTutorKind(contact?.tutor_kind ?? "");
+    setTutorSubjects(contact?.tutor_subjects ?? []);
+    setTutorShared(contact?.tutor_shared ?? false);
+    setTutorRates(
+      Object.fromEntries(Object.entries(contact?.tutor_rates ?? {}).map(([k, v]) => [k, String(v)])),
+    );
+    setIsStudent(contact?.is_student ?? false);
     setInit(true);
   }
   if (!open && init) setInit(false);
@@ -409,6 +436,21 @@ function ContactFormDialog({
         defaultCalendarId,
         defaultTagNames,
         needsFeedback: isFamily ? false : needsFeedback,
+        // 家教填報（0023）：家人不能當老師；非家人不能當上課學生
+        tutor: {
+          kind: isFamily ? null : tutorKind || null,
+          subjects: !isFamily && tutorKind === "specialist" ? tutorSubjects : [],
+          shared: !isFamily && tutorKind === "specialist" && tutorShared,
+          rates:
+            !isFamily && tutorKind === "home"
+              ? Object.fromEntries(
+                  Object.entries(tutorRates)
+                    .filter(([, v]) => v.trim() !== "" && Number(v) >= 0)
+                    .map(([k, v]) => [k, Math.round(Number(v))]),
+                )
+              : {},
+        },
+        isStudent: isFamily ? isStudent : false,
       };
       const res =
         mode === "create"
@@ -498,6 +540,15 @@ function ContactFormDialog({
 
           {isFamily && (
             <div className="space-y-3 rounded-lg border p-3">
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox checked={isStudent} onCheckedChange={(c) => setIsStudent(!!c)} className="mt-0.5" />
+                <span>
+                  上課學生（家教填報）
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    勾選後，家教老師填報時可以選這位學生、記錄吸收程度。
+                  </span>
+                </span>
+              </label>
               <label className="flex items-start gap-2 text-sm">
                 <Checkbox
                   checked={isSelf}
@@ -657,6 +708,80 @@ function ContactFormDialog({
                   </span>
                 </span>
               </label>
+              <div className="space-y-2">
+                <Label className="text-xs">家教填報的老師類型</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(
+                    [
+                      ["", "不是家教"],
+                      ["specialist", "專科老師（每次上課填紀錄）"],
+                      ["home", "家庭老師（每天填回報）"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setTutorKind(k)}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm",
+                        tutorKind === k ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {tutorKind === "specialist" && (
+                  <>
+                    <Label className="text-xs">可填科目（沒選＝全部）</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {TUTOR_SUBJECTS.map((sub) => {
+                        const on = tutorSubjects.includes(sub);
+                        return (
+                          <button
+                            key={sub}
+                            type="button"
+                            onClick={() =>
+                              setTutorSubjects(on ? tutorSubjects.filter((x) => x !== sub) : [...tutorSubjects, sub])
+                            }
+                            className={cn(
+                              "rounded-full border px-3 py-1 text-sm",
+                              on ? "border-primary bg-primary/10 font-medium text-primary" : "hover:bg-accent",
+                            )}
+                          >
+                            {sub}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <label className="flex items-start gap-2 text-sm">
+                      <Checkbox checked={tutorShared} onCheckedChange={(c) => setTutorShared(!!c)} className="mt-0.5" />
+                      <span>
+                        開放這位老師的紀錄給家庭老師看
+                        <span className="block text-xs text-muted-foreground">家庭老師可以唯讀查看，方便統籌全科</span>
+                      </span>
+                    </label>
+                  </>
+                )}
+                {tutorKind === "home" && (
+                  <>
+                    <Label className="text-xs">各工作類別時薪（只有家長看得到，用來算月底金額）</Label>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {TUTOR_WORK_CATEGORIES.map((cat) => (
+                        <label key={cat} className="space-y-1 text-xs">
+                          <span className="text-muted-foreground">{cat}</span>
+                          <Input
+                            inputMode="numeric"
+                            value={tutorRates[cat] ?? ""}
+                            onChange={(e) => setTutorRates({ ...tutorRates, [cat]: e.target.value })}
+                            placeholder="每小時 NT$"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
               {mode === "edit" && contact ? (
                 <TeacherAccountPanel
                   contactId={contact.id}

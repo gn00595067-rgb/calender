@@ -202,6 +202,11 @@ export interface Database {
           // 0021 老師自填回饋
           needs_feedback?: boolean;
           teacher_user_id?: string | null;
+          // 0023 家教填報
+          tutor_kind?: "specialist" | "home" | null;
+          tutor_subjects?: string[];
+          tutor_shared?: boolean;
+          is_student?: boolean;
           default_payment_method:
             | "monthly"
             | "per_time"
@@ -236,6 +241,11 @@ export interface Database {
           // 0021 老師自填回饋
           needs_feedback?: boolean;
           teacher_user_id?: string | null;
+          // 0023 家教填報
+          tutor_kind?: "specialist" | "home" | null;
+          tutor_subjects?: string[];
+          tutor_shared?: boolean;
+          is_student?: boolean;
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -270,6 +280,11 @@ export interface Database {
           // 0021 老師自填回饋
           needs_feedback?: boolean;
           teacher_user_id?: string | null;
+          // 0023 家教填報
+          tutor_kind?: "specialist" | "home" | null;
+          tutor_subjects?: string[];
+          tutor_shared?: boolean;
+          is_student?: boolean;
           default_payment_method?:
             | "monthly"
             | "per_time"
@@ -636,6 +651,93 @@ export interface Database {
         };
         Relationships: [];
       };
+      // 0023 家教填報
+      tutor_reports: {
+        Row: {
+          id: string;
+          owner_id: string;
+          teacher_contact_id: string;
+          author_id: string;
+          teacher_name: string;
+          kind: "lesson" | "daily";
+          report_date: string;
+          subject: string | null;
+          start_time: string | null;
+          end_time: string | null;
+          mode: string | null;
+          student_ids: string[];
+          event_id: string | null;
+          event_note_id: string | null;
+          content: Record<string, unknown>;
+          minutes: number;
+          minutes_by_category: Record<string, number>;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          teacher_contact_id: string;
+          author_id: string;
+          teacher_name?: string;
+          kind: "lesson" | "daily";
+          report_date: string;
+          subject?: string | null;
+          start_time?: string | null;
+          end_time?: string | null;
+          mode?: string | null;
+          student_ids?: string[];
+          event_id?: string | null;
+          event_note_id?: string | null;
+          content?: Record<string, unknown>;
+          minutes?: number;
+          minutes_by_category?: Record<string, number>;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          teacher_contact_id?: string;
+          kind?: "lesson" | "daily";
+          report_date?: string;
+          subject?: string | null;
+          start_time?: string | null;
+          end_time?: string | null;
+          mode?: string | null;
+          student_ids?: string[];
+          event_id?: string | null;
+          event_note_id?: string | null;
+          content?: Record<string, unknown>;
+          minutes?: number;
+          minutes_by_category?: Record<string, number>;
+        };
+        Relationships: [];
+      };
+      tutor_rate_settings: {
+        Row: { contact_id: string; owner_id: string; rates: Record<string, number>; updated_at: string };
+        Insert: { contact_id: string; owner_id: string; rates?: Record<string, number>; updated_at?: string };
+        Update: { rates?: Record<string, number>; updated_at?: string };
+        Relationships: [];
+      };
+      tutor_report_comments: {
+        Row: {
+          id: string;
+          report_id: string;
+          author_id: string;
+          author_name: string;
+          body: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          report_id: string;
+          author_id: string;
+          author_name?: string;
+          body: string;
+          created_at?: string;
+        };
+        Update: { body?: string };
+        Relationships: [];
+      };
       event_notes: {
         Row: {
           id: string;
@@ -711,6 +813,18 @@ export interface Database {
       my_teacher_links: {
         Args: Record<string, never>;
         Returns: { contact_id: string; contact_name: string; owner_name: string }[];
+      };
+      // 0023 家教填報
+      my_tutor_profile: {
+        Args: Record<string, never>;
+        Returns: {
+          contact_id: string;
+          contact_name: string;
+          owner_id: string;
+          tutor_kind: "specialist" | "home" | null;
+          tutor_subjects: string[];
+          students: { id: string; name: string }[];
+        }[];
       };
     };
     Enums: Record<string, never>;
