@@ -6,7 +6,8 @@ import { AlertTriangle, CalendarCheck, Loader2, MessageSquare, Pencil, Trash2 } 
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { asDaily, asLesson, hoursText } from "@/lib/tutor";
+import { asDaily, asLesson, hoursText, projectProgressText } from "@/lib/tutor";
+import { PhotoGrid } from "./photos";
 import { addComment, deleteComment, useComments, type TutorReport } from "@/lib/client/tutor";
 import { D } from "@/lib/date";
 import { cn } from "@/lib/utils";
@@ -145,6 +146,7 @@ function LessonBody({ report, studentName }: { report: TutorReport; studentName:
           <Row label="下次加強">{f.nextFocus}</Row>
         </div>
       ))}
+      <PhotoGrid paths={c.photos.map((p) => p.path)} />
     </div>
   );
 }
@@ -197,7 +199,7 @@ function DailyBody({ report, studentName }: { report: TutorReport; studentName: 
       {c.project && (
         <div className="space-y-1 rounded-lg bg-muted/40 p-2.5">
           <div className="font-semibold">
-            專題：{c.project.name}（{c.project.progress}）
+            專題：{c.project.name}（{projectProgressText(c.project)}）
           </div>
           <Row label="截止日">{c.project.due}</Row>
           <Row label="下一步">{c.project.next}</Row>
@@ -227,6 +229,7 @@ function DailyBody({ report, studentName }: { report: TutorReport; studentName: 
           給家長：{c.toParent}
         </div>
       )}
+      <PhotoGrid paths={c.photos.map((p) => p.path)} />
     </div>
   );
 }

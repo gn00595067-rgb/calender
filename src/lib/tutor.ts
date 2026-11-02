@@ -16,6 +16,14 @@ export const PROJECT_STAGES = ["找資料中", "撰寫中", "完成"] as const;
 
 export type TutorKind = "specialist" | "home";
 
+/** 照片（存在 Storage 的路徑；section：lesson＝上課附件、parent＝給家長的話） */
+export interface Photo {
+  path: string;
+  section: "lesson" | "parent";
+}
+
+export const SCHEDULE_RESPONSIBLE = ["數學老師", "國文老師", "家庭老師", "補習班", "家長"] as const;
+
 /** 學生回饋（專科老師，每位學生一份） */
 export interface StudentFeedback {
   id: string;
@@ -35,6 +43,7 @@ export interface LessonContent {
   materials: string;
   method: string;
   students: StudentFeedback[];
+  photos: Photo[];
 }
 
 export interface WorkSegment {
@@ -79,10 +88,12 @@ export interface DailyContent {
   homework: { status: string; note: string; special: string } | null;
   reviews: SubjectReview[];
   english: EnglishReview[];
-  project: { name: string; progress: string; due: string; next: string } | null;
+  /** progress＝階段；percent＝0–100（兩者擇一或都填） */
+  project: { name: string; progress: string; percent?: number | null; due: string; next: string } | null;
   contacts: SchoolContact[];
   purchases: Purchase[];
   toParent: string;
+  photos: Photo[];
 }
 
 export function emptyLesson(studentIds: string[]): LessonContent {
@@ -93,6 +104,7 @@ export function emptyLesson(studentIds: string[]): LessonContent {
     materials: "",
     method: "",
     students: studentIds.map(emptyFeedback),
+    photos: [],
   };
 }
 
@@ -110,6 +122,7 @@ export function emptyDaily(): DailyContent {
     contacts: [],
     purchases: [],
     toParent: "",
+    photos: [],
   };
 }
 
@@ -186,7 +199,8 @@ export function checkDaily(date: string, c: DailyContent): string | null {
   if (c.homework && !c.homework.status) return "學校作業請選完成狀態";
   for (const r of c.reviews) if (!r.subject || !r.unit.trim()) return "社會／自然請填科目與單元";
   for (const e of c.english) if (!e.course || !e.range.trim() || e.items.length === 0) return "英文請填課程、範圍與項目";
-  if (c.project && (!c.project.name.trim() || !c.project.progress.trim())) return "專題報告請填名稱與目前進度";
+  if (c.project && (!c.project.name.trim() || (!c.project.progress.trim() && c.project.percent == null)))
+    return "專題報告請填名稱與目前進度（階段或百分比）";
   for (const k of c.contacts) if (!k.who.trim() || !k.matter.trim()) return "學校老師聯繫請填對象與事由";
   for (const p of c.purchases) if (!p.category || !p.item.trim() || !p.status) return "採購報名請填類別、品項與狀態";
   return null;
@@ -227,6 +241,7 @@ export function asLesson(raw: unknown): LessonContent {
     materials: r.materials ?? "",
     method: r.method ?? "",
     students: (r.students ?? []).map((f) => ({ ...emptyFeedback(f.id), ...f })),
+    photos: r.photos ?? [],
   };
 }
 
@@ -241,5 +256,21 @@ export function asDaily(raw: unknown): DailyContent {
     contacts: r.contacts ?? [],
     purchases: r.purchases ?? [],
     toParent: r.toParent ?? "",
+    photos: r.photos ?? [],
   };
+}
+
+/** 專題進度顯示：「撰寫中・60%」 */
+export function projectProgressText(p: { progress: string; percent?: number | null }): string {
+  return [p.progress, p.percent != null ? `${p.percent}%` : ""].filter(Boolean).join("・");
+}
+
+/** 某天是星期幾的週一（yyyy-MM-dd） */
+export function mondayOf(ds: string): string {
+  const d = new Date(`${ds}T12:00:00Z`);
+  return new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10);
+}
+
+export function addDays(ds: string, n: number): string {
+  return new Date(Date.parse(`${ds}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 }

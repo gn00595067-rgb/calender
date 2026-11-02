@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Choice, Chips, Field, Percent, Text, TimeRange } from "./fields";
+import { PhotoField, initPhotos, type PhotoState } from "./photos";
 import {
   ERROR_TYPES,
   LESSON_TYPES,
@@ -21,7 +22,7 @@ import {
   type LessonContent,
   type StudentFeedback,
 } from "@/lib/tutor";
-import { saveReport, useTeacherLessonsOn, type TutorProfile, type TutorReport } from "@/lib/client/tutor";
+import { saveReport, useTeacherLessonsOn, useUnits, type TutorProfile, type TutorReport } from "@/lib/client/tutor";
 import { taipeiTodayStr, utcToTaipeiWall } from "@/lib/date";
 
 /**
@@ -55,6 +56,9 @@ export function LessonForm({
     report ? asLesson(report.content) : emptyLesson(allStudentIds),
   );
   const [saving, setSaving] = useState(false);
+  const [photos, setPhotos] = useState<PhotoState>(() => initPhotos(content.photos, "lesson"));
+  // 家長建好的課本單元清單（沒建就只能手打）
+  const unitOptions = useUnits(profile.ownerId).data?.get(subject) ?? [];
 
   const lessonsQ = useTeacherLessonsOn(date, true);
   const lessons = lessonsQ.data ?? [];
@@ -93,6 +97,8 @@ export function LessonForm({
       prevEventId: report?.event_id ?? null,
       prevEventNoteId: report?.event_note_id ?? null,
       content: content as unknown as Record<string, unknown>,
+      newPhotos: photos.added.map((file) => ({ file, section: "lesson" as const })),
+      removedPaths: photos.removed,
       minutes,
       minutesByCategory: {},
       studentName: nameOf,
@@ -185,6 +191,23 @@ export function LessonForm({
         </Field>
         <Field label="單元" required>
           <Text value={content.unit} onChange={(v) => setContent({ ...content, unit: v })} placeholder="例：數學第三～五單元；國語第五課" />
+          {unitOptions.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {unitOptions.map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setContent({ ...content, unit: u })}
+                  className={
+                    "min-h-9 rounded-full border px-3 text-sm " +
+                    (content.unit === u ? "border-primary bg-primary/10 text-primary" : "hover:bg-accent")
+                  }
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          )}
         </Field>
         <Field label="教學重點" required>
           <Text multiline value={content.focus} onChange={(v) => setContent({ ...content, focus: v })} placeholder="例：第三～五單元重點概念與應用題型" />
@@ -223,6 +246,13 @@ export function LessonForm({
           </Field>
         </div>
       ))}
+
+      <div className="space-y-2 rounded-xl border bg-card p-3">
+        <div className="font-semibold">
+          附件照片 <span className="text-xs font-normal text-muted-foreground">考卷、課本、作業，可多張</span>
+        </div>
+        <PhotoField state={photos} onChange={setPhotos} />
+      </div>
 
       <div className="sticky bottom-0 flex gap-2 bg-background/95 py-3 backdrop-blur">
         <Button variant="outline" className="h-12 flex-1" onClick={onDone} disabled={saving}>

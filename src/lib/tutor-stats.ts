@@ -2,7 +2,7 @@
  * 家長端報表：時數統計、各科進度、吸收程度趨勢、待辦提醒（純計算）。
  * spec：docs/specs/家教老師填報.md §六
  */
-import { asDaily, asLesson } from "@/lib/tutor";
+import { asDaily, asLesson, projectProgressText } from "@/lib/tutor";
 import type { TutorReport } from "@/lib/client/tutor";
 
 export interface HoursRow {
@@ -102,6 +102,8 @@ export function absorptionTrends(reports: TutorReport[]): Map<string, Map<string
 }
 
 export interface TodoItem {
+  /** 標「已處理」用的固定鍵 */
+  key: string;
   kind: "contact" | "purchase" | "project";
   date: string;
   title: string;
@@ -123,12 +125,22 @@ export function todos(reports: TutorReport[], today: string): TodoItem[] {
   for (const r of dailies) {
     const c = asDaily(r.content);
     if (r.report_date >= since) {
-      for (const k of c.contacts)
+      c.contacts.forEach((k) => {
         if (k.needsParent)
-          items.push({ kind: "contact", date: r.report_date, title: `聯繫 ${k.who}`, detail: k.matter, teacherName: r.teacher_name, reportId: r.id });
+          items.push({
+            key: `contact:${r.id}:${k.who}|${k.matter.slice(0, 60)}`,
+            kind: "contact",
+            date: r.report_date,
+            title: `聯繫 ${k.who}`,
+            detail: k.matter,
+            teacherName: r.teacher_name,
+            reportId: r.id,
+          });
+      });
     }
     for (const p of c.purchases) {
       latestPurchase.set(`${p.category}|${p.item}`, {
+        key: `purchase:${p.category}|${p.item}|${p.status}`,
         kind: "purchase",
         date: r.report_date,
         title: `${p.category}：${p.item}`,
@@ -140,13 +152,14 @@ export function todos(reports: TutorReport[], today: string): TodoItem[] {
     }
     if (c.project?.name) {
       latestProject.set(c.project.name, {
+        key: `project:${c.project.name}|${c.project.due}|${projectProgressText(c.project)}`,
         kind: "project",
         date: r.report_date,
         title: `專題：${c.project.name}`,
-        detail: `${c.project.progress}${c.project.due ? `・截止 ${c.project.due}` : ""}${c.project.next ? `・下一步：${c.project.next}` : ""}`,
+        detail: `${projectProgressText(c.project)}${c.project.due ? `・截止 ${c.project.due}` : ""}${c.project.next ? `・下一步：${c.project.next}` : ""}`,
         teacherName: r.teacher_name,
         reportId: r.id,
-        done: c.project.progress === "完成",
+        done: c.project.progress === "完成" || c.project.percent === 100,
         due: c.project.due,
       });
     }

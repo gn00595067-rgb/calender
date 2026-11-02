@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Choice, Chips, Field, Percent, Repeater, Section, Text, TimeRange } from "./fields";
+import { PhotoField, initPhotos, type PhotoState } from "./photos";
 import {
   ENGLISH_ITEMS,
   HOMEWORK_STATUS,
@@ -22,7 +23,7 @@ import {
   hoursText,
   type DailyContent,
 } from "@/lib/tutor";
-import { saveReport, type TutorProfile, type TutorReport } from "@/lib/client/tutor";
+import { saveReport, useSchedule, type TutorProfile, type TutorReport } from "@/lib/client/tutor";
 import { taipeiTodayStr } from "@/lib/date";
 
 /**
@@ -48,6 +49,11 @@ export function DailyForm({
   const [date, setDate] = useState(report?.report_date ?? taipeiTodayStr());
   const [c, setC] = useState<DailyContent>(() => (report ? asDaily(report.content) : emptyDaily()));
   const [saving, setSaving] = useState(false);
+  const [photos, setPhotos] = useState<PhotoState>(() => initPhotos(c.photos, "parent"));
+  // 週課表上這天「家庭老師」負責、沒請假停課的時段 → 一鍵帶入工作時段
+  const plan = (useSchedule(profile.ownerId, date, date).data ?? []).filter(
+    (it) => it.responsible === "家庭老師" && !it.status,
+  );
   const set = (patch: Partial<DailyContent>) => setC((x) => ({ ...x, ...patch }));
   const perStudent = (v: number) => Object.fromEntries(students.map((s) => [s.id, v]));
 
@@ -74,13 +80,16 @@ export function DailyForm({
       prevEventId: null,
       prevEventNoteId: null,
       content: content as unknown as Record<string, unknown>,
+      newPhotos: photos.added.map((file) => ({ file, section: "parent" as const })),
+      removedPaths: photos.removed,
       minutes: total,
       minutesByCategory: byCategory,
       studentName: (id) => students.find((s) => s.id === id)?.name ?? "",
     });
     setSaving(false);
     if (res.error) return void toast.error(res.error);
-    toast.success(report ? "已更新今日回報" : "已送出今日回報，家長看得到了");
+    if (res.warning) toast.warning(res.warning);
+    else toast.success(report ? "已更新今日回報" : "已送出今日回報，家長看得到了");
     await qc.invalidateQueries({ queryKey: ["tutor"] });
     onDone();
   }
@@ -91,6 +100,23 @@ export function DailyForm({
         <Field label="日期" required>
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 text-base" />
         </Field>
+        {plan.length > 0 && (
+          <button
+            type="button"
+            onClick={() =>
+              set({
+                segments: plan.map((it) => ({
+                  start: it.start_time.slice(0, 5),
+                  end: it.end_time.slice(0, 5),
+                  category: "教學統籌",
+                })),
+              })
+            }
+            className="flex min-h-11 w-full items-center justify-center rounded-lg border border-dashed border-emerald-500 text-sm text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+          >
+            從週課表帶入 {plan.length} 段（{plan.map((it) => `${it.start_time.slice(0, 5)}–${it.end_time.slice(0, 5)}`).join("、")}）
+          </button>
+        )}
         <Field label="工作時段" required hint={total ? `共 ${hoursText(total)}` : "一天可新增多段"}>
           <Repeater
             items={c.segments}
@@ -221,12 +247,36 @@ export function DailyForm({
             </button>
           )}
         </Field>
-        <Field label="目前進度" required>
+        <Field label="目前進度" required hint="選階段或填百分比，擇一即可">
           <Choice
             options={PROJECT_STAGES}
             value={c.project?.progress ?? ""}
             onChange={(progress) => set({ project: { name: "", due: "", next: "", ...c.project, progress } })}
+            allowEmpty
           />
+          {c.project?.percent == null ? (
+            <button
+              type="button"
+              className="text-xs text-primary underline"
+              onClick={() => set({ project: { name: "", progress: "", due: "", next: "", ...c.project, percent: 50 } })}
+            >
+              改用百分比
+            </button>
+          ) : (
+            <div className="space-y-1">
+              <Percent
+                value={c.project.percent}
+                onChange={(percent) => set({ project: { ...c.project!, percent } })}
+              />
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline"
+                onClick={() => set({ project: { ...c.project!, percent: null } })}
+              >
+                不填百分比
+              </button>
+            </div>
+          )}
         </Field>
         <Field label="截止日">
           <Input
@@ -303,8 +353,14 @@ export function DailyForm({
         />
       </Section>
 
-      <Section title="給家長的話" filled={c.toParent ? "已填" : undefined}>
+      <Section
+        title="給家長的話"
+        filled={
+          c.toParent || photos.added.length || photos.kept.length > photos.removed.length ? "已填" : undefined
+        }
+      >
         <Text multiline value={c.toParent} onChange={(toParent) => set({ toParent })} placeholder="例：週末出的小任務、整體觀察" />
+        <PhotoField state={photos} onChange={setPhotos} />
       </Section>
 
       <div className="sticky bottom-0 flex gap-2 bg-background/95 py-3 backdrop-blur">

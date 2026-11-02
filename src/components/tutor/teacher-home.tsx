@@ -10,6 +10,7 @@ import { TeachView } from "@/components/teach/teach-view";
 import { LessonForm } from "./lesson-form";
 import { DailyForm } from "./daily-form";
 import { ReportCard } from "./report-card";
+import { ScheduleView } from "./schedule-view";
 import { asDaily, hoursText, WORK_CATEGORIES } from "@/lib/tutor";
 import {
   deleteReport,
@@ -22,7 +23,7 @@ import {
 import { taipeiTodayStr } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
-type Tab = "fill" | "mine" | "hours" | "shared" | "lessons";
+type Tab = "fill" | "mine" | "hours" | "schedule" | "shared" | "lessons";
 
 function shiftMonth(ym: string, n: number): string {
   const [y, m] = ym.split("-").map(Number);
@@ -70,7 +71,12 @@ export function TeacherHome({ userId }: { userId: string }) {
     { key: "fill", label: editing ? "修改" : "填報" },
     { key: "mine", label: "我的紀錄" },
     { key: "hours", label: "時數" },
-    ...(isHome ? [{ key: "shared" as const, label: "專科紀錄" }] : []),
+    ...(isHome
+      ? [
+          { key: "schedule" as const, label: "週課表" },
+          { key: "shared" as const, label: "專科紀錄" },
+        ]
+      : []),
     { key: "lessons", label: "我的課" },
   ];
 
@@ -168,6 +174,8 @@ export function TeacherHome({ userId }: { userId: string }) {
         ))}
 
       {tab === "hours" && <MyHours contactId={profile.contactId} isHome={isHome} />}
+
+      {tab === "schedule" && isHome && <ScheduleView ownerId={profile.ownerId} userId={userId} />}
 
       {tab === "shared" &&
         (sharedQ.isLoading ? (

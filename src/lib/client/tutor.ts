@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import type { Tables } from "@/types/database";
-import { lessonNoteText, type LessonContent } from "@/lib/tutor";
+import { lessonNoteText, type LessonContent, type Photo } from "@/lib/tutor";
 
 /**
  * 家教填報的資料存取（老師端、家長端共用；權限由 RLS 把關）。
@@ -24,9 +24,13 @@ export interface TutorProfile {
 
 const MISSING = "家教填報需先套用資料庫更新（0023）";
 
-/** 0023 未套用（表／函式不存在）→ 給看得懂的訊息 */
+/** 資料庫訊息 → 看得懂的中文：TUTOR: 前綴是觸發器的檢查；表／函式不存在＝還沒套 migration */
 function friendly(msg: string): string {
-  return /tutor_|my_tutor_profile|does not exist|schema cache/i.test(msg) ? MISSING : msg;
+  const m = /TUTOR:(.+)$/.exec(msg);
+  if (m) return m[1].trim();
+  if (/does not exist|schema cache|Could not find/i.test(msg)) return MISSING;
+  if (/row-level security/i.test(msg)) return "沒有權限做這個動作（可能是帳號或老師設定變了），請通知家長";
+  return msg;
 }
 
 /** 老師自己的人物、類型、可填科目、上課學生（不含時薪） */
@@ -126,6 +130,10 @@ export async function deleteComment(id: string): Promise<string | null> {
 
 export interface SaveReportInput {
   id?: string;
+  /** 新照片：存檔後上傳到 r/<紀錄 id>/；content.photos 會自動補上 */
+  newPhotos?: { file: File; section: Photo["section"] }[];
+  /** 修改時移除的舊照片路徑 */
+  removedPaths?: string[];
   profile: TutorProfile;
   authorId: string;
   kind: "lesson" | "daily";
@@ -152,6 +160,43 @@ export interface SaveReportInput {
  * 摘要失敗不影響紀錄本身（回傳警告）。
  */
 export async function saveReport(x: SaveReportInput): Promise<{ error?: string; warning?: string; id?: string }> {
+  // 新紀錄先決定 id，照片路徑才能一起寫進內容
+  const id = x.id ?? crypto.randomUUID();
+  const planned = (x.newPhotos ?? []).map((p) => ({
+    ...p,
+    path: `r/${id}/${crypto.randomUUID()}.jpg`,
+  }));
+  // 只認這筆紀錄自己資料夾的照片（防止內容被塞進別筆的路徑）
+  const own = (p: string) => p.startsWith(`r/${id}/`);
+  const removed = (x.removedPaths ?? []).filter(own);
+  const kept = ((x.content.photos as Photo[] | undefined) ?? []).filter((p) => own(p.path) && !removed.includes(p.path));
+  const content = { ...x.content, photos: [...kept, ...planned.map(({ path, section }) => ({ path, section }))] };
+
+  const core = await saveReportCore({ ...x, id, content }, !x.id);
+  if (core.error) return core;
+
+  const warnings = core.warning ? [core.warning] : [];
+  // 上傳新照片（紀錄要先存在，權限才過）；失敗的從內容拿掉
+  const failed: string[] = [];
+  for (const p of planned) {
+    const err = await uploadFile(p.path, p.file);
+    if (err) failed.push(p.path);
+  }
+  if (failed.length) {
+    await createClient()
+      .from("tutor_reports")
+      .update({ content: { ...content, photos: content.photos.filter((p) => !failed.includes(p.path)) } })
+      .eq("id", id);
+    warnings.push(`有 ${failed.length} 張照片沒有上傳成功（只能傳 JPG／PNG，HEIC 請先轉成 JPG），請再試一次`);
+  }
+  if (removed.length && (await removeFiles(removed))) warnings.push("有照片沒刪乾淨，不影響紀錄");
+  return { id, warning: warnings.length ? warnings.join("；") : undefined };
+}
+
+async function saveReportCore(
+  x: SaveReportInput & { id: string },
+  isNew: boolean,
+): Promise<{ error?: string; warning?: string; id?: string }> {
   const supabase = createClient();
   const row = {
     teacher_contact_id: x.profile.contactId,
@@ -167,23 +212,20 @@ export async function saveReport(x: SaveReportInput): Promise<{ error?: string; 
     minutes: x.minutes,
     minutes_by_category: x.minutesByCategory,
   };
-  let id = x.id;
-  if (id) {
+  const id = x.id;
+  if (!isNew) {
     const { error } = await supabase.from("tutor_reports").update(row).eq("id", id);
     if (error) return { error: friendly(error.message) };
   } else {
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("tutor_reports")
-      .insert({ ...row, owner_id: x.profile.ownerId, author_id: x.authorId })
-      .select("id")
-      .single();
+      .insert({ ...row, id, owner_id: x.profile.ownerId, author_id: x.authorId });
     if (error) {
       if (/tutor_reports_daily_once|duplicate key/i.test(error.message)) {
         return { error: "這天已經有一筆每日回報了，請到「我的紀錄」打開那筆修改" };
       }
       return { error: friendly(error.message) };
     }
-    id = data.id;
   }
 
   // 行事曆回饋摘要
@@ -223,8 +265,16 @@ export async function saveReport(x: SaveReportInput): Promise<{ error?: string; 
   return { id };
 }
 
-/** 刪紀錄；連到行事曆的回饋摘要由資料庫觸發器一併刪除 */
+/** 刪紀錄；照片先刪（紀錄還在權限才過），行事曆回饋摘要由資料庫觸發器一併刪除 */
 export async function deleteReport(r: TutorReport): Promise<string | null> {
+  const photos = ((r.content as { photos?: Photo[] }).photos ?? [])
+    .map((p) => p.path)
+    .filter((p) => p.startsWith(`r/${r.id}/`));
+  // 照片刪不掉就先別刪紀錄（紀錄刪了就沒有權限再刪照片）
+  if (photos.length) {
+    const err = await removeFiles(photos);
+    if (err) return `照片刪除失敗，請再試一次（${err}）`;
+  }
   const { error } = await createClient().from("tutor_reports").delete().eq("id", r.id);
   return error ? friendly(error.message) : null;
 }
@@ -285,4 +335,191 @@ export function useTutorRates(ownerId: string | null) {
       return new Map((data ?? []).map((r) => [r.contact_id, (r.rates ?? {}) as Record<string, number>]));
     },
   });
+}
+
+// ---------------- 照片（Storage：tutor-files） ----------------
+
+const BUCKET = "tutor-files";
+
+/**
+ * 手機照片動輒 3–5MB：縮到長邊 1600px、JPEG 品質 0.82 再上傳。
+ * 瀏覽器解不開（例如電腦上的 HEIC）→ JPG／PNG／WebP 傳原檔，其他格式回 null（請使用者改傳 JPG）。
+ */
+async function compress(file: File): Promise<Blob | null> {
+  const fallback = /^image\/(jpeg|png|webp)$/.test(file.type) ? file : null;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/jpeg", 0.82));
+    return blob ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** 上傳一張照片到指定路徑；回傳錯誤訊息（null＝成功） */
+export async function uploadFile(path: string, file: File): Promise<string | null> {
+  const blob = await compress(file);
+  if (!blob) return "這種照片格式無法上傳，請改傳 JPG";
+  const { error } = await createClient()
+    .storage.from(BUCKET)
+    .upload(path, blob, { contentType: blob.type || "image/jpeg", upsert: false });
+  return error ? friendly(error.message) : null;
+}
+
+/** 刪檔；回傳錯誤訊息（null＝成功） */
+export async function removeFiles(paths: string[]): Promise<string | null> {
+  if (!paths.length) return null;
+  const { error } = await createClient().storage.from(BUCKET).remove(paths);
+  return error ? error.message : null;
+}
+
+/** 私有照片的暫時網址（1 小時） */
+export function useSignedUrls(paths: string[]) {
+  return useQuery({
+    queryKey: ["tutor", "signed", paths],
+    enabled: paths.length > 0,
+    staleTime: 30 * 60 * 1000,
+    queryFn: async (): Promise<Map<string, string>> => {
+      const { data } = await createClient().storage.from(BUCKET).createSignedUrls(paths, 3600);
+      return new Map((data ?? []).flatMap((d) => (d.signedUrl && d.path ? [[d.path, d.signedUrl] as const] : [])));
+    },
+  });
+}
+
+// ---------------- 週課表 ----------------
+
+export type ScheduleItem = Tables<"tutor_schedule_items">;
+
+export function useSchedule(ownerId: string | null, from: string, to: string) {
+  return useQuery({
+    queryKey: ["tutor", "schedule", ownerId, from, to],
+    enabled: !!ownerId,
+    queryFn: async (): Promise<ScheduleItem[]> => {
+      const { data, error } = await createClient()
+        .from("tutor_schedule_items")
+        .select("*")
+        .eq("owner_id", ownerId!)
+        .gte("item_date", from)
+        .lte("item_date", to)
+        .order("item_date")
+        .order("start_time");
+      if (error) throw new Error(friendly(error.message));
+      return (data ?? []) as ScheduleItem[];
+    },
+  });
+}
+
+export type ScheduleDraft = Pick<
+  ScheduleItem,
+  "item_date" | "start_time" | "end_time" | "title" | "responsible" | "tag" | "is_exam" | "status"
+>;
+
+export async function saveScheduleItem(
+  ownerId: string,
+  userId: string,
+  d: ScheduleDraft,
+  id?: string,
+): Promise<string | null> {
+  const supabase = createClient();
+  const { error } = id
+    ? await supabase
+        .from("tutor_schedule_items")
+        .update({ ...d, updated_at: new Date().toISOString() })
+        .eq("id", id)
+    : await supabase.from("tutor_schedule_items").insert({ ...d, owner_id: ownerId, created_by: userId });
+  return error ? friendly(error.message) : null;
+}
+
+export async function deleteScheduleItem(id: string): Promise<string | null> {
+  const { error } = await createClient().from("tutor_schedule_items").delete().eq("id", id);
+  return error ? friendly(error.message) : null;
+}
+
+/** 把上週的課表複製到這週（請假／停課不複製狀態） */
+export async function copyScheduleWeek(
+  ownerId: string,
+  userId: string,
+  items: ScheduleItem[],
+  dayShift: number,
+): Promise<string | null> {
+  if (!items.length) return "上週沒有課表可以複製";
+  const rows = items.map((it) => ({
+    owner_id: ownerId,
+    created_by: userId,
+    item_date: new Date(Date.parse(`${it.item_date}T12:00:00Z`) + dayShift * 86400000).toISOString().slice(0, 10),
+    start_time: it.start_time,
+    end_time: it.end_time,
+    title: it.title,
+    responsible: it.responsible,
+    tag: "",
+    is_exam: false,
+    status: "" as const,
+  }));
+  const { error } = await createClient().from("tutor_schedule_items").insert(rows);
+  return error ? friendly(error.message) : null;
+}
+
+/** 週課表圖片（過渡期直接上傳 Excel 截圖）：s/<家長>/<週一>/ */
+export function useScheduleImages(ownerId: string | null, monday: string) {
+  return useQuery({
+    queryKey: ["tutor", "schedule-images", ownerId, monday],
+    enabled: !!ownerId,
+    queryFn: async (): Promise<string[]> => {
+      const folder = `s/${ownerId}/${monday}`;
+      const { data, error } = await createClient().storage.from(BUCKET).list(folder, { limit: 50 });
+      if (error) return [];
+      return (data ?? []).filter((f) => f.name && !f.name.startsWith(".")).map((f) => `${folder}/${f.name}`);
+    },
+  });
+}
+
+// ---------------- 課本單元清單 ----------------
+
+export function useUnits(ownerId: string | null) {
+  return useQuery({
+    queryKey: ["tutor", "units", ownerId],
+    enabled: !!ownerId,
+    queryFn: async (): Promise<Map<string, string[]>> => {
+      const { data, error } = await createClient()
+        .from("tutor_units")
+        .select("subject, units")
+        .eq("owner_id", ownerId!);
+      if (error) return new Map();
+      return new Map((data ?? []).map((r) => [r.subject, r.units ?? []]));
+    },
+  });
+}
+
+export async function saveUnits(ownerId: string, subject: string, units: string[]): Promise<string | null> {
+  const { error } = await createClient()
+    .from("tutor_units")
+    .upsert({ owner_id: ownerId, subject, units, updated_at: new Date().toISOString() }, { onConflict: "owner_id,subject" });
+  return error ? friendly(error.message) : null;
+}
+
+// ---------------- 待辦已處理 ----------------
+
+export function useTodoDone(ownerId: string | null) {
+  return useQuery({
+    queryKey: ["tutor", "todo-done", ownerId],
+    enabled: !!ownerId,
+    queryFn: async (): Promise<Set<string>> => {
+      const { data, error } = await createClient().from("tutor_todo_done").select("key").eq("owner_id", ownerId!);
+      if (error) return new Set();
+      return new Set((data ?? []).map((r) => r.key));
+    },
+  });
+}
+
+export async function setTodoDone(ownerId: string, key: string, done: boolean): Promise<string | null> {
+  const supabase = createClient();
+  const { error } = done
+    ? await supabase.from("tutor_todo_done").upsert({ owner_id: ownerId, key }, { onConflict: "owner_id,key" })
+    : await supabase.from("tutor_todo_done").delete().eq("owner_id", ownerId).eq("key", key);
+  return error ? friendly(error.message) : null;
 }

@@ -4,7 +4,10 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ChevronLeft, ChevronRight, GraduationCap, Settings2 } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Download, GraduationCap, Settings2, Undo2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { ScheduleView } from "@/components/tutor/schedule-view";
+import { reportsCsv, downloadText } from "@/lib/tutor-export";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState, ErrorState, ListSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
@@ -13,14 +16,18 @@ import { PctBar, ReportCard } from "@/components/tutor/report-card";
 import { Chips } from "@/components/tutor/fields";
 import {
   deleteReport,
+  saveUnits,
+  setTodoDone,
   useCommentCounts,
+  useTodoDone,
   useTutorContacts,
   useTutorRates,
   useTutorReports,
+  useUnits,
   type TutorReport,
 } from "@/lib/client/tutor";
 import { absorptionTrends, hoursByTeacher, latestProgress, todos, type TrendPoint } from "@/lib/tutor-stats";
-import { hoursText, WORK_CATEGORIES } from "@/lib/tutor";
+import { hoursText, SUBJECTS, WORK_CATEGORIES } from "@/lib/tutor";
 import { taipeiTodayStr, twd } from "@/lib/date";
 import { cn } from "@/lib/utils";
 
@@ -42,7 +49,7 @@ export default function TutoringPage() {
   const { me } = useAppData();
   const qc = useQueryClient();
   const today = taipeiTodayStr();
-  const [tab, setTab] = useState<"records" | "report">("records");
+  const [tab, setTab] = useState<"records" | "report" | "schedule" | "units">("records");
   const [month, setMonth] = useState(today.slice(0, 7));
   // 趨勢、進度、待辦看近半年；清單與時數看選的月份
   const sixMonths = `${shiftMonth(today.slice(0, 7), -5)}-01`;
@@ -82,7 +89,16 @@ export default function TutoringPage() {
     await qc.invalidateQueries({ queryKey: ["tutor"] });
   }
 
-  const pendingTodos = todos(all, today);
+  const doneQ = useTodoDone(me.id);
+  const doneKeys = doneQ.data ?? new Set<string>();
+  const allTodos = todos(all, today);
+  const pendingTodos = allTodos.filter((t) => !doneKeys.has(t.key));
+  const doneTodos = allTodos.filter((t) => doneKeys.has(t.key));
+  const toggleTodo = async (key: string, done: boolean) => {
+    const err = await setTodoDone(me.id, key, done);
+    if (err) return void toast.error(err);
+    await qc.invalidateQueries({ queryKey: ["tutor", "todo-done"] });
+  };
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -90,12 +106,22 @@ export default function TutoringPage() {
         title="家教填報"
         description="老師填的上課紀錄與每日回報、時數與學習成效"
         actions={
-          <Button variant="outline" asChild>
-            <Link href="/settings/contacts">
-              <Settings2 className="size-4" />
-              老師設定
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              disabled={!monthReports.length}
+              onClick={() => downloadText(`家教填報-${month}.csv`, reportsCsv(monthReports, nameOf))}
+            >
+              <Download className="size-4" />
+              匯出本月
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/settings/contacts">
+                <Settings2 className="size-4" />
+                老師設定
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -105,6 +131,8 @@ export default function TutoringPage() {
             [
               ["records", "紀錄"],
               ["report", "報表"],
+              ["schedule", "週課表"],
+              ["units", "單元清單"],
             ] as const
           ).map(([k, label]) => (
             <button
@@ -136,6 +164,10 @@ export default function TutoringPage() {
         <ErrorState message={(allQ.error as Error).message} onRetry={() => allQ.refetch()} />
       ) : allQ.isLoading ? (
         <ListSkeleton rows={4} />
+      ) : tab === "schedule" ? (
+        <ScheduleView ownerId={me.id} userId={me.id} />
+      ) : tab === "units" ? (
+        <UnitsEditor ownerId={me.id} />
       ) : teachers.length === 0 && all.length === 0 ? (
         <EmptyState
           icon={GraduationCap}
@@ -177,6 +209,8 @@ export default function TutoringPage() {
           rates={ratesQ.data ?? new Map()}
           students={students}
           pendingTodos={pendingTodos}
+          doneTodos={doneTodos}
+          onToggleTodo={toggleTodo}
         />
       )}
     </div>
@@ -190,6 +224,8 @@ function ReportTab({
   rates,
   students,
   pendingTodos,
+  doneTodos,
+  onToggleTodo,
 }: {
   monthReports: TutorReport[];
   all: TutorReport[];
@@ -197,7 +233,10 @@ function ReportTab({
   rates: Map<string, Record<string, number>>;
   students: { id: string; name: string }[];
   pendingTodos: ReturnType<typeof todos>;
+  doneTodos: ReturnType<typeof todos>;
+  onToggleTodo: (key: string, done: boolean) => void;
 }) {
+  const [showDone, setShowDone] = useState(false);
   const hours = hoursByTeacher(monthReports);
   const progress = latestProgress(all);
   const trends = absorptionTrends(all);
@@ -223,10 +262,40 @@ function ReportTab({
                     {t.date.slice(5).replace("-", "/")} {t.teacherName}老師
                   </span>
                 </div>
-                <div className="whitespace-pre-wrap text-muted-foreground">{t.detail}</div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1 whitespace-pre-wrap text-muted-foreground">{t.detail}</div>
+                  <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => onToggleTodo(t.key, true)}>
+                    <Check className="size-3.5" />
+                    已處理
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
+        )}
+        {doneTodos.length > 0 && (
+          <div className="mt-2">
+            <button type="button" className="text-xs text-muted-foreground underline" onClick={() => setShowDone(!showDone)}>
+              {showDone ? "收起" : "顯示"}已處理 {doneTodos.length} 筆
+            </button>
+            {showDone && (
+              <ul className="mt-1.5 space-y-1">
+                {doneTodos.map((t) => (
+                  <li key={t.key} className="flex items-center gap-2 text-sm text-muted-foreground line-through">
+                    <span className="flex-1">{t.title}</span>
+                    <button
+                      type="button"
+                      onClick={() => onToggleTodo(t.key, false)}
+                      className="inline-flex items-center gap-1 text-xs no-underline hover:text-foreground"
+                    >
+                      <Undo2 className="size-3" />
+                      取消
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
         <p className="mt-2 text-xs text-muted-foreground">需家長處理的聯繫列近 30 天；採購報名、專題以最新一次回報為準，完成後就不再列出。</p>
       </section>
@@ -361,5 +430,63 @@ function Spark({ points }: { points: TrendPoint[] }) {
       <line x1={0} x2={w} y1={h - 0.6 * h} y2={h - 0.6 * h} className="stroke-red-300" strokeDasharray="2 2" strokeWidth={1} />
       <path d={d} fill="none" stroke="currentColor" strokeWidth={1.5} />
     </svg>
+  );
+}
+
+/** 課本單元清單（§七）：每科一行一個單元；老師填「單元」時可直接點選 */
+function UnitsEditor({ ownerId }: { ownerId: string }) {
+  const qc = useQueryClient();
+  const { data: units, isLoading } = useUnits(ownerId);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  if (isLoading) return <ListSkeleton rows={3} />;
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        依學校課本建單元清單（一行一個）。建了之後老師填「單元」時可以直接點選，避免各寫各的；沒建的科目老師照樣手動填。
+      </p>
+      {SUBJECTS.filter((s) => s !== "其他").map((subject) => {
+        const saved = (units?.get(subject) ?? []).join("\n");
+        const value = drafts[subject] ?? saved;
+        return (
+          <div key={subject} className="space-y-2 rounded-xl border bg-card p-3">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold">{subject}</span>
+              <span className="text-xs text-muted-foreground">{(units?.get(subject) ?? []).length} 個單元</span>
+              <Button
+                size="sm"
+                className="ml-auto"
+                disabled={value === saved || saving === subject}
+                onClick={async () => {
+                  setSaving(subject);
+                  const list = value
+                    .split(/\r?\n/)
+                    .map((x) => x.trim())
+                    .filter(Boolean);
+                  const err = await saveUnits(ownerId, subject, [...new Set(list)]);
+                  setSaving(null);
+                  if (err) return void toast.error(err);
+                  toast.success(`已儲存${subject}單元`);
+                  setDrafts((d) => {
+                    const n = { ...d };
+                    delete n[subject];
+                    return n;
+                  });
+                  await qc.invalidateQueries({ queryKey: ["tutor", "units"] });
+                }}
+              >
+                儲存
+              </Button>
+            </div>
+            <Textarea
+              rows={4}
+              value={value}
+              onChange={(e) => setDrafts({ ...drafts, [subject]: e.target.value })}
+              placeholder={"例：\n第一單元 分數的加減\n第二單元 小數"}
+            />
+          </div>
+        );
+      })}
+    </div>
   );
 }

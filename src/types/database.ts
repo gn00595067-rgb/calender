@@ -712,6 +712,61 @@ export interface Database {
         };
         Relationships: [];
       };
+      // 0024 家教填報第二期
+      tutor_schedule_items: {
+        Row: {
+          id: string;
+          owner_id: string;
+          item_date: string;
+          start_time: string;
+          end_time: string;
+          title: string;
+          responsible: string;
+          tag: string;
+          is_exam: boolean;
+          status: "" | "請假" | "停課";
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          item_date: string;
+          start_time: string;
+          end_time: string;
+          title: string;
+          responsible?: string;
+          tag?: string;
+          is_exam?: boolean;
+          status?: "" | "請假" | "停課";
+          created_by?: string | null;
+        };
+        Update: {
+          item_date?: string;
+          start_time?: string;
+          end_time?: string;
+          title?: string;
+          responsible?: string;
+          tag?: string;
+          is_exam?: boolean;
+          status?: "" | "請假" | "停課";
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      tutor_units: {
+        Row: { owner_id: string; subject: string; units: string[]; updated_at: string };
+        Insert: { owner_id: string; subject: string; units?: string[]; updated_at?: string };
+        Update: { units?: string[]; updated_at?: string };
+        Relationships: [];
+      };
+      tutor_todo_done: {
+        Row: { owner_id: string; key: string; done_at: string };
+        Insert: { owner_id: string; key: string; done_at?: string };
+        Update: { done_at?: string };
+        Relationships: [];
+      };
       tutor_rate_settings: {
         Row: { contact_id: string; owner_id: string; rates: Record<string, number>; updated_at: string };
         Insert: { contact_id: string; owner_id: string; rates?: Record<string, number>; updated_at?: string };
