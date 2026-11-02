@@ -687,3 +687,5 @@ spec：`docs/specs/時間衝突提醒.md`。
 **驗證**：tsc 0 錯誤、eslint 0 錯誤（1 個原有警告）、next build 過；邏輯檢查 20 項通過。
 **未驗證**：0024 未套用；照片上傳、週課表需實機測。
 **仍未做**：需家長處理時推播通知（需另外設計）。
+**追加（11/2）**：使用者已套 0024。驗證：tutor_schedule_items／tutor_units／tutor_todo_done 可查；未登入呼叫 tutor_file_access 被擋（42501）；bucket tutor-files 私有、10MB、只收 jpeg/png/webp；未登入上傳被 RLS 擋。
+**下一步**：用測試老師（專科、家庭各一）實機測拍照上傳、週課表、帶入時段、家長匯出。
