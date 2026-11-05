@@ -271,8 +271,9 @@ export function MonthView({
 
   return (
     <>
-    <div className="overflow-hidden rounded-xl border bg-card">
-      <div className="grid grid-cols-7 border-b bg-muted/40 text-center text-xs font-medium text-muted-foreground">
+    {/* overflow-clip（不是 hidden）才不會擋住星期列的 sticky（Peggy 11/5：往下捲要一直看到週一到週日） */}
+    <div className="overflow-clip rounded-xl border bg-card">
+      <div className="sticky top-14 z-20 grid grid-cols-7 border-b bg-muted text-center text-xs font-medium text-muted-foreground shadow-[0_1px_0_0_var(--border)]">
         {WEEK_HEADER.map((w) => (
           <div key={w} className="py-2">
             {w}

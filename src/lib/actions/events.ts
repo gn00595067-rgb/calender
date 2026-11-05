@@ -156,7 +156,7 @@ const DRIVER_KEYS = [
 const V22_KEYS = ["reminder2_minutes", "reminder2_email_sent_at"] as const;
 /** 0022 未套用時的警告 */
 const REMINDER2_NOT_SAVED =
-  "行程已儲存，但「再提醒一次」沒有存到：資料庫尚未更新（0022），請通知管理者";
+  "行程已存好；只有第二個提醒（例如 1 天前）這次沒設定成功，第一個提醒照常會通知。系統更新中，不用重存。";
 
 /** 0019 新增的 events 欄位：回程下車地點、修改紀錄 */
 const V19_KEYS = ["driver_dropoff_location", "edited_at", "edited_by"] as const;
