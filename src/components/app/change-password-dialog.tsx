@@ -20,7 +20,7 @@ import { REMEMBER_KEY } from "@/lib/constants";
 
 /**
  * 修改自己的密碼。spec：docs/specs/修改密碼.md
- * 改成功後，若這台裝置「記住帳號密碼」存的是同一個 Email，一併換成新密碼。
+ * 改成功後其他裝置一律登出（這台保留）；若這台裝置「記住帳號密碼」存的是同一個 Email，一併換成新密碼。
  */
 export function ChangePasswordDialog({
   open,
@@ -79,7 +79,7 @@ function ChangePasswordForm({
     } catch {
       // localStorage 不可用（隱私模式等）時略過
     }
-    toast.success("密碼已更新，下次登入請用新密碼");
+    toast.success("密碼已更新，其他裝置都已登出，要用新密碼重新登入");
     onDone();
   }, [state, email, onDone]);
 

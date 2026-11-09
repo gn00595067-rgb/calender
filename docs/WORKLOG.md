@@ -732,3 +732,4 @@ spec：`docs/specs/時間衝突提醒.md`。
 **為什麼**：使用者要求登入後能自己改密碼；另要一組完全空白的帳號測從零開始用。
 **驗證**：tsc／eslint 過。用空白帳號直接打 Supabase：改密碼 200、新密碼可登入、改回原密碼 200；同密碼回 422 same_password（已對應中文訊息）。畫面上的對話框尚未在瀏覽器實測。
 **下一步**：同事實測改密碼流程。tester1@execcal.test 的密碼不是 test1234，不清楚是誰建的。
+**追加（11/9）**：改密碼後其他裝置一律強制登出（`signOut({ scope: "others" })`，改的那台保留）。用空白帳號開兩個 session 實測：A 登出其他後，B 的 /user 回 403 session_not_found、refresh token 也失效，A 仍有效；proxy 每次換頁都 getUser，所以 B 下一次操作就回登入頁。

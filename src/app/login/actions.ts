@@ -113,5 +113,7 @@ export async function changePasswordAction(
     if (m.includes("reauthentication")) return { error: "需要重新登入後才能改密碼" };
     return { error: friendlyAuthError(error.message) };
   }
+  // 其他裝置一律登出（這台保留）。proxy 每次換頁都 getUser 向伺服器驗 session，所以下一次操作就會被導回登入頁。
+  await supabase.auth.signOut({ scope: "others" });
   return { ok: true };
 }
