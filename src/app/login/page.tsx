@@ -143,7 +143,7 @@ export default function LoginPage() {
                     id="reg-name"
                     name="displayName"
                     type="text"
-                    placeholder="王老闆"
+                    placeholder="例如：Peggy姐"
                   />
                 </div>
                 <div className="space-y-2">

@@ -766,3 +766,11 @@ spec：`docs/specs/時間衝突提醒.md`。
 **做了什麼**：新增 `components/ui/password-input.tsx`（右邊眼睛切換顯示／隱藏），登入、註冊、修改密碼的密碼欄都換成它。
 **為什麼**：使用者要求輸入密碼時可以選擇顯示，打錯看得出來。
 **驗證**：tsc／eslint 過；畫面未在瀏覽器實測。
+
+---
+
+## 2026-11-09 — 拿掉「王董事長」字樣
+
+**做了什麼**：boss@example.com 的顯示名稱（profiles＋user_metadata）改成「Peggy姐」；seed.ts 示範帳號名稱改 Peggy姐、聯絡人「董事長特助」改「特助」；註冊頁顯示名稱 placeholder「王老闆」改「例如：Peggy姐」。
+**為什麼**：Peggy 姐不姓王，畫面右上角、回饋「代填」署名都會出現這個名字。
+**驗證**：程式碼 src／supabase 已無「王董／董事長／王老闆」；線上 profiles 已是 Peggy姐。舊 WORKLOG／spec 的歷史紀錄保留不改。

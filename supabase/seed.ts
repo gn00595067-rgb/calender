@@ -120,11 +120,11 @@ type EvSpec = {
 
 async function main() {
   console.log("→ 建立測試帳號…");
-  const bossId = await getOrCreateUser(BOSS_EMAIL, "王董事長");
+  const bossId = await getOrCreateUser(BOSS_EMAIL, "Peggy姐");
   const tutorId = await getOrCreateUser(TUTOR_EMAIL, "陳老師");
 
   await db.from("profiles").upsert([
-    { id: bossId, email: BOSS_EMAIL, display_name: "王董事長" },
+    { id: bossId, email: BOSS_EMAIL, display_name: "Peggy姐" },
     { id: tutorId, email: TUTOR_EMAIL, display_name: "陳老師" },
   ]);
 
@@ -180,7 +180,7 @@ async function main() {
     { name: "王執行長", role_label: "重要客戶 CEO" },
     { name: "林經理", role_label: "供應商窗口" },
     { name: "吳會計師", role_label: "財務顧問" },
-    { name: "特助 Amber", role_label: "董事長特助", phone: "0966-333-777" },
+    { name: "特助 Amber", role_label: "特助", phone: "0966-333-777" },
   ];
   const { data: contactRows, error: cErr } = await db
     .from("contacts")
