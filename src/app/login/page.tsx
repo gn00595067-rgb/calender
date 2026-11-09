@@ -13,10 +13,6 @@ import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 /** 「記住我」在瀏覽器保存帳密的 localStorage key */
 const REMEMBER_KEY = "execcal.remember";
 
-/** 測試用預設帳號：王董事長（登入頁預先帶入，方便測試免打字） */
-const DEMO_EMAIL = "boss@example.com";
-const DEMO_PASSWORD = "test1234";
-
 type Remembered = { email?: string; password?: string };
 
 function loadRemembered(): Remembered | null {
@@ -108,8 +104,7 @@ export default function LoginPage() {
                     name="email"
                     type="email"
                     autoComplete="email"
-                    placeholder="boss@example.com"
-                    defaultValue={DEMO_EMAIL}
+                    placeholder="name@example.com"
                     required
                   />
                 </div>
@@ -121,7 +116,6 @@ export default function LoginPage() {
                     name="password"
                     type="password"
                     autoComplete="current-password"
-                    defaultValue={DEMO_PASSWORD}
                     required
                   />
                 </div>
@@ -186,10 +180,6 @@ export default function LoginPage() {
             </TabsContent>
           </Tabs>
         </div>
-
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          測試帳號：boss@example.com／tutor@example.com（密碼 test1234）
-        </p>
       </div>
     </div>
   );
