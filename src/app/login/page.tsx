@@ -40,7 +40,6 @@ function SubmitButton({ pending, label }: { pending: boolean; label: string }) {
 export default function LoginPage() {
   const [tab, setTab] = useState("login");
   const [remember, setRemember] = useState(true);
-  const formRef = useRef<HTMLFormElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const [signInState, signIn, signInPending] = useActionState<AuthState, FormData>(
@@ -79,13 +78,6 @@ export default function LoginPage() {
     }
   }
 
-  // 一鍵以王董事長登入（測試用）：填入預設帳密並直接送出。
-  function loginAsDemo() {
-    if (emailRef.current) emailRef.current.value = DEMO_EMAIL;
-    if (passwordRef.current) passwordRef.current.value = DEMO_PASSWORD;
-    formRef.current?.requestSubmit();
-  }
-
   return (
     <div className="flex min-h-full flex-1 items-center justify-center p-4">
       <div className="w-full max-w-sm">
@@ -107,7 +99,7 @@ export default function LoginPage() {
             </TabsList>
 
             <TabsContent value="login">
-              <form ref={formRef} action={signIn} onSubmit={persistRemember} className="mt-4 space-y-4">
+              <form action={signIn} onSubmit={persistRemember} className="mt-4 space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="login-email">Email</Label>
                   <Input
@@ -149,15 +141,6 @@ export default function LoginPage() {
                   </p>
                 )}
                 <SubmitButton pending={signInPending} label="登入" />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="w-full"
-                  disabled={signInPending}
-                  onClick={loginAsDemo}
-                >
-                  一鍵以王董事長登入（測試）
-                </Button>
               </form>
             </TabsContent>
 
