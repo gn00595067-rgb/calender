@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOutAction } from "@/app/login/actions";
 import { TeacherHome } from "@/components/tutor/teacher-home";
+import { TeacherPasswordButton } from "@/components/tutor/teacher-password-button";
 
 /**
  * 老師頁：老師帳號登入後只會看到這一頁（填報、我的紀錄、時數、自己的課＋寫回饋）。
@@ -27,11 +28,14 @@ export default async function TeachPage() {
             {links[0]?.owner_name ? ` · ${links[0].owner_name} 家` : ""}
           </p>
         </div>
-        <form action={signOutAction}>
-          <button type="submit" className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent">
-            登出
-          </button>
-        </form>
+        <div className="flex shrink-0 gap-2">
+          <TeacherPasswordButton email={user.email ?? ""} />
+          <form action={signOutAction}>
+            <button type="submit" className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent">
+              登出
+            </button>
+          </form>
+        </div>
       </header>
       <TeacherHome userId={user.id} />
     </div>

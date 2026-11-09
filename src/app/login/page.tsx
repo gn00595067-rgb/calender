@@ -8,10 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
-
-/** 「記住我」在瀏覽器保存帳密的 localStorage key */
-const REMEMBER_KEY = "execcal.remember";
+import { APP_NAME, APP_TAGLINE, REMEMBER_KEY } from "@/lib/constants";
 
 type Remembered = { email?: string; password?: string };
 

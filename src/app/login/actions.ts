@@ -77,3 +77,41 @@ export async function signOutAction() {
   await supabase.auth.signOut();
   redirect("/login");
 }
+
+const newPasswordSchema = z
+  .object({
+    password: z.string().min(6, { error: "密碼至少 6 碼" }),
+    confirm: z.string(),
+  })
+  .refine((v) => v.password === v.confirm, { error: "兩次輸入的密碼不一樣" });
+
+export type ChangePasswordState = { error?: string; ok?: boolean } | undefined;
+
+/** 已登入者修改自己的密碼（不要求舊密碼，見 docs/specs/修改密碼.md） */
+export async function changePasswordAction(
+  _prev: ChangePasswordState,
+  formData: FormData,
+): Promise<ChangePasswordState> {
+  const parsed = newPasswordSchema.safeParse({
+    password: formData.get("password"),
+    confirm: formData.get("confirm"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "輸入格式有誤" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "登入已過期，請重新登入" };
+
+  const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
+  if (error) {
+    const m = error.message.toLowerCase();
+    if (m.includes("different from the old")) return { error: "新密碼跟原本的一樣，請換一組" };
+    if (m.includes("reauthentication")) return { error: "需要重新登入後才能改密碼" };
+    return { error: friendlyAuthError(error.message) };
+  }
+  return { ok: true };
+}

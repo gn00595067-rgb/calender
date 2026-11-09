@@ -9,6 +9,9 @@ export const TIME_ZONE = "Asia/Taipei";
 export const LOCALE = "zh-TW";
 export const CURRENCY = "TWD";
 
+/** 登入頁「記住帳號密碼」在瀏覽器保存帳密的 localStorage key */
+export const REMEMBER_KEY = "execcal.remember";
+
 /** 行事曆分類種類 */
 export type CalendarKind = "self" | "child" | "work" | "private" | "other";
 
