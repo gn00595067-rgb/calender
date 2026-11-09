@@ -6,7 +6,7 @@ import { DEFAULT_CALENDARS } from "@/lib/constants";
 /**
  * 首次登入時確保帳號基礎資料到位：
  *  1. profiles 列（若 DB 觸發器已建立則略過）。
- *  2. 四個預設行事曆（本人／小孩／公事／私事）。
+ *  2. 四個預設行事曆（本人／小孩／公事／私事）；被分享當「老師」的人不建。
  *  3. 回填 calendar_shares.member_id（以 email 比對受邀者）。
  *
  * 具備幂等性，可在每次進入 App 時安全呼叫。
@@ -34,7 +34,14 @@ export async function ensureBootstrap(user: User): Promise<void> {
     .select("id", { count: "exact", head: true })
     .eq("owner_id", user.id);
 
-  if ((count ?? 0) === 0) {
+  // 被分享當「老師」的人不建預設行事曆（只用被分享的小孩行事曆，見 0025）
+  const { count: schedulerShares } = await supabase
+    .from("calendar_shares")
+    .select("id", { count: "exact", head: true })
+    .eq("role", "scheduler")
+    .or(`member_id.eq.${user.id},invited_email.eq."${(user.email ?? "").toLowerCase()}"`);
+
+  if ((count ?? 0) === 0 && (schedulerShares ?? 0) === 0) {
     await supabase.from("calendars").insert(
       DEFAULT_CALENDARS.map((c) => ({
         owner_id: user.id,

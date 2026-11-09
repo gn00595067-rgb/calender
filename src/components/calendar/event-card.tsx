@@ -13,7 +13,8 @@ function useUnreadDot(event: CalEvent): boolean {
   const { me, calendarById } = useAppData();
   const role = calendarById.get(event.calendar_id)?.effectiveRole ?? "viewer";
   return (
-    can.editEvents(role) && event.noteAuthorIds.some((a) => a !== me.id)
+    can.editEvent(role, event.creator_id, me.id) &&
+    event.noteAuthorIds.some((a) => a !== me.id)
   );
 }
 

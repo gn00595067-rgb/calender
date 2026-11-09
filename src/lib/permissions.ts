@@ -10,10 +10,16 @@ export const can = {
   viewEvents: (role: EffectiveRole): boolean =>
     role === "owner" || role === "editor" || role === "contributor" || role === "viewer",
 
-  editEvents: (role: EffectiveRole): boolean => role === "owner" || role === "editor",
+  /** 可在此行事曆新增行程（老師 scheduler 也可以，但只能改／刪自己登錄的，見 editEvent） */
+  editEvents: (role: EffectiveRole): boolean =>
+    role === "owner" || role === "editor" || role === "scheduler",
+
+  /** 可改／刪這一筆行程：老師只限自己登錄的（與 0025 RLS 一致） */
+  editEvent: (role: EffectiveRole, creatorId: string, meId: string): boolean =>
+    role === "owner" || role === "editor" || (role === "scheduler" && creatorId === meId),
 
   addNotes: (role: EffectiveRole): boolean =>
-    role === "owner" || role === "editor" || role === "contributor",
+    role === "owner" || role === "editor" || role === "contributor" || role === "scheduler",
 
   viewFinance: (role: EffectiveRole): boolean => role === "owner" || role === "editor",
 
@@ -25,7 +31,7 @@ export const can = {
 /** 在一組行事曆中，只要對任一具備某能力即為 true（用於全站按鈕顯示） */
 export function anyCan(
   roles: EffectiveRole[],
-  ability: keyof typeof can,
+  ability: Exclude<keyof typeof can, "editEvent">,
 ): boolean {
   return roles.some((r) => can[ability](r));
 }

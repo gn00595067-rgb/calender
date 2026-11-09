@@ -87,18 +87,24 @@ export const DEFAULT_CALENDARS: {
 ];
 
 /** 分享角色 */
-export type ShareRole = "editor" | "contributor" | "viewer";
+export type ShareRole = "editor" | "contributor" | "viewer" | "scheduler";
 
 export const SHARE_ROLES: { value: ShareRole; label: string; hint: string }[] = [
   { value: "editor", label: "編輯者", hint: "可新增／編輯行程、查看財務金額、填寫回饋" },
   { value: "contributor", label: "協作者", hint: "只能查看行程與填寫回饋，看不到金額" },
   { value: "viewer", label: "檢視者", hint: "僅能查看行程，不能回饋、看不到金額" },
+  {
+    value: "scheduler",
+    label: "老師",
+    hint: "可看全部行程、新增行程，只能改／刪自己登錄的，看不到金額",
+  },
 ];
 
 export const SHARE_ROLE_LABEL: Record<ShareRole, string> = {
   editor: "編輯者",
   contributor: "協作者",
   viewer: "檢視者",
+  scheduler: "老師",
 };
 
 /** 有效角色（含擁有者），用於前端能力判斷 */

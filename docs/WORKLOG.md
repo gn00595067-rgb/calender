@@ -745,3 +745,15 @@ spec：`docs/specs/時間衝突提醒.md`。
 **為什麼**：Peggy 姐的老公豪哥要有自己的帳號，兩人互看行程。範圍依使用者選擇只做行程（見 DECISIONS）。
 **驗證**：以豪哥登入：看得到 9 個行事曆、388 筆行程（等於老闆全部）、248 筆金額；可在「豪哥」行事曆新增並刪除行程。以老闆登入：看得到「豪哥私人」。
 **下一步**：讓豪哥實際登入用看看；需要報表／人物再評估家人功能。
+
+---
+
+## 2026-11-09 — Peggy 回饋：老師登錄小孩行程（分享身分「老師」）
+
+**做了什麼**：
+- 0025：`calendar_shares.role` 加 `scheduler`；`can_edit_calendar`／`can_note_calendar` 加入 scheduler；`can_edit_event` 與 events update／delete 對 scheduler 限 `creator_id = auth.uid()`；金額（can_view_finance）不變。`handle_new_user` 對被邀請當老師的人不建預設行事曆。
+- 前端：分享選單加「老師」；行程詳情的編輯／刪除、語音改刪候選、未讀回饋紅點都改用 `can.editEvent(role, creator_id, me.id)`；側欄徽章「老師」；bootstrap 同樣不幫老師建預設行事曆。
+- spec：`docs/specs/老師登錄小孩行程.md`。
+**為什麼**：Peggy 11/9 LINE：老師可以登錄、看小孩的行事曆（含她加的），合併到她和豪哥的行事曆；老師只負責登錄。
+**驗證**：tsc／eslint 過。資料庫部分待套 0025 後實測。
+**下一步**：使用者套 0025 → 建測試老師帳號、分享三個小孩行事曆、實測看／新增／不能改 Peggy 的／看不到金額。

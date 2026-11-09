@@ -165,7 +165,9 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                     ? "編輯"
                     : c.effectiveRole === "contributor"
                       ? "協作"
-                      : "檢視"
+                      : c.effectiveRole === "scheduler"
+                        ? "老師"
+                        : "檢視"
                 }
               />
             ))}

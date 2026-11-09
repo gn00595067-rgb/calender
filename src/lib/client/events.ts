@@ -9,6 +9,8 @@ import { driverFromRow, type DriverInfo, type DriverTrip } from "@/lib/driver";
 export interface CalEvent {
   id: string;
   calendar_id: string;
+  /** 登錄者（老師身分只能改／刪自己登錄的） */
+  creator_id: string;
   title: string;
   description: string | null;
   location: string | null;
@@ -48,6 +50,7 @@ export interface CalEvent {
 type EventRowLite = {
   id: string;
   calendar_id: string;
+  creator_id: string;
   title: string;
   description: string | null;
   location: string | null;
@@ -147,6 +150,7 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
   return rows.map((e) => ({
     id: e.id,
     calendar_id: e.calendar_id,
+    creator_id: e.creator_id,
     title: e.title,
     description: e.description,
     location: e.location,

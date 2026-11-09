@@ -826,7 +826,7 @@ export interface Database {
           calendar_id: string;
           invited_email: string;
           member_id: string | null;
-          role: "editor" | "contributor" | "viewer";
+          role: "editor" | "contributor" | "viewer" | "scheduler";
           created_at: string;
         };
         Insert: {
@@ -834,7 +834,7 @@ export interface Database {
           calendar_id: string;
           invited_email: string;
           member_id?: string | null;
-          role: "editor" | "contributor" | "viewer";
+          role: "editor" | "contributor" | "viewer" | "scheduler";
           created_at?: string;
         };
         Update: {
@@ -842,7 +842,7 @@ export interface Database {
           calendar_id?: string;
           invited_email?: string;
           member_id?: string | null;
-          role?: "editor" | "contributor" | "viewer";
+          role?: "editor" | "contributor" | "viewer" | "scheduler";
           created_at?: string;
         };
         Relationships: [];

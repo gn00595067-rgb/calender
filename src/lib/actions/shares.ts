@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getAuthed, fail, type ActionResult } from "./helpers";
+import type { ShareRole } from "@/lib/constants";
 
-const roleEnum = z.enum(["editor", "contributor", "viewer"]);
+const roleEnum = z.enum(["editor", "contributor", "viewer", "scheduler"]);
 
 const inviteSchema = z.object({
   calendarId: z.uuid(),
@@ -57,7 +58,7 @@ export async function inviteShareAction(input: unknown): Promise<ActionResult> {
 
 export async function updateShareRoleAction(
   shareId: string,
-  role: "editor" | "contributor" | "viewer",
+  role: ShareRole,
 ): Promise<ActionResult> {
   if (!z.uuid().safeParse(shareId).success) return fail("參數有誤");
   if (!roleEnum.safeParse(role).success) return fail("角色有誤");
