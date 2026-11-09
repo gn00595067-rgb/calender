@@ -6,6 +6,7 @@ import { signInAction, signUpAction, type AuthState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { APP_NAME, APP_TAGLINE, REMEMBER_KEY } from "@/lib/constants";
@@ -107,11 +108,10 @@ export default function LoginPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="login-password">密碼</Label>
-                  <Input
+                  <PasswordInput
                     ref={passwordRef}
                     id="login-password"
                     name="password"
-                    type="password"
                     autoComplete="current-password"
                     required
                   />
@@ -158,10 +158,9 @@ export default function LoginPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="reg-password">密碼</Label>
-                  <Input
+                  <PasswordInput
                     id="reg-password"
                     name="password"
-                    type="password"
                     autoComplete="new-password"
                     placeholder="至少 6 碼"
                     required

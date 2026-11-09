@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { REMEMBER_KEY } from "@/lib/constants";
 
@@ -95,10 +95,9 @@ function ChangePasswordForm({
     >
       <div className="space-y-2">
         <Label htmlFor="new-password">新密碼</Label>
-        <Input
+        <PasswordInput
           id="new-password"
           name="password"
-          type="password"
           autoComplete="new-password"
           placeholder="至少 6 碼"
           required
@@ -106,10 +105,9 @@ function ChangePasswordForm({
       </div>
       <div className="space-y-2">
         <Label htmlFor="confirm-password">再輸入一次</Label>
-        <Input
+        <PasswordInput
           id="confirm-password"
           name="confirm"
-          type="password"
           autoComplete="new-password"
           required
         />
