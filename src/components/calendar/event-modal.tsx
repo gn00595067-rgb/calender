@@ -35,6 +35,7 @@ import { TagInput } from "./tag-input";
 import { TimeDurationField } from "./time-duration-field";
 import { CategorySelect } from "./category-select";
 import { useAppData } from "@/components/app/app-data";
+import { findSpeaker } from "@/lib/speaker";
 import {
   useEventEditData,
   useContactsBilling,
@@ -190,7 +191,7 @@ export function EventModal({
   /** 存檔成功；帶行程開始日（台北 yyyy-MM-dd），語音流程用來跳到那天 */
   onSaved?: (dateStr?: string) => void;
 }) {
-  const { calendars, ownedCalendars, sharedCalendars, calendarById } = useAppData();
+  const { calendars, ownedCalendars, sharedCalendars, calendarById, me } = useAppData();
   const editableCalendars = [...ownedCalendars, ...sharedCalendars].filter((c) =>
     can.editEvents(c.effectiveRole),
   );
@@ -387,6 +388,8 @@ export function EventModal({
       .filter((c) => c.is_family && c.name && calName.includes(c.name))
       .map((c) => c.id);
   }, [calendarId, calendarById, allContacts]);
+  // 豪哥用自己帳號新增：分類名稱沒帶出主角時，預設是他自己而不是老闆（沒主角＝本人＝Peggy）
+  const speaker = useMemo(() => findSpeaker(allContacts, me.displayName), [allContacts, me.displayName]);
   // 新增時預設 2 小時前＋1 天前提醒；整日行程改為不提醒（否則前一晚會跳通知）
   useEffect(() => {
     if (!open || mode !== "create" || reminderTouchedRef.current) return;
@@ -407,6 +410,11 @@ export function EventModal({
     inferredSubjects.every((id) => subjectIdsNow.includes(id));
   useEffect(() => {
     if (!open || mode !== "create" || subjectsTouchedRef.current) return;
+    if (!inferredSubjects.length && speaker) {
+      setValue("subjectIds", [speaker.id]);
+      setAutoSubjectNote(`主角先帶「${speaker.name}」（你自己）；是別人的行程請改主角。`);
+      return;
+    }
     setValue("subjectIds", inferredSubjects);
     const calName = calendarById.get(calendarId)?.name;
     setAutoSubjectNote(
@@ -415,7 +423,7 @@ export function EventModal({
         : null,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, inferredSubjects.join(",")]);
+  }, [open, mode, inferredSubjects.join(","), speaker?.id]);
   const startWall = watch("startWall");
   const endWall = watch("endWall");
   // 財務相關（自動帶入、預繳扣抵）一律看「相關人物」＝收費老師

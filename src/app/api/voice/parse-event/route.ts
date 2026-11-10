@@ -17,6 +17,7 @@ import {
   type ContactRow,
 } from "@/lib/voice/parse-event";
 import { withSubjectSuffix } from "@/lib/subject-title";
+import { findSpeaker } from "@/lib/speaker";
 
 /**
  * 語音助理：把一句口語交給 Claude 判斷「意圖」再解析：
@@ -210,19 +211,6 @@ export async function POST(req: Request) {
     }),
   );
   return NextResponse.json({ intent: "create", events });
-}
-
-/**
- * 說話的人若是行事曆主人的某位家人（豪哥用自己帳號登入），找出對應的人物：
- * 顯示名稱＝家人的名字或別名，且那位不是「本人」。老闆自己登入時回 null，維持「沒主角＝本人」。
- */
-function findSpeaker(contacts: ContactRow[], displayName: string | null): ContactRow | null {
-  const n = displayName?.trim();
-  if (!n) return null;
-  const hit = contacts.find(
-    (c) => c.is_family && (c.name.trim() === n || (c.aliases ?? []).some((a) => a.trim() === n)),
-  );
-  return hit && !hit.is_self ? hit : null;
 }
 
 /** 一筆行程：不在清單的 id 丟掉、時間格式不對退回 null、標題加地點／主角後綴、規則式提醒 */
