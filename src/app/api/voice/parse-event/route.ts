@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     supabase.from("contacts").select("id, name, role_label, is_family, is_self, aliases").order("name"),
   ).then((r) => (r.data ?? []) as ContactRow[]);
   const contactByIdP = contactsP.then((cs) => new Map(cs.map((c) => [c.id, c])));
-  const [contacts, contactById, tagRes, habits] = await Promise.all([
+  const [contacts, contactById, tagRes, habits, userHabits] = await Promise.all([
     contactsP,
     contactByIdP,
     supabase.from("tags").select("name").order("name"),
@@ -92,6 +92,11 @@ export async function POST(req: Request) {
       console.error("[voice/parse-event] habits", err);
       return "（無法讀取過去紀錄）";
     }),
+    // 設定頁「使用習慣」自己寫的（0026 前沒有這欄，查不到就當沒寫）
+    Promise.resolve(supabase.from("profiles").select("habits_text").eq("id", user.id).maybeSingle()).then(
+      (r) => (r.data?.habits_text ?? "").trim(),
+      () => "",
+    ),
   ]);
   const tagNames = (tagRes.data ?? []).map((t) => t.name);
 
@@ -127,7 +132,7 @@ export async function POST(req: Request) {
         system: [
           {
             type: "text",
-            text: buildSystemPrompt({ calendars: parsed.calendars, contacts, tagNames, habits }),
+            text: buildSystemPrompt({ calendars: parsed.calendars, contacts, tagNames, habits, userHabits }),
             cache_control: { type: "ephemeral" },
           },
         ],
@@ -225,8 +230,12 @@ function normalizeEvent(
   const endWall = ev.endWall && WALL.test(ev.endWall) ? ev.endWall : null;
   const location = ev.location?.trim() || null;
   const fromHabit = [...new Set(ev.fromHabit)];
+  // 不在人物清單的人（一次性見面的朋友、客戶）：直接寫進標題「和Tina吃飯」，不要求先建人物（Peggy 11/10）
+  const unknownNames = [...new Set(ev.unknownNames.map((n) => n.trim()).filter(Boolean))];
   // 標題：有講地點加「(地點)」（習慣帶入的不加），非本人再加「-主角名」：美甲(延吉街)-豪哥
-  const base = ev.title?.trim() || "（未命名行程）";
+  const rawBase = ev.title?.trim() || "（未命名行程）";
+  const missing = unknownNames.filter((n) => !rawBase.includes(n));
+  const base = missing.length ? `和${missing.join("、")}${rawBase}` : rawBase;
   const title = withSubjectSuffix(
     fromHabit.includes("location") ? base : withLocationSuffix(base, location),
     subjectIds
@@ -267,10 +276,6 @@ function normalizeEvent(
   }
   if (ev.isLesson && participantIds.length === 0) {
     addWarn("看起來是課程，但沒有選老師；選了老師才會自動帶入收費方案");
-  }
-  const unknownNames = [...new Set(ev.unknownNames.map((n) => n.trim()).filter(Boolean))];
-  for (const n of unknownNames) {
-    addWarn(`「${n}」不在人物清單，可在相關人物欄快速新增`);
   }
 
   return {

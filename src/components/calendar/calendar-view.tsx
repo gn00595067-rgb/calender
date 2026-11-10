@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { addDays, addMonths, addWeeks, format } from "date-fns";
+import { addDays, addWeeks, format } from "date-fns";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Filter } from "lucide-react";
 import {
-  monthGrid,
+  continuousWeeks,
   weekDays,
   dayRange,
   conflictIds,
@@ -43,6 +43,12 @@ export function CalendarView() {
 
   const [view, setView] = useState<ViewMode>("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date());
+  // 月視圖＝連續週：從今天這週往前 weeksBefore 週開始，共 weeksCount 週（Peggy 11/9）
+  const [weeksBefore, setWeeksBefore] = useState(0);
+  const [weeksCount, setWeeksCount] = useState(10);
+  const [topYm, setTopYm] = useState("");
+  // 要捲到的元素 id（週列 week-yyyy-MM-dd 或月份分隔 month-yyyy-MM，或 "top"）：等畫出來再捲
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
 
   // 網址帶 ?date=2026-11-02&view=day（語音新增／修改／刪除後）→ 跳到那天
   const params = useSearchParams();
@@ -54,6 +60,15 @@ export function CalendarView() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 依網址同步一次定位
     setAnchor(new Date(zonedToIso(new Date(`${focusDate}T12:00:00`))));
     if (focusView === "day" || focusView === "week" || focusView === "month") setView(focusView);
+    if (focusView === "month") {
+      // 連續週要涵蓋那天：在今天之前就往前補週、之後就往後補週，再捲過去
+      const diffWeeks = Math.floor(
+        (Date.parse(`${focusDate}T12:00:00+08:00`) - Date.now()) / (7 * 864e5),
+      );
+      setWeeksBefore(diffWeeks < 0 ? -diffWeeks + 1 : 0);
+      setWeeksCount((n) => Math.max(n, Math.max(0, diffWeeks) + 6));
+      setScrollTo(`week-${focusDate}`);
+    }
   }, [focusDate, focusView, focusNonce]);
 
   const [detail, setDetail] = useState<CalEvent | null>(null);
@@ -63,8 +78,8 @@ export function CalendarView() {
 
   const { days, range, monthStart } = useMemo(() => {
     if (view === "month") {
-      const g = monthGrid(anchor);
-      return { days: g.days, range: g.range, monthStart: g.monthStart };
+      const g = continuousWeeks(weeksBefore, weeksCount);
+      return { days: g.days, range: g.range, monthStart: g.days[0] };
     }
     if (view === "week") {
       const w = weekDays(anchor);
@@ -72,12 +87,39 @@ export function CalendarView() {
     }
     const d = dayRange(anchor);
     return { days: [d.day], range: d.range, monthStart: anchor };
-  }, [view, anchor]);
+  }, [view, anchor, weeksBefore, weeksCount]);
 
   const { data: events = [], isLoading, isError, error, refetch } = useCalendarEvents(
     range.startIso,
     range.endIso,
+    { keepPrevious: view === "month" },
   );
+  // 捲到底再接 6 週（最多約兩年）
+  const loadMoreWeeks = useCallback(() => setWeeksCount((n) => (n >= 104 ? n : n + 6)), []);
+
+  useEffect(() => {
+    if (!scrollTo || view !== "month") return;
+    if (scrollTo === "top") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      document.querySelector("main")?.scrollTo?.({ top: 0, behavior: "smooth" });
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 捲完清掉，只執行一次
+      setScrollTo(null);
+      return;
+    }
+    // 週列 id 是那週週一；指定某天時找含那天的週
+    let el = document.getElementById(scrollTo);
+    if (!el && scrollTo.startsWith("week-")) {
+      const ds = scrollTo.slice(5);
+      el =
+        [...document.querySelectorAll<HTMLElement>("[data-week-end]")].find(
+          (r) => r.id.slice(5) <= ds && ds <= r.dataset.weekEnd!,
+        ) ?? null;
+    }
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setScrollTo(null);
+    }
+  }, [scrollTo, view, days.length, events]);
   const { data: contacts = [] } = useContacts();
   // 標記為「本人」的人物（老闆）：她的行程與未指定主角的行程都算本人的
   const { data: gapProfiles } = useGapProfiles();
@@ -161,21 +203,40 @@ export function CalendarView() {
     calendarById.get(calendarId)?.color ?? "#64748B";
 
   const navigate = (dir: -1 | 0 | 1) => {
+    if (view === "month") {
+      // 連續週：今天＝回到最上面；‹＝往前多看 4 週；›＝捲到下個月的第一週
+      if (dir === 0) {
+        setWeeksBefore(0);
+        setScrollTo("top");
+      } else if (dir === -1) {
+        setWeeksBefore((n) => n + 4);
+        setScrollTo("top");
+      } else {
+        const [y, m] = (topYm || format(zoned(new Date()), "yyyy-MM")).split("-").map(Number);
+        const next = format(new Date(y, m, 1), "yyyy-MM");
+        setWeeksCount((n) => n + 5);
+        setScrollTo(`month-${next}`);
+      }
+      return;
+    }
     if (dir === 0) return setAnchor(new Date());
     const z = zoned(anchor);
     const nz =
-      view === "month" ? addMonths(z, dir) : view === "week" ? addWeeks(z, dir) : addDays(z, dir);
+      view === "week" ? addWeeks(z, dir) : addDays(z, dir);
     setAnchor(new Date(zonedToIso(nz)));
   };
 
   const title = useMemo(() => {
-    if (view === "month") return D.monthYear(anchor);
+    if (view === "month") {
+      const [y, m] = (topYm || format(zoned(new Date()), "yyyy-MM")).split("-").map(Number);
+      return `${y} 年 ${m} 月`;
+    }
     if (view === "week") {
       const wd = weekDays(anchor).days;
       return `${format(wd[0], "M/d")} – ${format(wd[6], "M/d")}`;
     }
     return D.full(anchor).slice(0, 14); // yyyy/MM/dd(EEE)
-  }, [view, anchor]);
+  }, [view, anchor, topYm]);
 
   const openCreate = (dateStr: string, hour = 9, minute = 0) => {
     if (!canCreate) return;
@@ -335,7 +396,7 @@ export function CalendarView() {
 
       {isError ? (
         <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
-      ) : isLoading ? (
+      ) : isLoading && events.length === 0 ? (
         <ListSkeleton rows={6} />
       ) : view === "month" ? (
         <MonthView
@@ -350,6 +411,9 @@ export function CalendarView() {
           onSelectEvent={setDetail}
           onCreateAt={openCreate}
           onOpenDay={openDay}
+          continuous
+          onTopMonthChange={setTopYm}
+          onReachEnd={loadMoreWeeks}
         />
       ) : (
         <TimeGridView

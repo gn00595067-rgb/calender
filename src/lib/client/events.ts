@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useAppData } from "@/components/app/app-data";
 import { driverFromRow, type DriverInfo, type DriverTrip } from "@/lib/driver";
@@ -196,12 +196,18 @@ export async function fetchEventsInRange(
 }
 
 /** 讀取指定 UTC 區間內、目前顯示中分類的行程 */
-export function useCalendarEvents(startIso: string, endIso: string) {
+export function useCalendarEvents(
+  startIso: string,
+  endIso: string,
+  opts?: { keepPrevious?: boolean },
+) {
   const { visibleIds } = useAppData();
   const ids = [...visibleIds].sort();
   return useQuery({
     queryKey: ["events", startIso, endIso, ids],
     queryFn: () => fetchEventsInRange(startIso, endIso, ids),
+    // 月曆往下接週時，舊的先留著，不要整個閃成載入中
+    placeholderData: opts?.keepPrevious ? keepPreviousData : undefined,
   });
 }
 

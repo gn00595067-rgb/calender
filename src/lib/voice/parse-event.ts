@@ -219,6 +219,8 @@ export function buildSystemPrompt(args: {
   contacts: ContactRow[];
   tagNames: string[];
   habits: string;
+  /** 使用者在「設定 → 使用習慣」自己寫的（一行一條），比過去習慣優先 */
+  userHabits?: string;
 }) {
   const calList = args.calendars.map((c) => `- id="${c.id}" 名稱="${c.name}"`).join("\n");
   const family = args.contacts.filter((c) => c.is_family);
@@ -264,6 +266,9 @@ ${others.length ? others.map(fmt).join("\n") : "（無）"}
 
 既有標籤：${args.tagNames.length ? args.tagNames.join("、") : "（無）"}
 
+使用者自己寫的使用習慣（**優先於**下面的過去習慣；例：「做臉 2 小時」→ 說做臉沒講多久就排 2 小時，並寫進 assumptions）：
+${args.userHabits?.trim() || "（沒寫）"}
+
 過去習慣（近 ${HABIT_DAYS} 天同名行程的常見設定；分類欄位是分類 id）：
 ${args.habits}
 
@@ -272,7 +277,7 @@ ${args.habits}
   「下週三」＝下週那一列的三；「下下週三」＝下下週那一列的三；
   「隔N週」「N週後」（如隔三週、三週後）＝今天日期＋7×N 天（同一個星期幾），例：今天 10/13(二)，隔三週＝11/03(二)；
   「隔三週的週五」＝本週往後第 3 週那一列的五。只說「週三」沒說哪週＝今天之後最近的週三。
-- 沒講時長：有過去習慣用習慣的時長，否則 1 小時。只講日期沒講時間：有習慣用習慣時間（並寫進 assumptions），否則 allDay=true、00:00–23:59。
+- 沒講時長：使用者自己寫的使用習慣有提到就用它，其次用過去習慣的時長，否則 1 小時。只講日期沒講時間：有習慣用習慣時間（並寫進 assumptions），否則 allDay=true、00:00–23:59。
 - 只講幾點沒講上下午，依常識與習慣判斷。
 - title 簡潔，不含時間、地點、人名（「哥哥桌球」→ title="桌球"，哥哥放主角）。地點「(延吉街)」與主角名「-哥哥」會由系統自動加在標題後面，你不用加。若與過去習慣的標題是同一件事，沿用習慣的標題寫法。
 - subjectIds：句子提到的家人（哥哥、妹妹、小明…，名字、別名、暱稱與稱謂都算對上）；沒提到但過去習慣固定是某位家人時可帶入（記入 fromHabit）。本人（使用者自己）的行程留空陣列。
@@ -287,7 +292,7 @@ ${args.habits}
 - fromHabit：列出「不是使用者說的、而是依過去習慣帶入」的欄位（time/calendar/subjects/participants/tags/location/driver）。
 - assumptions：你做的假設，每條一句中文（例：「沒講時間，先用平常的 18:15–19:15」）。沒有就空陣列。
 - questions：缺了而且重要的資訊，用一句溫和、具體的中文問句（例：「這是哥哥還是妹妹的課？」「要在哪裡上課？」）。資訊足夠就空陣列，不要為了問而問。
-- unknownNames：句子裡提到、但人物清單裡沒有的人名或稱謂（例：「林醫師」）。
+- unknownNames：句子裡提到、但人物清單裡沒有的人名或稱謂（例：「和Tina吃飯」→ ["Tina"]、「林醫師」）。系統會自動在標題前加「和Tina」，title 仍只寫事情（「吃飯」）。
 - confidence：0~1，你對整體解析的把握。
 - note：其他想提醒的一句話，沒有就空字串。`;
 }

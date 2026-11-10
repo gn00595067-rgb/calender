@@ -6,6 +6,7 @@ import {
   startOfDay,
   endOfDay,
   eachDayOfInterval,
+  addDays,
 } from "date-fns";
 import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import { TIME_ZONE } from "./constants";
@@ -44,6 +45,20 @@ export function monthGrid(anchorUtc: Date): {
     monthStart: mStart,
     range: { startIso: zonedToIso(gridStart), endIso: zonedToIso(endOfDay(gridEnd)) },
   };
+}
+
+/**
+ * 月視圖（連續週）：從今天所在那週往前 weeksBefore 週開始，共 weeks 週（Peggy 11/9：不切月份、一直往下延伸）。
+ */
+export function continuousWeeks(
+  weeksBefore: number,
+  weeks: number,
+  nowUtc: Date = new Date(),
+): { days: Date[]; range: UtcRange } {
+  const start = addDays(startOfWeek(zoned(nowUtc), { weekStartsOn: WEEK_STARTS_ON }), -7 * weeksBefore);
+  const end = addDays(start, 7 * weeks - 1);
+  const days = eachDayOfInterval({ start, end });
+  return { days, range: { startIso: zonedToIso(start), endIso: zonedToIso(endOfDay(end)) } };
 }
 
 /** 週視圖：回傳一週七天（台北）與 UTC 查詢區間 */

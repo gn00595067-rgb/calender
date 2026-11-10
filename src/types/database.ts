@@ -23,18 +23,22 @@ export interface Database {
           email: string;
           display_name: string;
           created_at: string;
+          /** 0026 使用習慣（自己寫的） */
+          habits_text?: string | null;
         };
         Insert: {
           id: string;
           email: string;
           display_name: string;
           created_at?: string;
+          habits_text?: string | null;
         };
         Update: {
           id?: string;
           email?: string;
           display_name?: string;
           created_at?: string;
+          habits_text?: string | null;
         };
         Relationships: [];
       };

@@ -15,6 +15,7 @@ import { createNoteAction, deleteNoteAction, saveNotePartsAction } from "@/lib/a
 import { teacherLabel, type NotePartDraft, type PersonLite } from "@/lib/learning";
 import { looksEnglish } from "@/lib/note-translate";
 import { D } from "@/lib/date";
+import { looksNonLesson } from "@/lib/rate-plans";
 
 /** AI 拆分結果（確認前的草稿） */
 interface SplitDraft {
@@ -58,9 +59,12 @@ async function requestTranslate(
 export function NotesSection({
   eventId,
   canAdd,
+  title = "",
 }: {
   eventId: string;
   canAdd: boolean;
+  /** 行程標題：用來判斷是不是上課（開會、吃飯就不顯示課程進度／學習回饋） */
+  title?: string;
 }) {
   const { me } = useAppData();
   const { data: notes = [], isLoading } = useEventNotes(eventId);
@@ -70,6 +74,8 @@ export function NotesSection({
   );
   const subjects = ctx?.subjects ?? [];
   const teacher = ctx?.teacher ?? null;
+  // 是上課才顯示「課程進度／學習回饋」：有老師，或有小孩當主角而且標題不像開會吃飯（Peggy 11/10）
+  const isLesson = !!teacher || (subjects.length > 0 && !looksNonLesson(title));
   // 兩個以上小孩一起上課 → 回饋要依小孩拆開
   const multi = subjects.length >= 2;
   const qc = useQueryClient();
@@ -161,7 +167,7 @@ export function NotesSection({
 
   const submit = () => {
     if (!content.trim()) return;
-    if (multi) void split("new", content.trim());
+    if (multi && isLesson) void split("new", content.trim());
     else saveNew();
   };
 
@@ -201,10 +207,11 @@ export function NotesSection({
     <div className="space-y-3">
       <div className="flex items-center gap-1.5 text-sm font-semibold">
         <MessageSquare className="size-4" />
-        回饋與筆記
+        {isLesson ? "回饋與筆記" : "筆記"}
         {notes.length > 0 && (
           <span className="text-muted-foreground">（{notes.length}）</span>
         )}
+        {isLesson && (
         <Link
           href="/learning"
           className="ml-auto inline-flex items-center text-xs font-normal text-primary hover:underline"
@@ -212,6 +219,7 @@ export function NotesSection({
           學習回饋總整理
           <ChevronRight className="size-3.5" />
         </Link>
+        )}
       </div>
 
       {isLoading ? (
@@ -303,16 +311,22 @@ export function NotesSection({
           </div>
         ) : (
           <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
-            <Textarea
-              value={progress}
-              onChange={(e) => setProgress(e.target.value)}
-              placeholder="課程進度（選填）：當天教學進度與章節，例：公里和公尺的單位換算"
-              rows={progress.includes("\n") ? 4 : 2}
-            />
+            {isLesson && (
+              <Textarea
+                value={progress}
+                onChange={(e) => setProgress(e.target.value)}
+                placeholder="課程進度（選填）：當天教學進度與章節，例：公里和公尺的單位換算"
+                rows={progress.includes("\n") ? 4 : 2}
+              />
+            )}
             <Textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="學習回饋：學生當堂表現與理解度（例：單位換算熟練，進位偶爾漏掉）"
+              placeholder={
+                isLesson
+                  ? "學習回饋：學生當堂表現與理解度（例：單位換算熟練，進位偶爾漏掉）"
+                  : "筆記：例：要帶的東西、談了什麼"
+              }
               rows={content.includes("\n") ? 6 : 2}
             />
             {original ? (
@@ -345,7 +359,7 @@ export function NotesSection({
                 </div>
               )
             )}
-            {multi && (
+            {multi && isLesson && (
               <p className="text-xs text-muted-foreground">
                 這堂課有 {subjects.map((s) => s.name).join("、")}，送出後會自動依小孩拆開，確認後才存。
               </p>
@@ -357,7 +371,7 @@ export function NotesSection({
                 className="shrink-0"
               >
                 {splitting && <Loader2 className="size-4 animate-spin" />}
-                {splitting ? "拆分中…" : "送出回饋"}
+                {splitting ? "拆分中…" : isLesson ? "送出回饋" : "儲存筆記"}
               </Button>
             </div>
           </div>

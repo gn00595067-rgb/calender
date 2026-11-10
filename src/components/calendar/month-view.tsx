@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { format, isSameMonth, isToday } from "date-fns";
 import { CalendarRange, Plus } from "lucide-react";
 import { zoned } from "@/lib/calendar-utils";
@@ -148,9 +148,18 @@ export function MonthView({
   onSelectEvent,
   onCreateAt,
   onOpenDay,
+  continuous = false,
+  onTopMonthChange,
+  onReachEnd,
 }: {
   days: Date[];
   monthStart: Date;
+  /** 連續週（不分月）：不淡化「非本月」、過去的日子淡化、每月插分隔列、星期列上顯示目前月份 */
+  continuous?: boolean;
+  /** 連續週：畫面最上面那列的月份（yyyy-MM）變了 */
+  onTopMonthChange?: (ym: string) => void;
+  /** 連續週：捲到底了，該再接幾週 */
+  onReachEnd?: () => void;
   events: CalEvent[];
   gapFilter?: GapFilter | null;
   familyFocus?: FamilyFocus | null;
@@ -269,17 +278,78 @@ export function MonthView({
       ? freeLinesFor(peekEvents, peekDay, FOCUS_MIN_GAP_PEEK)
       : [];
 
+  // 連續週：捲動時看畫面最上面那列是幾月（以該週最後一天為準：捲到含 12/1 那週就算 12 月）
+  const todayDs = format(zoned(new Date()), "yyyy-MM-dd");
+  const headRef = useRef<HTMLDivElement>(null);
+  const weeksRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const firstYm = days.length ? format(days[Math.min(6, days.length - 1)], "yyyy-MM") : "";
+  const [topYm, setTopYm] = useState(firstYm);
+  useEffect(() => {
+    if (!continuous) return;
+    const update = () => {
+      const headBottom = headRef.current?.getBoundingClientRect().bottom ?? 0;
+      const rows = weeksRef.current?.querySelectorAll<HTMLElement>("[data-week-end]") ?? [];
+      let ym = firstYm;
+      for (const r of rows) {
+        if (r.getBoundingClientRect().bottom > headBottom + 8) {
+          ym = r.dataset.weekEnd!.slice(0, 7);
+          break;
+        }
+      }
+      setTopYm((prev) => (prev === ym ? prev : ym));
+    };
+    update();
+    // capture：不管是視窗還是外層容器在捲都收得到
+    window.addEventListener("scroll", update, { capture: true, passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, { capture: true });
+      window.removeEventListener("resize", update);
+    };
+  }, [continuous, firstYm, days.length]);
+  useEffect(() => {
+    if (continuous && topYm) onTopMonthChange?.(topYm);
+  }, [continuous, topYm, onTopMonthChange]);
+  // 捲到底 → 再接幾週（不用按下一個月、不用等換頁）
+  useEffect(() => {
+    if (!continuous || !onReachEnd || !endRef.current) return;
+    const io = new IntersectionObserver(
+      (entries) => entries.some((e) => e.isIntersecting) && onReachEnd(),
+      { rootMargin: "400px 0px" },
+    );
+    io.observe(endRef.current);
+    return () => io.disconnect();
+  }, [continuous, onReachEnd, days.length]);
+  const [topY, topM] = topYm.split("-").map(Number);
+
   return (
     <>
     {/* overflow-clip（不是 hidden）才不會擋住星期列的 sticky（Peggy 11/5：往下捲要一直看到週一到週日） */}
     <div className="overflow-clip rounded-xl border bg-card">
-      <div className="sticky top-14 z-20 grid grid-cols-7 border-b bg-muted text-center text-xs font-medium text-muted-foreground shadow-[0_1px_0_0_var(--border)]">
-        {WEEK_HEADER.map((w) => (
-          <div key={w} className="py-2">
-            {w}
+      <div
+        ref={headRef}
+        className="sticky top-14 z-20 border-b bg-muted shadow-[0_1px_0_0_var(--border)]"
+      >
+        {continuous && topYm && (
+          // 目前畫面最上面的月份（Peggy 11/9：捲到 12 月要提醒現在是 12 月）
+          <div
+            key={topYm}
+            aria-live="polite"
+            className="flex items-center justify-center gap-1 border-b bg-primary py-1 text-sm font-bold text-primary-foreground motion-safe:animate-in motion-safe:fade-in"
+          >
+            {topY} 年 {topM} 月
           </div>
-        ))}
+        )}
+        <div className="grid grid-cols-7 text-center text-xs font-medium text-muted-foreground">
+          {WEEK_HEADER.map((w) => (
+            <div key={w} className="py-2">
+              {w}
+            </div>
+          ))}
+        </div>
       </div>
+      <div ref={weeksRef}>
       {Array.from({ length: Math.ceil(days.length / 7) }, (_, w) => {
         const week = days.slice(w * 7, w * 7 + 7);
         const weekDs = week.map((d) => format(d, "yyyy-MM-dd"));
@@ -287,17 +357,29 @@ export function MonthView({
         const laneCount = spans.reduce((m, s) => Math.max(m, s.lane + 1), 0);
         // 列：日期列｜每層跨日橫條｜當天其他行程（撐滿剩餘高度）
         const contentRow = laneCount + 2;
+        // 連續週：這週有某月 1 號（且不是第一列）→ 上面插一條月份分隔列
+        const firstOfMonth = continuous && w > 0 ? week.find((d) => d.getDate() === 1) : undefined;
         return (
+          <Fragment key={weekDs[0]}>
+          {firstOfMonth && (
+            <div
+              id={`month-${format(firstOfMonth, "yyyy-MM")}`}
+              className="scroll-mt-28 border-b bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary"
+            >
+              {format(firstOfMonth, "yyyy 年 M 月")}
+            </div>
+          )}
           <div
-            key={weekDs[0]}
-            className="grid min-h-24 grid-cols-7"
+            data-week-end={weekDs[6]}
+            id={`week-${weekDs[0]}`}
+            className="grid min-h-24 scroll-mt-28 grid-cols-7"
             style={{
               gridTemplateRows: `auto ${laneCount ? `repeat(${laneCount}, auto) ` : ""}1fr`,
             }}
           >
             {week.map((day, i) => {
               const ds = weekDs[i];
-              const inMonth = isSameMonth(day, monthStart);
+              const inMonth = continuous ? ds >= todayDs : isSameMonth(day, monthStart);
               const today = isToday(day);
               // 格子底：整欄（跨所有列）負責框線、底色與「點空白處開當天面板」
               return (
@@ -318,7 +400,7 @@ export function MonthView({
 
             {week.map((day, i) => {
               const ds = weekDs[i];
-              const inMonth = isSameMonth(day, monthStart);
+              const inMonth = continuous ? ds >= todayDs : isSameMonth(day, monthStart);
               const today = isToday(day);
               return (
                 <div
@@ -359,7 +441,7 @@ export function MonthView({
                       !today && !inMonth && "text-muted-foreground/60",
                     )}
                   >
-                    {format(day, "d")}
+                    {continuous && day.getDate() === 1 ? format(day, "M/d") : format(day, "d")}
                   </button>
                 </div>
               );
@@ -513,8 +595,15 @@ export function MonthView({
               );
             })}
           </div>
+          </Fragment>
         );
       })}
+      </div>
+      {continuous && (
+        <div ref={endRef} className="py-3 text-center text-xs text-muted-foreground">
+          往下捲會自動接後面的日子
+        </div>
+      )}
     </div>
 
       <Sheet
