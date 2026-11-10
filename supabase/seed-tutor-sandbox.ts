@@ -32,9 +32,11 @@ const KID_CALS = [
 
 const at = (d: string, t: string) => fromZonedTime(`${d}T${t}:00`, TZ).toISOString();
 
-function must<T>(r: { data: T; error: { message: string } | null }, what: string): T {
+// 回傳型別取「沒有 error」那一支的 data，讓 supabase 的成功／失敗聯集型別過得了 next build 的型別檢查
+type Ok<R> = Exclude<R, { error: { message: string } }> extends { data: infer D } ? D : never;
+function must<R extends { data: unknown; error: { message: string } | null }>(r: R, what: string): Ok<R> {
   if (r.error) throw new Error(`${what}：${r.error.message}`);
-  return r.data;
+  return r.data as Ok<R>;
 }
 
 async function ensureUser(email: string, name: string): Promise<string> {
