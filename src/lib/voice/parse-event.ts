@@ -221,10 +221,21 @@ export function buildSystemPrompt(args: {
   habits: string;
   /** 使用者在「設定 → 使用習慣」自己寫的（一行一條），比過去習慣優先 */
   userHabits?: string;
+  /** 說話的人對應到的家人（非本人時，如豪哥登入）：「我」與沒講是誰的＝他的行程 */
+  speaker?: ContactRow | null;
 }) {
   const calList = args.calendars.map((c) => `- id="${c.id}" 名稱="${c.name}"`).join("\n");
   const family = args.contacts.filter((c) => c.is_family);
   const others = args.contacts.filter((c) => !c.is_family);
+  const sp = args.speaker;
+  // 說話的人不是行事曆主人（豪哥登入）：「本人」改指他，而不是留空＝老闆（Peggy 11/10 回饋）
+  const speakerRule = sp
+    ? `
+**這次說話的人是「${sp.name}」（id="${sp.id}"），不是行事曆主人。**句子裡的「我」、或沒講是誰的行程，都是 ${sp.name} 的：subjectIds 放 "${sp.id}"；「我和哥哥」→ 兩人都放。`
+    : "";
+  const selfRule = sp
+    ? `沒講是誰的＝說話的人（${sp.name}），subjectIds=["${sp.id}"]。`
+    : "本人（使用者自己）的行程留空陣列。";
   const fmt = (c: ContactRow) =>
     `- id="${c.id}" 名字="${c.name}"${c.role_label ? ` 稱謂="${c.role_label}"` : ""}${
       c.aliases?.length ? ` 別名="${c.aliases.join("、")}"` : ""
@@ -259,7 +270,7 @@ recurrence="dates"、startWall/endWall 用最早那天、extraDates 列出其餘
 ${calList}
 
 家人（可當「主角」＝誰的行程／誰去上課）：
-${family.length ? family.map(fmt).join("\n") : "（無）"}
+${family.length ? family.map(fmt).join("\n") : "（無）"}${speakerRule}
 
 其他人物（「相關人物」＝老師、醫師、客戶、司機等）：
 ${others.length ? others.map(fmt).join("\n") : "（無）"}
@@ -280,7 +291,7 @@ ${args.habits}
 - 沒講時長：使用者自己寫的使用習慣有提到就用它，其次用過去習慣的時長，否則 1 小時。只講日期沒講時間：有習慣用習慣時間（並寫進 assumptions），否則 allDay=true、00:00–23:59。
 - 只講幾點沒講上下午，依常識與習慣判斷。
 - title 簡潔，不含時間、地點、人名（「哥哥桌球」→ title="桌球"，哥哥放主角）。地點「(延吉街)」與主角名「-哥哥」會由系統自動加在標題後面，你不用加。若與過去習慣的標題是同一件事，沿用習慣的標題寫法。
-- subjectIds：句子提到的家人（哥哥、妹妹、小明…，名字、別名、暱稱與稱謂都算對上）；沒提到但過去習慣固定是某位家人時可帶入（記入 fromHabit）。本人（使用者自己）的行程留空陣列。
+- subjectIds：句子提到的家人（哥哥、妹妹、小明…，名字、別名、暱稱與稱謂都算對上）；沒提到但過去習慣固定是某位家人時可帶入（記入 fromHabit）。${selfRule}
 - participantIds：老師、醫師、客戶等；「郭老師」對到稱謂或名字相符者。沒提到但習慣固定是某人時可帶入（記入 fromHabit）。
 - tagNames：優先用既有標籤（含習慣中的標籤）；只有明顯需要時才新增，最多 3 個。
 - needsDriver：說到「司機、載、接送、送去、接回」或習慣「通常要司機」時 true。

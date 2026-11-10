@@ -84,7 +84,7 @@ export async function POST(req: Request) {
     supabase.from("contacts").select("id, name, role_label, is_family, is_self, aliases").order("name"),
   ).then((r) => (r.data ?? []) as ContactRow[]);
   const contactByIdP = contactsP.then((cs) => new Map(cs.map((c) => [c.id, c])));
-  const [contacts, contactById, tagRes, habits, userHabits] = await Promise.all([
+  const [contacts, contactById, tagRes, habits, profile] = await Promise.all([
     contactsP,
     contactByIdP,
     supabase.from("tags").select("name").order("name"),
@@ -93,11 +93,15 @@ export async function POST(req: Request) {
       return "（無法讀取過去紀錄）";
     }),
     // 設定頁「使用習慣」自己寫的（0026 前沒有這欄，查不到就當沒寫）
-    Promise.resolve(supabase.from("profiles").select("habits_text").eq("id", user.id).maybeSingle()).then(
-      (r) => (r.data?.habits_text ?? "").trim(),
-      () => "",
+    Promise.resolve(
+      supabase.from("profiles").select("display_name, habits_text").eq("id", user.id).maybeSingle(),
+    ).then(
+      (r) => r.data ?? null,
+      () => null,
     ),
   ]);
+  const userHabits = (profile?.habits_text ?? "").trim();
+  const speaker = findSpeaker(contacts, profile?.display_name ?? null);
   const tagNames = (tagRes.data ?? []).map((t) => t.name);
 
   const userMessage = parsed.followUp
@@ -132,7 +136,7 @@ export async function POST(req: Request) {
         system: [
           {
             type: "text",
-            text: buildSystemPrompt({ calendars: parsed.calendars, contacts, tagNames, habits, userHabits }),
+            text: buildSystemPrompt({ calendars: parsed.calendars, contacts, tagNames, habits, userHabits, speaker }),
             cache_control: { type: "ephemeral" },
           },
         ],
@@ -202,9 +206,23 @@ export async function POST(req: Request) {
       contacts,
       contactById,
       isFollowUp: !!parsed.followUp,
+      speaker,
     }),
   );
   return NextResponse.json({ intent: "create", events });
+}
+
+/**
+ * 說話的人若是行事曆主人的某位家人（豪哥用自己帳號登入），找出對應的人物：
+ * 顯示名稱＝家人的名字或別名，且那位不是「本人」。老闆自己登入時回 null，維持「沒主角＝本人」。
+ */
+function findSpeaker(contacts: ContactRow[], displayName: string | null): ContactRow | null {
+  const n = displayName?.trim();
+  if (!n) return null;
+  const hit = contacts.find(
+    (c) => c.is_family && (c.name.trim() === n || (c.aliases ?? []).some((a) => a.trim() === n)),
+  );
+  return hit && !hit.is_self ? hit : null;
 }
 
 /** 一筆行程：不在清單的 id 丟掉、時間格式不對退回 null、標題加地點／主角後綴、規則式提醒 */
@@ -216,13 +234,16 @@ function normalizeEvent(
     contactById: Map<string, ContactRow>;
     /** 追問回答過了：「沒指定主角＝本人」不再重複提醒 */
     isFollowUp: boolean;
+    /** 說話的人（豪哥登入）：模型沒填主角時保底帶他，不讓行程掉成老闆的 */
+    speaker: ContactRow | null;
   },
 ) {
-  const { calendars, contacts, contactById, isFollowUp } = ctx;
+  const { calendars, contacts, contactById, isFollowUp, speaker } = ctx;
   const validCal = new Set(calendars.map((c) => c.id));
   const calendarId =
     ev.calendarId && validCal.has(ev.calendarId) ? ev.calendarId : calendars[0].id;
-  const subjectIds = [...new Set(ev.subjectIds)].filter((id) => contactById.has(id));
+  let subjectIds = [...new Set(ev.subjectIds)].filter((id) => contactById.has(id));
+  if (subjectIds.length === 0 && speaker) subjectIds = [speaker.id];
   const participantIds = [...new Set(ev.participantIds)].filter(
     (id) => contactById.has(id) && !subjectIds.includes(id),
   );

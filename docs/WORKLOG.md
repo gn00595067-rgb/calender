@@ -818,3 +818,10 @@ spec：`docs/specs/時間衝突提醒.md`。
 **做了什麼**：`seed-tutor-sandbox.ts` 的 `must()` 改用條件型別取成功分支的 data（b72e0e7），production 部署恢復 Ready。指南網頁版、PDF、長圖都加上正式網址 https://calender-hazel-seven.vercel.app；PDF／長圖存在本機「下載」資料夾（家教老師操作指南.pdf／.png／.jpg）。
 **為什麼**：next build 會型別檢查 supabase/*.ts，e8dd650 推上去後 production 建置失敗（線上停在舊版）。使用者要能傳給家教的 PDF／圖檔，且指南內直接附網址。
 **下一步**：把 PDF 或長圖傳給家教試用。之後新增 supabase/ 下的腳本，推之前先跑 `npx tsc --noEmit`。
+
+## 2026-11-10 — 語音新增：豪哥登入時主角帶豪哥
+
+**做了什麼**：語音解析依登入者顯示名稱找「說話的人」（對到 Peggy 人物裡的家人且不是本人，例：豪哥）；提示詞改成「我／沒講是誰＝豪哥」，模型漏填時程式保底帶他。spec：`docs/specs/語音新增-說話的人當主角.md`。
+**為什麼**：使用者用豪哥帳號語音新增，主角都變 Peggy姐（沒主角＝本人＝Peggy）。
+**驗證**：tsc、eslint、next build 過；用真實人物資料跑：豪哥 → 說話的人＝豪哥（提示詞含其 id），Peggy姐 → 無（維持原規則）。未實際用豪哥帳號講一次語音。
+**下一步**：請使用者用豪哥帳號再試一次語音。手動新增的主角預設是否也要帶豪哥，看回饋。
