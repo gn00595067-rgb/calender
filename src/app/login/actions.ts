@@ -5,8 +5,15 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 
 const credentialsSchema = z.object({
-  email: z.email({ error: "請輸入有效的 Email" }),
-  password: z.string().min(6, { error: "密碼至少 6 碼" }),
+  // 手機鍵盤常把開頭變大寫、複製時帶到空白：Email 一律去空白轉小寫（密碼大小寫有別，只去前後空白）
+  email: z.preprocess(
+    (v) => (typeof v === "string" ? v.trim().toLowerCase() : v),
+    z.email({ error: "請輸入有效的 Email" }),
+  ),
+  password: z.preprocess(
+    (v) => (typeof v === "string" ? v.trim() : v),
+    z.string().min(6, { error: "密碼至少 6 碼" }),
+  ),
   displayName: z.string().trim().optional(),
 });
 

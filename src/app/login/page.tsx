@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { CalendarClock } from "lucide-react";
 import { signInAction, signUpAction, type AuthState } from "./actions";
 import { Button } from "@/components/ui/button";
@@ -34,8 +34,9 @@ function SubmitButton({ pending, label }: { pending: boolean; label: string }) {
 export default function LoginPage() {
   const [tab, setTab] = useState("login");
   const [remember, setRemember] = useState(true);
-  const emailRef = useRef<HTMLInputElement>(null);
-  const passwordRef = useRef<HTMLInputElement>(null);
+  // 受控欄位：登入失敗時 React 會重設表單，未受控欄位會被清空，要整個重打（11/10 回饋）
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [signInState, signIn, signInPending] = useActionState<AuthState, FormData>(
     signInAction,
     undefined,
@@ -45,20 +46,18 @@ export default function LoginPage() {
     undefined,
   );
 
-  // 首次載入：把上次「記住我」保存的帳密直接寫入未受控欄位（避免 hydration 落差）。
+  // 首次載入：帶入上次「記住我」保存的帳密（放 effect 避免 hydration 落差）。
   useEffect(() => {
     const saved = loadRemembered();
     if (!saved) return;
-    if (emailRef.current && saved.email) emailRef.current.value = saved.email;
-    if (passwordRef.current && saved.password)
-      passwordRef.current.value = saved.password;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 掛載時自 localStorage 同步一次
+    if (saved.email) setEmail(saved.email);
+    if (saved.password) setPassword(saved.password);
   }, []);
 
   // 送出登入前：依「記住我」保存或清除帳密（onSubmit 於 Server Action 之前執行）。
   function persistRemember() {
     try {
-      const email = emailRef.current?.value ?? "";
-      const password = passwordRef.current?.value ?? "";
       if (remember && email) {
         window.localStorage.setItem(
           REMEMBER_KEY,
@@ -97,22 +96,30 @@ export default function LoginPage() {
                 <div className="space-y-2">
                   <Label htmlFor="login-email">Email</Label>
                   <Input
-                    ref={emailRef}
                     id="login-email"
                     name="email"
                     type="email"
                     autoComplete="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     placeholder="name@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     required
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="login-password">密碼</Label>
                   <PasswordInput
-                    ref={passwordRef}
                     id="login-password"
                     name="password"
                     autoComplete="current-password"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     required
                   />
                 </div>

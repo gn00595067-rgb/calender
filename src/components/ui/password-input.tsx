@@ -10,7 +10,14 @@ function PasswordInput({ className, ...props }: Omit<React.ComponentProps<"input
   const [show, setShow] = React.useState(false);
   return (
     <div className="relative">
-      <Input type={show ? "text" : "password"} className={cn("pr-9", className)} {...props} />
+      <Input
+        type={show ? "text" : "password"}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        className={cn("pr-9", className)}
+        {...props}
+      />
       <button
         type="button"
         onClick={() => setShow((v) => !v)}
