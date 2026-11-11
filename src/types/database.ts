@@ -94,6 +94,11 @@ export interface Database {
           reminder2_minutes?: number | null;
           reminder2_email_sent_at?: string | null;
           reminder2_push_sent_at?: string | null;
+          // 0027 車程估算與出門提醒
+          travel_minutes?: number | null;
+          travel_origin?: string | null;
+          leave_minutes?: number | null;
+          leave_push_sent_at?: string | null;
           created_at: string;
           updated_at: string;
           // 0009 司機接送（套 migration 前查不到，故標為可選）
@@ -128,6 +133,11 @@ export interface Database {
           reminder2_minutes?: number | null;
           reminder2_email_sent_at?: string | null;
           reminder2_push_sent_at?: string | null;
+          // 0027 車程估算與出門提醒
+          travel_minutes?: number | null;
+          travel_origin?: string | null;
+          leave_minutes?: number | null;
+          leave_push_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
           // 0009 司機接送（套 migration 前查不到，故標為可選）
@@ -162,6 +172,11 @@ export interface Database {
           reminder2_minutes?: number | null;
           reminder2_email_sent_at?: string | null;
           reminder2_push_sent_at?: string | null;
+          // 0027 車程估算與出門提醒
+          travel_minutes?: number | null;
+          travel_origin?: string | null;
+          leave_minutes?: number | null;
+          leave_push_sent_at?: string | null;
           created_at?: string;
           updated_at?: string;
           // 0009 司機接送（套 migration 前查不到，故標為可選）
@@ -515,6 +530,28 @@ export interface Database {
           user_agent?: string | null;
         };
         Update: { p256dh?: string; auth?: string; user_agent?: string | null; user_id?: string };
+        Relationships: [];
+      };
+      // 0027 常用地點（家、公司…）
+      places: {
+        Row: {
+          id: string;
+          owner_id: string;
+          name: string;
+          address: string;
+          lat: number | null;
+          lng: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          name: string;
+          address: string;
+          lat?: number | null;
+          lng?: number | null;
+        };
+        Update: { name?: string; address?: string; lat?: number | null; lng?: number | null };
         Relationships: [];
       };
       // 0017 學習回饋依小孩拆分

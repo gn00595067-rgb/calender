@@ -36,6 +36,7 @@ import { TimeDurationField } from "./time-duration-field";
 import { CategorySelect } from "./category-select";
 import { useAppData } from "@/components/app/app-data";
 import { findSpeaker } from "@/lib/speaker";
+import { TravelSection, travelFromEvent, type TravelValue } from "./travel-section";
 import {
   useEventEditData,
   useContactsBilling,
@@ -192,6 +193,14 @@ export function EventModal({
   onSaved?: (dateStr?: string) => void;
 }) {
   const { calendars, ownedCalendars, sharedCalendars, calendarById, me } = useAppData();
+  // 車程估算與「該出門了」（0027）；不放進 react-hook-form，值是整包估算結果
+  const [travel, setTravelState] = useState<TravelValue | null>(null);
+  const travelTouchedRef = useRef(false);
+  const setTravel = (v: TravelValue | null) => setTravelState(v);
+  const changeTravel = (v: TravelValue | null) => {
+    travelTouchedRef.current = true;
+    setTravelState(v);
+  };
   const editableCalendars = [...ownedCalendars, ...sharedCalendars].filter((c) =>
     can.editEvents(c.effectiveRole),
   );
@@ -287,6 +296,12 @@ export function EventModal({
     templateRef.current = null;
     setFeeSkipNote(null);
     setDetailsOpen(!(mode === "create" && !!draft?.voice));
+    travelTouchedRef.current = false;
+    setTravel(
+      mode === "edit" && event
+        ? travelFromEvent(event.travel, event.location ?? "", utcToTaipeiWall(event.starts_at))
+        : null,
+    );
     // 語音已判斷出主角時以語音為準；編輯舊行程不自動改
     subjectsTouchedRef.current = mode === "edit" || !!draft?.subjectIds?.length;
     if (mode === "edit" && event) {
@@ -689,6 +704,17 @@ export function EventModal({
         }
       : null;
     const addDates = addDatesOf(v);
+    // 車程：沒估算過也沒動＝不送（0027 未套用時不會因此出警告）；整日行程不提醒出門
+    const travelPayload =
+      travel && !v.allDay
+        ? {
+            minutes: travel.minutes,
+            origin: travel.origin,
+            leaveMinutes: travel.prep == null ? null : travel.minutes + travel.prep,
+          }
+        : travelTouchedRef.current || (mode === "edit" && event?.travel)
+          ? null
+          : undefined;
     const pmMeta = PAYMENT_METHODS.find(
       (p) => p.value === v.financePaymentMethod,
     );
@@ -749,6 +775,7 @@ export function EventModal({
               tagNames: v.tagNames,
               finance,
               driver,
+              travel: travelPayload,
             })
           : await updateEventAction({
               id: event!.id,
@@ -769,6 +796,7 @@ export function EventModal({
               tagNames: v.tagNames,
               finance,
               driver,
+              travel: travelPayload,
               addDates,
               recurrenceRule:
                 !isRecurringEdit && v.recurrence !== "none" && v.recurrence !== "dates"
@@ -1048,6 +1076,23 @@ export function EventModal({
               <Label htmlFor="ev-location">地點</Label>
               <Input id="ev-location" {...register("location")} placeholder="選填" />
             </div>
+            {!allDay && (
+              <TravelSection
+                location={watch("location") ?? ""}
+                startWall={startWall}
+                value={travel}
+                onChange={changeTravel}
+                fixedOrigin={
+                  watch("driverEnabled") && watch("driverTrip") !== "from"
+                    ? watch("driverPickupLocation").trim() || DEFAULT_PICKUP_PLACE
+                    : null
+                }
+                onEstimated={(m) => {
+                  // 有司機：單程車程跟著估算值（進位到 5 分）
+                  if (getValues("driverEnabled")) setValue("driverPickupMinutes", Math.ceil(m / 5) * 5);
+                }}
+              />
+            )}
 
             {subjectCollapsed && (() => {
               const names = inferredSubjects
@@ -1389,7 +1434,9 @@ export function EventModal({
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                {DRIVER_PICKUP_OPTIONS.map((m) => (
+                                {[...new Set([...DRIVER_PICKUP_OPTIONS, field.value])]
+                                  .sort((a, b) => a - b)
+                                  .map((m) => (
                                   <SelectItem key={m} value={String(m)}>
                                     {m === 0 ? "不算車程" : `約 ${m} 分鐘`}
                                   </SelectItem>

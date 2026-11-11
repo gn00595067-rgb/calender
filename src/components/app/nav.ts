@@ -18,6 +18,7 @@ import {
   Briefcase,
   NotebookPen,
   Sparkles,
+  MapPin,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,6 +49,7 @@ export const SETTINGS_NAV: NavItem[] = [
   { href: "/settings/categories", label: "費用類別", icon: Coins },
   { href: "/settings/tags", label: "標籤管理", icon: Hash },
   { href: "/settings/habits", label: "使用習慣", icon: Sparkles },
+  { href: "/settings/places", label: "常用地點", icon: MapPin },
   { href: "/settings/prepaid", label: "預繳帳戶", icon: Wallet },
   { href: "/settings/import", label: "匯入 Google 行事曆", icon: Download },
 ];

@@ -44,7 +44,16 @@ export interface CalEvent {
   noteAuthorIds: string[];
   /** 司機接送設定；不需要司機為 null */
   driver: DriverInfo | null;
+  /** 估算車程與「該出門了」（0027）；沒估算過為 null */
+  travel: TravelInfo | null;
 }
+
+export type TravelInfo = {
+  minutes: number;
+  origin: string | null;
+  /** 該出門了：開始前幾分鐘推播；null＝不提醒 */
+  leaveMinutes: number | null;
+};
 
 /** 行程原始列（events 表 Row） */
 type EventRowLite = {
@@ -70,6 +79,10 @@ type EventRowLite = {
   driver_pickup_location?: string | null;
   driver_dropoff_location?: string | null;
   driver_note?: string | null;
+  // 0027 車程估算與出門提醒
+  travel_minutes?: number | null;
+  travel_origin?: string | null;
+  leave_minutes?: number | null;
 };
 
 /** 將行程原始列補上人物／標籤／財務／回饋數等關聯 */
@@ -173,6 +186,10 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
     noteCount: noteCount.get(e.id) ?? 0,
     noteAuthorIds: [...(noteAuthors.get(e.id) ?? [])],
     driver: driverFromRow(e),
+    travel:
+      e.travel_minutes == null
+        ? null
+        : { minutes: e.travel_minutes, origin: e.travel_origin ?? null, leaveMinutes: e.leave_minutes ?? null },
   }));
 }
 

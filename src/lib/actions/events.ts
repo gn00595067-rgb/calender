@@ -128,9 +128,46 @@ const baseEventSchema = z.object({
     })
     .optional()
     .nullable(),
+  // 車程估算與出門提醒（0027）；null＝清掉，未給＝不動
+  travel: z
+    .object({
+      minutes: z.number().int().min(0).max(600),
+      origin: z.string().trim().max(200).optional().nullable(),
+      // 該出門了：開始前幾分鐘推播（車程＋準備）；null＝不提醒
+      leaveMinutes: z.number().int().min(0).max(720).optional().nullable(),
+    })
+    .optional()
+    .nullable(),
 });
 
 type EventInput = z.infer<typeof baseEventSchema>;
+
+const TRAVEL_NOT_SAVED = "行程已存好；車程與「該出門了」提醒這次沒存到（系統更新中，0027）。";
+
+/**
+ * 車程欄位另外寫（不跟主列一起，避免 0027 未套用時連行程都存不進去）。
+ * 改過就重置「該出門了」已推播，讓新時間重新提醒。
+ */
+async function writeTravel(
+  supabase: Supa,
+  ids: string[],
+  travel: EventInput["travel"],
+): Promise<string | undefined> {
+  if (travel === undefined || ids.length === 0) return;
+  const { error } = await supabase
+    .from("events")
+    .update({
+      travel_minutes: travel?.minutes ?? null,
+      travel_origin: travel?.origin || null,
+      leave_minutes: travel?.leaveMinutes ?? null,
+      leave_push_sent_at: null,
+    })
+    .in("id", ids);
+  if (error) {
+    console.error("[events] travel", error.message);
+    return travel ? TRAVEL_NOT_SAVED : undefined;
+  }
+}
 
 /** 司機接送 → events 欄位（0009 migration 新增；回程下車地點 0019） */
 function driverColumns(drv: EventInput["driver"]) {
@@ -373,6 +410,7 @@ async function insertOccurrences(
   );
   if (res.error) return { error: res.error.message };
   const events = res.data ?? [];
+  const travelWarning = await writeTravel(supabase, events.map((e) => e.id), d.travel);
 
   const tagIds = await resolveTagIds(supabase, userId, d.tagNames);
   await writeRelations(
@@ -396,9 +434,9 @@ async function insertOccurrences(
         .from("finance_records")
         .insert(finRows.map(withoutSnapshot)));
     }
-    if (finErr) return { error: finErr.message, warning };
+    if (finErr) return { error: finErr.message, warning: warning ?? travelWarning };
   }
-  return { warning };
+  return { warning: warning ?? travelWarning };
 }
 
 export async function createEventAction(
@@ -542,6 +580,11 @@ export async function updateEventAction(
     await supabase.from("events").update({ reminder_push_sent_at: null }).in("id", targetIds);
     // 第二個提醒的推播旗標（0022；未套用時失敗不影響）
     await supabase.from("events").update({ reminder2_push_sent_at: null }).in("id", targetIds);
+    // 車程／該出門了（0027）；時間改了也要重新推「該出門了」
+    warning = (await writeTravel(supabase, targetIds, d.travel)) ?? warning;
+    if (d.travel === undefined) {
+      await supabase.from("events").update({ leave_push_sent_at: null }).in("id", targetIds);
+    }
 
     // 人物、標籤、財務跟著套用範圍走：選「此筆與之後全部」就之後每一筆都改
     // （Peggy 回饋：改了 10/6 起的費用，10/13 之後仍是舊金額、報表也沒變）

@@ -4,7 +4,8 @@ import { pushConfigured, sendPushToUser } from "@/lib/push";
 
 /**
  * 行程提醒（由排程每分鐘呼叫；Supabase pg_cron，見 docs/specs/手機推播提醒.md）。
- * 每筆行程有兩個提醒（reminder_minutes、0022 的 reminder2_minutes），各自獨立送。
+ * 每筆行程有兩個提醒（reminder_minutes、0022 的 reminder2_minutes），各自獨立送；
+ * 另有「該出門了」（0027 的 leave_minutes＝車程＋準備時間），只推播不寄信。
  * 找出「提醒時間已到、尚未送出」的行程：
  *   1) 推播到行事曆擁有者的手機／電腦（Web Push），標記 reminder_push_sent_at；
  *   2) 寄 Email 給擁有者，標記 reminder_email_sent_at。
@@ -24,7 +25,9 @@ const SLOTS = [
   { min: "reminder_minutes", push: "reminder_push_sent_at", email: "reminder_email_sent_at" },
   { min: "reminder2_minutes", push: "reminder2_push_sent_at", email: "reminder2_email_sent_at" },
 ] as const;
-type Slot = (typeof SLOTS)[number];
+/** 該出門了：只推播（spec：docs/specs/車程估算與出門提醒.md） */
+const LEAVE = { min: "leave_minutes", push: "leave_push_sent_at", email: null } as const;
+type Slot = (typeof SLOTS)[number] | typeof LEAVE;
 
 type DueRow = {
   id: string;
@@ -33,6 +36,7 @@ type DueRow = {
   location: string | null;
   calendar_id: string;
   minutes: number;
+  travel: number | null;
 };
 
 /** 查某個提醒「時間到了、還沒送」的行程；欄位不存在（0022 未套用）回空 */
@@ -45,7 +49,7 @@ async function dueFor(
 ): Promise<DueRow[] | { error: string }> {
   const { data, error } = await sb
     .from("events")
-    .select(`id, title, starts_at, location, calendar_id, ${slot.min}`)
+    .select(`id, title, starts_at, location, calendar_id, ${slot.min}${slot === LEAVE ? ", travel_minutes" : ""}`)
     .not(slot.min, "is", null)
     .is(sentCol, null)
     .gte("starts_at", now.toISOString())
@@ -59,10 +63,11 @@ async function dueFor(
       location: (e.location as string | null) ?? null,
       calendar_id: e.calendar_id as string,
       minutes: Number(e[slot.min] ?? 0),
+      travel: e.travel_minutes == null ? null : Number(e.travel_minutes),
     }))
     .filter((e) => now.getTime() >= new Date(e.starts_at).getTime() - e.minutes * 60_000);
   if (slot === SLOTS[0]) return rows;
-  // 再提醒一次：時間早就過了（例如晚上的行程下午才建，「1 天前」已過）→ 不補送，直接標記，
+  // 再提醒一次／該出門了：時間早就過了（例如晚上的行程下午才建，「1 天前」已過）→ 不補送，直接標記，
   // 避免跟第一個提醒重複
   const stale = rows.filter(
     (e) => now.getTime() - (new Date(e.starts_at).getTime() - e.minutes * 60_000) > 60 * 60_000,
@@ -112,8 +117,9 @@ export async function GET(req: Request) {
   let pushed = 0;
   let sent = 0;
   let dueCount = 0;
-  for (const slot of SLOTS) {
+  for (const slot of [...SLOTS, LEAVE]) {
     pushed += await sendDuePushes(sb, slot, now, horizon);
+    if (!slot.email) continue;
     const due = await dueFor(sb, slot, slot.email, now, horizon);
     if ("error" in due) {
       // 第一個提醒查詢失敗才是真錯；第二個多半是 0022 還沒套用
@@ -129,7 +135,7 @@ export async function GET(req: Request) {
 /** 寄 Email 給行事曆擁有者，成功才標記已寄 */
 async function sendDueEmails(
   sb: SupabaseClient,
-  slot: Slot,
+  slot: (typeof SLOTS)[number],
   due: DueRow[],
   resendKey: string | undefined,
   from: string,
@@ -231,9 +237,13 @@ async function sendDuePushes(
       hour: "2-digit",
       minute: "2-digit",
     });
+    const where = e.location ? ` · ${e.location}` : "";
     const n = await sendPushToUser(sb, owner, {
-      title: e.title,
-      body: `${hhmm} 開始（${untilText(start, now)}）${e.location ? ` · ${e.location}` : ""}`,
+      title: slot === LEAVE ? `該出門了：${e.title}` : e.title,
+      body:
+        slot === LEAVE
+          ? `${hhmm} 開始${e.travel != null ? `，開車約 ${e.travel} 分鐘` : ""}${where}`
+          : `${hhmm} 開始（${untilText(start, now)}）${where}`,
       // 兩個提醒用不同 tag，第二則才不會蓋掉第一則
       tag: `${e.id}:${slot.min}`,
       url: "/calendar",
