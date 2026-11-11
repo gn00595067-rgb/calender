@@ -18,28 +18,31 @@ export async function ensureBootstrap(user: User): Promise<void> {
     user.email?.split("@")[0] ||
     "使用者";
 
-  // 1. profile（upsert 幂等）
-  await supabase.from("profiles").upsert(
-    {
-      id: user.id,
-      email: user.email ?? "",
-      display_name: displayName,
-    },
-    { onConflict: "id" },
-  );
-
-  // 2. 預設行事曆（僅在完全沒有自己的行事曆時建立）
-  const { count } = await supabase
-    .from("calendars")
-    .select("id", { count: "exact", head: true })
-    .eq("owner_id", user.id);
-
-  // 被分享當「老師」的人不建預設行事曆（只用被分享的小孩行事曆，見 0025）
-  const { count: schedulerShares } = await supabase
-    .from("calendar_shares")
-    .select("id", { count: "exact", head: true })
-    .eq("role", "scheduler")
-    .or(`member_id.eq.${user.id},invited_email.eq."${(user.email ?? "").toLowerCase()}"`);
+  // 每次進 App 都會跑：四件事互不相依，同時送出（原本依序等，跨區時開頁要多等一秒多）
+  const email = (user.email ?? "").toLowerCase();
+  const [, { count }, { count: schedulerShares }] = await Promise.all([
+    // 1. profile（upsert 幂等）
+    supabase.from("profiles").upsert(
+      { id: user.id, email: user.email ?? "", display_name: displayName },
+      { onConflict: "id" },
+    ),
+    // 2. 自己的行事曆數（0＝首次登入，要建預設行事曆）
+    supabase.from("calendars").select("id", { count: "exact", head: true }).eq("owner_id", user.id),
+    // 被分享當「老師」的人不建預設行事曆（只用被分享的小孩行事曆，見 0025）
+    supabase
+      .from("calendar_shares")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "scheduler")
+      .or(`member_id.eq.${user.id},invited_email.eq."${email}"`),
+    // 3. 回填受邀分享的 member_id
+    user.email
+      ? supabase
+          .from("calendar_shares")
+          .update({ member_id: user.id })
+          .eq("invited_email", user.email)
+          .is("member_id", null)
+      : Promise.resolve(null),
+  ]);
 
   if ((count ?? 0) === 0 && (schedulerShares ?? 0) === 0) {
     await supabase.from("calendars").insert(
@@ -51,14 +54,5 @@ export async function ensureBootstrap(user: User): Promise<void> {
         position: c.position,
       })),
     );
-  }
-
-  // 3. 回填受邀分享的 member_id
-  if (user.email) {
-    await supabase
-      .from("calendar_shares")
-      .update({ member_id: user.id })
-      .eq("invited_email", user.email)
-      .is("member_id", null);
   }
 }

@@ -28,10 +28,12 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 
   if (!user) redirect("/login");
 
-  await ensureBootstrap(user);
-
-  // 老師帳號（人物管理建立的）只用來寫回饋：一律進老師頁（0021 未套用時查詢失敗，照常進行事曆）
-  const { data: teacherLinks } = await supabase.rpc("my_teacher_links");
+  // 初始化與老師身分檢查互不相依，同時查（伺服器與資料庫每來回一次都要時間）
+  const [, { data: teacherLinks }] = await Promise.all([
+    ensureBootstrap(user),
+    // 老師帳號（人物管理建立的）只用來寫回饋：一律進老師頁（0021 未套用時查詢失敗，照常進行事曆）
+    supabase.rpc("my_teacher_links"),
+  ]);
   if (teacherLinks && teacherLinks.length > 0) redirect("/teach");
 
   const [calendars, profileRes] = await Promise.all([
