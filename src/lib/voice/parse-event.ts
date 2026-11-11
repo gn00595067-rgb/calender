@@ -82,6 +82,8 @@ export const outputSchema = z.object({
   /** 找既有行程的日期範圍 YYYY-MM-DD（沒講給 null） */
   rangeStart: z.string().nullable(),
   rangeEnd: z.string().nullable(),
+  /** 要找的那筆「原本」幾點（HH:mm）；講了「早上7:30那個」才填。關鍵字對不到時靠它從當天挑 */
+  targetTime: z.string().nullable(),
   /** 修改／刪除重複行程：one＝只這一次；series＝這次與之後全部 */
   scope: z.enum(["one", "series"]),
   changes: changesSchema.nullable(),
@@ -255,9 +257,11 @@ export function buildSystemPrompt(args: {
 search／delete／modify 共用的欄位（events 給空陣列）：
 - query：找行程的關鍵字，只留「事情」與「人名」（如「線上會議」「總經理」「數學」），**去掉**日期、月份、星期、時間、「每週」「行程」「幫我」等字眼；多個關鍵字用空白分開。
 - rangeStart／rangeEnd：有講日期或月份就填範圍（查日期對照表）。「11月」→ 11/01～11/30；「下週三」→ 那天到那天；「11月1號開始的每週二」→ rangeStart=11/01、rangeEnd 給 null。沒講給 null。
+- targetTime：使用者講到「原本那筆」的時刻就填（HH:mm，24 小時制）：「今天早上7:30游泳取消」→ "07:30"；「明天的會議改到三點」→ null（三點是新時間，放 changes）。沒講給 null。
+- query 寧可少不要多：只放使用者講的事情詞，**不要**自己從過去習慣猜人名或老師名加進去（標題常是簡稱，多一個詞就對不到）。
 - scope：說「全部、每週的、以後都、整個、之後都」→ "series"；否則（只講某一天、這次）→ "one"。search 時給 "one"。
 - changes：只有 modify 要填，沒講要改的欄位給 null；date＝改到哪一天、startTime／endTime＝新的時刻（HH:mm）；只說「延後一小時」「提早半小時」這類相對調整 → shiftMinutes（60、-30），startTime 給 null。其他意圖給 null。
-create 時：query、rangeStart、rangeEnd、changes 給 null，scope 給 "one"。
+create 時：query、rangeStart、rangeEnd、targetTime、changes 給 null，scope 給 "one"。
 
 ## 一句話多個行程
 一句話可能講了好幾件事（例：「明天早上10點開會，下午3點去美甲」）。每一件各輸出一筆到 events，依時間先後排序，最多 5 筆。

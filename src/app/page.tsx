@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { homePath } from "@/lib/home";
 
-export default function RootPage() {
-  redirect("/calendar");
+export default async function RootPage() {
+  redirect(await homePath());
 }

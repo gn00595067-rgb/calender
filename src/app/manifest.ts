@@ -7,7 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     name: APP_NAME,
     short_name: APP_NAME,
     description: "家庭與工作行事曆",
-    start_url: "/calendar",
+    // 打開 App 的第一頁依帳號決定（lib/home.ts）
+    start_url: "/",
     display: "standalone",
     background_color: "#ffffff",
     theme_color: "#1d4ed8",

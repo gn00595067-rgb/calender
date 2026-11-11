@@ -177,6 +177,7 @@ export async function POST(req: Request) {
       query: result.query?.trim() || (result.intent === "search" ? parsed.transcript : ""),
       rangeStart: ymd(result.rangeStart),
       rangeEnd: ymd(result.rangeEnd),
+      targetTime: hm(result.targetTime),
       scope: result.scope,
       changes:
         result.intent === "modify" && c

@@ -48,7 +48,8 @@ export async function signInAction(
   });
   if (error) return { error: friendlyAuthError(error.message) };
 
-  redirect("/calendar");
+  // 第一頁依帳號決定（Peggy＝週行程表），見 lib/home.ts
+  redirect("/");
 }
 
 export async function signUpAction(

@@ -481,7 +481,17 @@ export function MonthView({
               );
               // 跨日行程已畫成上方橫條，格內只列當天的單日行程
               const singleDay = dayEvents.filter((e) => !multiDayIds.has(e.id));
-              const shown = singleDay.slice(0, 3);
+              // 格子只放 3 筆：先留給本人（未指定主角／本人）與重要的，再依時間排
+              // （Peggy 11/11：小孩、豪哥的課排前面，自己的美甲被擠進「+4 筆」看不到）
+              const shown =
+                singleDay.length <= 3
+                  ? singleDay
+                  : singleDay
+                      .map((e, idx) => ({ e, idx, pri: isSelfEvent(e) || e.is_important ? 0 : 1 }))
+                      .sort((x, y) => x.pri - y.pri || x.idx - y.idx)
+                      .slice(0, 3)
+                      .sort((x, y) => x.idx - y.idx)
+                      .map((x) => x.e);
               const extra = singleDay.length - shown.length;
               // 空檔與「結束」提示仍以當天全部行程（含跨日）計算
               const cellFree: FreeLine[] = focusOn

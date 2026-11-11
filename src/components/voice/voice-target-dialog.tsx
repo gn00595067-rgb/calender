@@ -34,6 +34,8 @@ export interface VoiceTargetRequest {
   query: string;
   rangeStart: string | null;
   rangeEnd: string | null;
+  /** 原本那筆幾點（HH:mm）；關鍵字對不到時靠它從當天挑 */
+  targetTime?: string | null;
   scope: "one" | "series";
   changes: {
     title: string | null;
@@ -82,21 +84,15 @@ export function VoiceTargetDialog({
 
   // 沒講日期時只找今天以後的（要改／刪的通常是還沒發生的行程）
   const startDate = request?.rangeStart ?? taipeiTodayStr();
-  const { data: results = [], isLoading } = useQuery({
-    queryKey: ["voice-target", request?.query, startDate, request?.rangeEnd, editableIds],
-    queryFn: () =>
-      searchEvents({
-        q: request!.query,
-        calendarIds: editableIds,
-        startDate,
-        endDate: request!.rangeEnd,
-      }),
-    enabled: !!request && !!request.query.trim(),
+  const { data: results = { events: [] as CalEvent[], loose: null }, isLoading } = useQuery({
+    queryKey: ["voice-target", request?.query, startDate, request?.rangeEnd, request?.targetTime, editableIds],
+    queryFn: () => findTargets(request!, editableIds, startDate),
+    enabled: !!request && (!!request.query.trim() || !!request.rangeStart),
   });
 
   const candidates: Candidate[] = [];
   const byKey = new Map<string, Candidate>();
-  for (const e of results) {
+  for (const e of results.events) {
     // 老師身分只能改／刪自己登錄的
     const role = calendarById.get(e.calendar_id)?.effectiveRole ?? "viewer";
     if (!can.editEvent(role, e.creator_id, me.id)) continue;
@@ -193,7 +189,7 @@ export function VoiceTargetDialog({
           <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" /> 找行程中…
           </div>
-        ) : shown.length === 0 ? (
+        ) : shown.length === 0 || results.loose === "none" ? (
           <div className="space-y-3 py-2 text-sm">
             <p>
               找不到符合「{request?.query}」
@@ -206,8 +202,16 @@ export function VoiceTargetDialog({
           </div>
         ) : (
           <div className="space-y-3">
-            {shown.length > 1 && (
-              <p className="text-xs text-muted-foreground">找到 {shown.length} 個，點選要{isDelete ? "刪除" : "修改"}的那一個：</p>
+            {results.loose ? (
+              <p className="text-xs text-muted-foreground">
+                找不到標題有「{request?.query}」的行程，下面是
+                {results.loose === "time" ? `同一時間（${request?.targetTime}）` : "那段日期"}
+                的行程，點選要{isDelete ? "刪除" : "修改"}的那一個：
+              </p>
+            ) : (
+              shown.length > 1 && (
+                <p className="text-xs text-muted-foreground">找到 {shown.length} 個，點選要{isDelete ? "刪除" : "修改"}的那一個：</p>
+              )
             )}
             <ul className="space-y-2">
               {shown.map((c) => {
@@ -279,4 +283,37 @@ export function VoiceTargetDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * 找要改／刪的行程（Peggy 11/11：「今天早上7:30游泳取消」標題是「小杜」，關鍵字全對才算 → 找不到）。
+ * 依序放寬：全部詞都對到 → 任一詞對到 → 有講日期就列那段日期的行程（有講時間只留同時間的）。
+ * loose：結果是放寬後找到的（畫面要說明「找不到標題…，下面是…」）。
+ */
+async function findTargets(
+  req: VoiceTargetRequest,
+  calendarIds: string[],
+  startDate: string,
+): Promise<{ events: CalEvent[]; loose: "time" | "range" | "none" | null }> {
+  const base = { calendarIds, startDate, endDate: req.rangeEnd };
+  const atTime = (evs: CalEvent[]) =>
+    req.targetTime ? evs.filter((e) => utcToTaipeiWall(e.starts_at).slice(11, 16) === req.targetTime) : evs;
+  const q = req.query.trim();
+  if (q) {
+    const all = await searchEvents({ ...base, q });
+    if (all.length) return { events: atTime(all).length ? atTime(all) : all, loose: null };
+    const words = q.split(/\s+/).filter(Boolean);
+    if (words.length > 1) {
+      const seen = new Map<string, CalEvent>();
+      for (const w of words) for (const e of await searchEvents({ ...base, q: w })) seen.set(e.id, e);
+      const any = [...seen.values()].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+      if (any.length) return { events: atTime(any).length ? atTime(any) : any, loose: null };
+    }
+  }
+  // 關鍵字都對不到：只有講了日期才列當天（不然範圍是「今天之後全部」，太多）
+  if (!req.rangeStart) return { events: [], loose: "none" };
+  const inRange = await searchEvents({ ...base, q: "", endDate: req.rangeEnd ?? req.rangeStart });
+  const same = atTime(inRange);
+  if (req.targetTime && same.length) return { events: same, loose: "time" };
+  return { events: inRange, loose: inRange.length ? "range" : "none" };
 }
