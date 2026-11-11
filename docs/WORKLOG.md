@@ -845,3 +845,10 @@ spec：`docs/specs/時間衝突提醒.md`。
 **追加（11/11）**：經使用者同意，直接把 Peggy 的人物「豪哥」月曆空檔改回 off（不顯示），月曆不再出現「豪哥 空…」。
 
 **追加（11/11）**：使用者已套 0027；驗證 places 表、events 四個新欄位都在，未登入查 places 0 筆。剩 Google 金鑰（Vercel `GOOGLE_MAPS_API_KEY`）。
+
+## 2026-11-12 — 開 App 慢（約 5 秒）：伺服器搬到雪梨＋初始化查詢並行
+
+**做了什麼**：`vercel.json` 設 `regions: ["syd1"]`（13950cf）；`ensureBootstrap` 四個查詢與版面的老師身分檢查改 Promise.all（ecbfc31）。
+**為什麼**：使用者回報手機開 App 常要 5 秒。查到 Vercel 函式在美東 iad1、Supabase 在雪梨 ap-southeast-2，開一頁依序查十幾次、每次跨太平洋。
+**驗證**：用沙盒帳號帶登入 cookie 打正式站量伺服器回應：/calendar 5.3～8 秒 → 改區後約 0.9～1.2 秒 → 並行後約 0.65～0.9 秒；/week-sheet 5.6 秒 → 約 0.7 秒。部署後第一次（暖機）約 2 秒。量測腳本留在本機 scratchpad。
+**下一步**：請 Peggy 實際用手機感受。再快要把 Supabase 搬到東京／新加坡（要搬整個專案，暫不做）。
