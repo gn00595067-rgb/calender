@@ -859,3 +859,10 @@ spec：`docs/specs/時間衝突提醒.md`。
 **為什麼**：Peggy 影片（Elsa 轉）：11/14 起的旅遊被切成每天一格看不出到哪天，希望像 Google 日曆連續一條；換週不想一直按箭頭，要用滑的。
 **驗證**：tsc、eslint 過；本機平板寬（1180）以沙盒帳號加 11/14–11/19 整天行程截圖：長條跨週六～週三並顯示「11/14–11/19（6 天）▶」；模擬左滑後由 11/12 段換到 11/26 段（2 週模式）。測試行程已刪。未在實體 iPad 上滑過。
 **下一步**：請 Peggy 用 iPad 試滑動與看長條。
+
+## 2026-11-12 — 修：語音新增全部「解析失敗」（11/11 起）
+
+**做了什麼**：`targetTime` 由 nullable 改成「沒講給空字串」。
+**為什麼**：家教 Phoenix 回報語音都新增不了。Vercel log：Anthropic 400「Schemas contains too many parameters with union types (17 …limit: 16)」。11/11 加 targetTime 時多了一個 nullable，超過結構化輸出上限，**所有人**的語音都壞了。當時只跑 tsc／build，沒實際呼叫一次模型。
+**驗證**：本機用正式 schema 實打模型：家教三句（桌球課、勸募活動、c&c）都解析成 create、時間與主角正確；「今天早上7:30游泳取消」→ delete、time=07:30。部署後再以沙盒帳號打正式站 /api/voice/parse-event。
+**下一步**：以後改 outputSchema 一定實打一次模型；nullable 欄位已到 16 上限，新增欄位請用空字串／空陣列表示「沒有」。
