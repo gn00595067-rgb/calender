@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Plus, Printer, Star } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
@@ -12,8 +12,8 @@ import { eventStyle, stripLeadingTime } from "@/components/calendar/event-visual
 import { useAppData } from "@/components/app/app-data";
 import { useCalendarEvents, type CalEvent } from "@/lib/client/events";
 import { layoutDay } from "@/lib/calendar-utils";
-import { allDayOnDay, eventSegmentOnDay } from "@/lib/availability";
-import { taipeiDateStartUtcISO, taipeiNowWall, taipeiTodayStr } from "@/lib/date";
+import { eventSegmentOnDay } from "@/lib/availability";
+import { taipeiDateStartUtcISO, taipeiNowWall, taipeiTodayStr, utcToTaipeiWall } from "@/lib/date";
 import { can } from "@/lib/permissions";
 import { stripSubjectSuffix } from "@/lib/subject-title";
 import { cn } from "@/lib/utils";
@@ -64,6 +64,43 @@ function shortTitle(e: CalEvent): string {
     .map((n) => n[0])
     .join("");
   return tag && !t.startsWith(`(${tag})`) ? `(${tag})${t}` : t;
+}
+
+const DAY_MS = 24 * 3600 * 1000;
+
+/**
+ * 畫成上方「連續長條」的行程：整天行程，或長達 24 小時以上（例：出國 11/14–11/19）。
+ * 像 Google 日曆一樣跨天連成一條，不在時間軸每天塞滿一欄（Peggy 11/12）。
+ */
+function isBanner(e: CalEvent): boolean {
+  return e.all_day || +new Date(e.ends_at) - +new Date(e.starts_at) >= DAY_MS;
+}
+
+/** 行程最後一天（台北曆日）；結束剛好在午夜的算前一天 */
+function lastDayOf(e: CalEvent): string {
+  return utcToTaipeiWall(new Date(+new Date(e.ends_at) - 1)).slice(0, 10);
+}
+
+/** 長條在這一段（7 欄）裡的位置，並排成不重疊的列 */
+function layoutBanners(events: CalEvent[], days: string[]) {
+  const items = events
+    .filter(isBanner)
+    .map((e) => {
+      const first = utcToTaipeiWall(e.starts_at).slice(0, 10);
+      const last = lastDayOf(e);
+      const from = days.findIndex((d) => d >= first);
+      const toIdx = days.findLastIndex((d) => d <= last);
+      return { e, first, last, from, to: toIdx };
+    })
+    .filter((b) => b.from !== -1 && b.to !== -1 && b.from <= b.to)
+    .sort((a, b) => a.from - b.from || b.to - b.from - (a.to - a.from));
+  const laneEnds: number[] = [];
+  return items.map((b) => {
+    let lane = laneEnds.findIndex((end) => end < b.from);
+    if (lane === -1) lane = laneEnds.length;
+    laneEnds[lane] = b.to;
+    return { ...b, lane };
+  });
 }
 
 function addDaysStr(ds: string, n: number): string {
@@ -142,6 +179,7 @@ function WeekSheetInner() {
     let hi = DEFAULT_TO * 60;
     for (const ds of days) {
       for (const e of visible) {
+        if (isBanner(e)) continue;
         const seg = eventSegmentOnDay(e, ds);
         if (!seg) continue;
         lo = Math.min(lo, seg.start);
@@ -153,6 +191,31 @@ function WeekSheetInner() {
   }, [visible, start, span]);
 
   const weeks = Array.from({ length: Math.ceil(span / 7) }, (_, w) => days.slice(w * 7, w * 7 + 7));
+
+  // 左右滑換週（Peggy 11/12：不想一直按箭頭）。表格自己還能橫向捲動時先捲，捲到邊才換週
+  const swipe = useRef<{ x: number; y: number; el: HTMLElement | null; left: number } | null>(null);
+  const onTouchStart = (ev: React.TouchEvent) => {
+    const t = ev.touches[0];
+    const el = (ev.target as HTMLElement).closest<HTMLElement>("[data-hscroll]");
+    swipe.current = { x: t.clientX, y: t.clientY, el, left: el?.scrollLeft ?? 0 };
+  };
+  const onTouchEnd = (ev: React.TouchEvent) => {
+    const s0 = swipe.current;
+    swipe.current = null;
+    if (!s0) return;
+    const t = ev.changedTouches[0];
+    const dx = t.clientX - s0.x;
+    const dy = t.clientY - s0.y;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const el = s0.el;
+    if (el && el.scrollWidth > el.clientWidth + 1) {
+      // 開始滑的時候還沒捲到那一邊的盡頭 → 這次是在捲表格
+      const atLeft = s0.left <= 1;
+      const atRight = s0.left >= el.scrollWidth - el.clientWidth - 1;
+      if ((dx > 0 && !atLeft) || (dx < 0 && !atRight)) return;
+    }
+    setStart(addDaysStr(start, dx < 0 ? span : -span));
+  };
 
   return (
     <div className="mx-auto max-w-[1600px]">
@@ -228,7 +291,7 @@ function WeekSheetInner() {
       ) : isLoading ? (
         <ListSkeleton rows={6} />
       ) : (
-        <div id="print-area" className="space-y-5">
+        <div id="print-area" className="space-y-5" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
           {weeks.map((wk) => (
             <WeekBlock
               key={wk[0]}
@@ -243,7 +306,7 @@ function WeekSheetInner() {
             />
           ))}
           <p className="text-xs text-muted-foreground print:hidden">
-            色塊的上下位置＝實際時間；只列左側選單勾選的分類。點行程可看詳情或修改{canCreate && "；點空白處可在那個時間新增行程"}。
+            左右滑可換週。色塊的上下位置＝實際時間；只列左側選單勾選的分類。點行程可看詳情或修改{canCreate && "；點空白處可在那個時間新增行程"}。
           </p>
         </div>
       )}
@@ -301,7 +364,9 @@ function WeekBlock({
   const height = hours * PX_PER_HOUR;
   // 不足 7 天的最後一段也維持 7 欄寬，欄寬才和上面對齊
   const cols = `4rem repeat(7, minmax(0, 1fr))`;
-  const anyAllDay = days.some((ds) => allDayOnDay(events, ds).length > 0);
+  const banners = layoutBanners(events, days);
+  const lanes = banners.reduce((m, b) => Math.max(m, b.lane + 1), 0);
+  const timed = events.filter((e) => !isBanner(e));
   const nowWall = taipeiNowWall();
   const nowMin = Number(nowWall.slice(11, 13)) * 60 + Number(nowWall.slice(14, 16));
 
@@ -310,7 +375,7 @@ function WeekBlock({
       <h2 className="mb-1 text-base font-bold">
         {md(days[0])}（{dow(days[0])}）– {md(days[days.length - 1])}（{dow(days[days.length - 1])}）
       </h2>
-      <div className="overflow-x-auto rounded-lg border bg-card print:overflow-visible">
+      <div data-hscroll className="overflow-x-auto rounded-lg border bg-card print:overflow-visible">
         <div className="min-w-[760px] print:min-w-0">
           {/* 表頭 */}
           <div className="grid border-b bg-muted/40" style={{ gridTemplateColumns: cols }}>
@@ -326,28 +391,44 @@ function WeekBlock({
             ))}
           </div>
 
-          {/* 整天 */}
-          {anyAllDay && (
-            <div className="grid border-b" style={{ gridTemplateColumns: cols }}>
-              <div className="flex items-center justify-center border-r text-xs text-muted-foreground">整天</div>
-              {days.map((ds) => (
-                <div key={ds} className="space-y-0.5 border-r p-0.5 last:border-r-0">
-                  {allDayOnDay(events, ds).map((e) => (
-                    <button
-                      key={e.id}
-                      type="button"
-                      onClick={() => onSelect(e)}
-                      style={eventStyle(colorOf(e.calendar_id))}
-                      className={cn(
-                        "block w-full truncate rounded px-1 text-left text-xs font-medium",
-                        e.is_important && "text-red-600",
-                      )}
-                    >
-                      {shortTitle(e)}
-                    </button>
-                  ))}
-                </div>
-              ))}
+          {/* 整天與跨天：連續長條（像 Google 日曆），標出起訖與天數 */}
+          {lanes > 0 && (
+            <div
+              className="grid border-b"
+              style={{ gridTemplateColumns: cols, gridTemplateRows: `repeat(${lanes}, auto)` }}
+            >
+              <div
+                className="flex items-center justify-center border-r text-xs text-muted-foreground"
+                style={{ gridColumn: 1, gridRow: `1 / span ${lanes}` }}
+              >
+                整天
+              </div>
+              {banners.map(({ e, first, last, from, to, lane }) => {
+                const n = Math.round((+new Date(`${last}T00:00:00Z`) - +new Date(`${first}T00:00:00Z`)) / DAY_MS) + 1;
+                const range = n > 1 ? ` ${md(first)}–${md(last)}（${n} 天）` : "";
+                const cutStart = first < days[from];
+                const cutEnd = last > days[to];
+                return (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => onSelect(e)}
+                    title={`${shortTitle(e)}${range}`}
+                    style={{ ...eventStyle(colorOf(e.calendar_id)), gridColumn: `${from + 2} / span ${to - from + 1}`, gridRow: lane + 1 }}
+                    className={cn(
+                      "mx-0.5 my-px truncate rounded px-1.5 text-left text-xs font-medium",
+                      cutStart && "ml-0 rounded-l-none",
+                      cutEnd && "mr-0 rounded-r-none",
+                      e.is_important && "text-red-600",
+                    )}
+                  >
+                    {cutStart && "◀ "}
+                    {shortTitle(e)}
+                    <span className="font-normal opacity-75">{range}</span>
+                    {cutEnd && " ▶"}
+                  </button>
+                );
+              })}
             </div>
           )}
 
@@ -385,7 +466,7 @@ function WeekBlock({
             </div>
 
             {days.map((ds) => {
-              const dayEvents = events.filter((e) => eventSegmentOnDay(e, ds));
+              const dayEvents = timed.filter((e) => eventSegmentOnDay(e, ds));
               return (
                 <div
                   key={ds}
