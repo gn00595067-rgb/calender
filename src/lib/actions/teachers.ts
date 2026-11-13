@@ -3,35 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { getAuthed, fail, type ActionResult } from "./helpers";
+import { fail, type ActionResult } from "./helpers";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { makePassword, ownNonFamilyContact } from "./account-helpers";
 
 /**
  * 老師帳號：家長在人物管理按一下就建好登入帳號，老師登入後只看得到自己的課、只能寫回饋。
  * spec：docs/specs/老師自填回饋與缺回饋不付款.md
  */
 
-/** 好念好打的密碼：去掉 0/O、1/l/I 等容易看錯的字 */
-function makePassword(): string {
-  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
-  const bytes = randomBytes(8);
-  return [...bytes].map((b) => chars[b % chars.length]).join("");
-}
-
 /** 確認是自己的人物（非家人）；回傳人物資料 */
-async function ownContact(contactId: string) {
-  const { supabase, user } = await getAuthed();
-  const { data, error } = await supabase
-    .from("contacts")
-    .select("*")
-    .eq("id", contactId)
-    .eq("owner_id", user.id)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("找不到這位人物");
-  if (data.is_family) throw new Error("家人不能建立老師帳號");
-  return { supabase, contact: data };
-}
+const ownContact = (contactId: string) => ownNonFamilyContact(contactId, "家人不能建立老師帳號");
 
 const MISSING_0021 = "老師帳號需先套用資料庫更新（0021）";
 

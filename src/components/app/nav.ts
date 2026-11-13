@@ -19,6 +19,7 @@ import {
   NotebookPen,
   Sparkles,
   MapPin,
+  Timer,
   type LucideIcon,
 } from "lucide-react";
 
@@ -39,6 +40,7 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/reports", label: "報表結算", icon: BarChart3 },
   { href: "/work", label: "工作效益", icon: Briefcase },
   { href: "/driver", label: "司機行程", icon: Car },
+  { href: "/overtime", label: "司機加班", icon: Timer },
 ];
 
 export const SETTINGS_NAV: NavItem[] = [

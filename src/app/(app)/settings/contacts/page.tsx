@@ -97,6 +97,8 @@ interface FullContact {
   /** 0021：每堂課要寫回饋（報表檢查缺回饋）、老師登入帳號 */
   needs_feedback: boolean;
   teacher_user_id: string | null;
+  /** 0028：司機登入帳號 */
+  driver_user_id: string | null;
   /** 0023 家教填報 */
   tutor_kind: "specialist" | "home" | null;
   tutor_subjects: string[];
@@ -156,6 +158,7 @@ function useContactsFull() {
         default_tag_names: Array.isArray(c.default_tag_names) ? c.default_tag_names : [],
         needs_feedback: c.needs_feedback ?? false,
         teacher_user_id: c.teacher_user_id ?? null,
+        driver_user_id: c.driver_user_id ?? null,
         tutor_kind: c.tutor_kind ?? null,
         tutor_subjects: c.tutor_subjects ?? [],
         tutor_shared: c.tutor_shared ?? false,
@@ -794,6 +797,19 @@ function ContactFormDialog({
                   存好這位人物後，再打開編輯就能建立「老師帳號」，讓老師自己登入寫回饋。
                 </p>
               )}
+            </div>
+          )}
+
+          {/* 司機帳號：司機自己登入看接送、填加班（spec：司機打卡與加班費） */}
+          {!isFamily && mode === "edit" && contact && (
+            <div className="rounded-lg border bg-muted/30 p-3 [&>div]:border-t-0 [&>div]:pt-0">
+              <TeacherAccountPanel
+                kind="driver"
+                contactId={contact.id}
+                contactName={contact.name}
+                linked={!!contact.driver_user_id}
+                onChanged={onDone}
+              />
             </div>
           )}
         </div>

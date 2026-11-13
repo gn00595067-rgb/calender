@@ -29,12 +29,15 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   if (!user) redirect("/login");
 
   // 初始化與老師身分檢查互不相依，同時查（伺服器與資料庫每來回一次都要時間）
-  const [, { data: teacherLinks }] = await Promise.all([
+  const [, { data: teacherLinks }, { data: driverLinks }] = await Promise.all([
     ensureBootstrap(user),
     // 老師帳號（人物管理建立的）只用來寫回饋：一律進老師頁（0021 未套用時查詢失敗，照常進行事曆）
     supabase.rpc("my_teacher_links"),
+    // 司機帳號：一律進司機頁（0028 未套用時查詢失敗，照常進行事曆）
+    supabase.rpc("my_driver_links"),
   ]);
   if (teacherLinks && teacherLinks.length > 0) redirect("/teach");
+  if (driverLinks && driverLinks.length > 0) redirect("/drive");
 
   const [calendars, profileRes] = await Promise.all([
     getAccessibleCalendars(user.id),

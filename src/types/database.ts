@@ -221,6 +221,8 @@ export interface Database {
           // 0021 老師自填回饋
           needs_feedback?: boolean;
           teacher_user_id?: string | null;
+          // 0028 司機帳號
+          driver_user_id?: string | null;
           // 0023 家教填報
           tutor_kind?: "specialist" | "home" | null;
           tutor_subjects?: string[];
@@ -260,6 +262,8 @@ export interface Database {
           // 0021 老師自填回饋
           needs_feedback?: boolean;
           teacher_user_id?: string | null;
+          // 0028 司機帳號
+          driver_user_id?: string | null;
           // 0023 家教填報
           tutor_kind?: "specialist" | "home" | null;
           tutor_subjects?: string[];
@@ -299,6 +303,8 @@ export interface Database {
           // 0021 老師自填回饋
           needs_feedback?: boolean;
           teacher_user_id?: string | null;
+          // 0028 司機帳號
+          driver_user_id?: string | null;
           // 0023 家教填報
           tutor_kind?: "specialist" | "home" | null;
           tutor_subjects?: string[];
@@ -692,6 +698,50 @@ export interface Database {
         };
         Relationships: [];
       };
+      // 0028 司機加班
+      driver_overtime: {
+        Row: {
+          id: string;
+          owner_id: string;
+          contact_id: string;
+          author_id: string | null;
+          work_date: string;
+          start_time: string;
+          end_time: string;
+          reason: string;
+          event_id: string | null;
+          status: "pending" | "approved" | "rejected";
+          review_note: string | null;
+          reviewed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          contact_id: string;
+          author_id?: string | null;
+          work_date: string;
+          start_time: string;
+          end_time: string;
+          reason: string;
+          event_id?: string | null;
+          status?: "pending" | "approved" | "rejected";
+          review_note?: string | null;
+          reviewed_at?: string | null;
+        };
+        Update: {
+          work_date?: string;
+          start_time?: string;
+          end_time?: string;
+          reason?: string;
+          event_id?: string | null;
+          status?: "pending" | "approved" | "rejected";
+          review_note?: string | null;
+          reviewed_at?: string | null;
+        };
+        Relationships: [];
+      };
       // 0023 家教填報
       tutor_reports: {
         Row: {
@@ -904,6 +954,34 @@ export interface Database {
           subject_names: string[];
           my_note_count: number;
           note_count: number;
+        }[];
+      };
+      // 0028 司機
+      my_driver_links: {
+        Args: Record<string, never>;
+        Returns: {
+          contact_id: string;
+          contact_name: string;
+          owner_id: string;
+          owner_name: string;
+          monthly_salary: number | null;
+        }[];
+      };
+      driver_trips: {
+        Args: { p_from: string; p_to: string };
+        Returns: {
+          event_id: string;
+          title: string;
+          location: string | null;
+          starts_at: string;
+          ends_at: string;
+          all_day: boolean;
+          driver_trip: string | null;
+          driver_pickup_minutes: number | null;
+          driver_pickup_location: string | null;
+          driver_dropoff_location: string | null;
+          driver_note: string | null;
+          subject_names: string[];
         }[];
       };
       my_teacher_links: {
