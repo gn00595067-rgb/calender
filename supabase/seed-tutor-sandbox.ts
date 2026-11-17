@@ -4,8 +4,11 @@
  *
  * - 測試家長 sandbox-parent@execcal.test：行事曆「哥哥」「妹妹」「哥哥+妹妹」（全新、空白），
  *   人物只有哥哥、妹妹（家人），11 月放 3 筆小孩行程（1 筆已上完、2 筆未來）。
- * - 家教老師 sandbox-tutor@execcal.test：被分享上面 3 個行事曆，身分「老師」（scheduler）：
+ * - 家庭老師 sandbox-tutor@execcal.test：被分享上面 3 個行事曆，身分「老師」（scheduler）：
  *   看得到全部行程、可新增、只能改／刪自己加的、可以寫回饋、看不到金額。
+ *   （Elsa 11/17：家庭老師＝管全部小孩的課；家教老師＝只看自己的課，用人物管理的「老師帳號」）
+ * - 人物「數學老師（測試）」：1對1 時薪 1,200、1對2 時薪 1,800、月結。
+ *   家庭老師排課選他當相關人物 → 系統自動在家長帳下記費用（docs/specs/家庭老師排課自動記費用.md）。
  * 具冪等性：重跑會重設兩個帳號的密碼、把 3 筆示範行程刪掉重建（家教自己加的行程與回饋也一併清掉）。
  */
 import { config } from "dotenv";
@@ -23,7 +26,7 @@ const db = createClient(URL, SERVICE_KEY, {
 const TZ = "Asia/Taipei";
 const PASSWORD = "test1234";
 const PARENT = { email: "sandbox-parent@execcal.test", name: "測試家長" };
-const TUTOR = { email: "sandbox-tutor@execcal.test", name: "家教老師（測試）" };
+const TUTOR = { email: "sandbox-tutor@execcal.test", name: "家庭老師（測試）" };
 const KID_CALS = [
   { name: "哥哥+妹妹", color: "#16A34A" },
   { name: "哥哥", color: "#0EA5E9" },
@@ -100,6 +103,7 @@ async function main() {
   }
   const tutorId = await ensureUser(TUTOR.email, TUTOR.name);
   await db.from("calendar_shares").update({ member_id: tutorId }).eq("invited_email", TUTOR.email);
+  await db.from("profiles").update({ display_name: TUTOR.name }).eq("id", tutorId);
 
   // 4. 人物：哥哥、妹妹（家人，當行程主角 → 回饋區會出現「課程進度／學習回饋」）
   const kidId: Record<string, string> = {};
@@ -120,7 +124,40 @@ async function main() {
       ).id;
   }
 
-  // 5. 清掉三個小孩行事曆裡所有行程（含家教測試時加的），重建 3 筆
+  // 4b. 收費老師：家庭老師排課選他 → 自動記費用
+  const TEACHER = "數學老師（測試）";
+  const teacherHit = must(
+    await db.from("contacts").select("id").eq("owner_id", parentId).eq("name", TEACHER).maybeSingle(),
+    "讀老師",
+  );
+  const teacherId =
+    teacherHit?.id ??
+    must(
+      await db
+        .from("contacts")
+        .insert({
+          owner_id: parentId,
+          name: TEACHER,
+          is_family: false,
+          role_label: "家教",
+          default_direction: "expense",
+          default_payment_method: "monthly",
+        })
+        .select("id")
+        .single(),
+      "建老師",
+    ).id;
+  must(await db.from("contact_rate_plans").delete().eq("contact_id", teacherId), "清方案");
+  must(
+    await db.from("contact_rate_plans").insert([
+      { owner_id: parentId, contact_id: teacherId, label: "1對1", headcount: 1, billing_mode: "hourly", rate: 1200, position: 0 },
+      { owner_id: parentId, contact_id: teacherId, label: "1對2", headcount: 2, billing_mode: "hourly", rate: 1800, position: 1 },
+    ]),
+    "建方案",
+  );
+
+  // 5. 清掉三個小孩行事曆裡所有行程（含家教測試時加的）與費用，重建 3 筆
+  must(await db.from("finance_records").delete().eq("owner_id", parentId), "清費用");
   must(
     await db.from("events").delete().in("calendar_id", Object.values(calId)),
     "清行程",

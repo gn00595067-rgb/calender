@@ -98,3 +98,8 @@ export function useAppData(): AppDataValue {
   if (!ctx) throw new Error("useAppData 必須在 AppDataProvider 內使用");
   return ctx;
 }
+
+/** 不在 AppDataProvider 裡（老師填報頁、司機頁）時回 null，給共用 hook 判斷用 */
+export function useAppDataOptional(): AppDataValue | null {
+  return useContext(AppDataContext);
+}

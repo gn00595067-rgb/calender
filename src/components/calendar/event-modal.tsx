@@ -56,7 +56,12 @@ import {
   DEFAULT_REMINDER2_MINUTES,
   type PaymentMethod,
 } from "@/lib/constants";
-import { createEventAction, updateEventAction, deleteEventAction } from "@/lib/actions/events";
+import {
+  createEventAction,
+  updateEventAction,
+  deleteEventAction,
+  previewSchedulerLessonAction,
+} from "@/lib/actions/events";
 import { utcToTaipeiWall, taipeiWallToUtcISO, twd } from "@/lib/date";
 import { addMinutesToWall, wallWeekday, diffMinutes } from "@/lib/wall-time";
 import { fetchEventsInRange, useSeriesStarts, type CalEvent } from "@/lib/client/events";
@@ -451,6 +456,38 @@ export function EventModal({
 
   const categories = useCategories();
   const prepaid = usePrepaidAccounts({ activeOnly: true });
+
+  // 家庭老師（分享身分「老師」）看不到金額：改顯示這堂會記成哪位老師、1對1 還是 1對2，
+  // 費用由伺服器代記到家長帳下（Elsa 11/17：要讓家庭老師註明是哪位老師、一對一或一對二）
+  const isSchedulerCal = calendarById.get(calendarId)?.effectiveRole === "scheduler";
+  const watchedTitle = watch("title");
+  const watchedAllDay = watch("allDay");
+  const [lessonPreview, setLessonPreview] = useState<
+    { teacher: string; label: string } | null | "loading"
+  >(null);
+  useEffect(() => {
+    if (!open || !isSchedulerCal || participantIds.length === 0) {
+      setLessonPreview(null);
+      return;
+    }
+    let alive = true;
+    setLessonPreview("loading");
+    const t = setTimeout(async () => {
+      const res = await previewSchedulerLessonAction({
+        calendarId,
+        participantIds,
+        subjectIds: getValues("subjectIds"),
+        title: watchedTitle ?? "",
+        allDay: !!watchedAllDay,
+      });
+      if (alive) setLessonPreview(res.ok ? res.data : null);
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isSchedulerCal, calendarId, participantIds.join(","), watch("subjectIds").join(","), watchedTitle, watchedAllDay]);
 
   // 收費老師：相關人物中（依選取順序）第一位有收費方案者
   const billingContact =
@@ -1176,6 +1213,9 @@ export function EventModal({
                   />
                 )}
               />
+              {isSchedulerCal && (
+                <SchedulerLessonNote preview={lessonPreview} hasParticipants={participantIds.length > 0} />
+              )}
               {/* 回饋 20：會不會通知對方？能不能在這裡新增？ */}
               <p className="text-xs text-muted-foreground">
                 只是記錄是跟誰，不會通知對方。清單裡沒有的人，在選單最下面輸入姓名按「＋」就能新增。
@@ -1735,6 +1775,39 @@ export function EventModal({
 
 function nowWall(): string {
   return utcToTaipeiWall(new Date().toISOString()).slice(0, 11) + "09:00";
+}
+
+/** 家庭老師看到的上課形式（不含金額）；沒選老師時提醒要選，Peggy 的費用統計才算得到 */
+function SchedulerLessonNote({
+  preview,
+  hasParticipants,
+}: {
+  preview: { teacher: string; label: string } | null | "loading";
+  hasParticipants: boolean;
+}) {
+  if (!hasParticipants) {
+    return (
+      <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        家教課請在這裡選上課的老師，家長那邊才會記到這堂課的費用。
+      </p>
+    );
+  }
+  if (preview === "loading") {
+    return <p className="text-xs text-muted-foreground">確認上課形式中…</p>;
+  }
+  if (!preview) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        這筆不會記上課費（選的人沒有設定收費，或看起來不是上課，例如整天、談話、開會）。
+      </p>
+    );
+  }
+  return (
+    <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+      會記成 <b>{preview.teacher}</b> 的 <b>{preview.label}</b> 課（依「誰的行程」選了幾個小孩自動判斷；
+      只有一個小孩上就把另一個拿掉）。費用會自動記到家長那邊，你看不到金額。
+    </p>
+  );
 }
 
 /** 上課形式：老師的收費方案（1對1／1對2…）切換鈕，附人數不符提示 */

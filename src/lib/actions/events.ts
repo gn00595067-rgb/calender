@@ -9,6 +9,12 @@ import { TIME_ZONE } from "@/lib/constants";
 import { occurrenceDates } from "@/lib/recurrence";
 import { tagKey } from "@/lib/tags";
 import { applySubjectTitle } from "@/lib/subject-title";
+import {
+  deleteSchedulerFinance,
+  previewSchedulerLesson,
+  schedulerContacts,
+  syncSchedulerFinance,
+} from "@/lib/scheduler-finance";
 
 const wall = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, {
   error: "時間格式有誤",
@@ -436,7 +442,11 @@ async function insertOccurrences(
     }
     if (finErr) return { error: finErr.message, warning: warning ?? travelWarning };
   }
-  return { warning: warning ?? travelWarning };
+  // 家庭老師（scheduler）排的課：費用由系統代記到家長帳下
+  const finWarning = d.finance
+    ? undefined
+    : await syncSchedulerFinance(userId, d.calendarId, events.map((e) => e.id));
+  return { warning: warning ?? travelWarning ?? finWarning };
 }
 
 export async function createEventAction(
@@ -622,6 +632,11 @@ export async function updateEventAction(
       }
     }
 
+    // 家庭老師（scheduler）改了老師、主角或時長：系統代記的費用跟著改
+    if (!d.finance) {
+      warning = (await syncSchedulerFinance(user.id, d.calendarId, targetIds)) ?? warning;
+    }
+
     // 編輯時加上重複／延長重複：用編輯後的內容多建幾筆，併入同一系列
     let added = 0;
     const newDate = taipeiDate(newStartUtc);
@@ -670,12 +685,14 @@ export async function deleteEventAction(
 ): Promise<ActionResult> {
   if (!z.uuid().safeParse(id).success) return fail("參數有誤");
   try {
-    const { supabase } = await getAuthed();
+    const { supabase, user } = await getAuthed();
     // finance_records.event_id 是 on delete set null，不先刪會留下「（無關聯行程）」孤兒費用
-    const deleteFinance = async (eventIds: string[]) =>
-      eventIds.length === 0
-        ? null
-        : (await supabase.from("finance_records").delete().in("event_id", eventIds)).error;
+    const deleteFinance = async (eventIds: string[]) => {
+      if (eventIds.length === 0) return null;
+      // 家庭老師看不到財務表，系統代記的費用由伺服器一起刪
+      await deleteSchedulerFinance(user.id, eventIds);
+      return (await supabase.from("finance_records").delete().in("event_id", eventIds)).error;
+    };
     if (scope === "following") {
       const { data: current } = await supabase
         .from("events")
@@ -706,6 +723,44 @@ export async function deleteEventAction(
     if (error) return fail(error.message);
     revalidatePath("/", "layout");
     return { ok: true, data: undefined };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "操作失敗");
+  }
+}
+
+/** 家庭老師的新增行程畫面：這堂會記成哪位老師、哪種上課形式（不含金額） */
+export async function previewSchedulerLessonAction(input: {
+  calendarId: string;
+  participantIds: string[];
+  subjectIds: string[];
+  title: string;
+  allDay: boolean;
+}): Promise<ActionResult<{ teacher: string; label: string } | null>> {
+  const parsed = z
+    .object({
+      calendarId: z.uuid(),
+      participantIds: z.array(z.uuid()).max(30),
+      subjectIds: z.array(z.uuid()).max(30),
+      title: z.string().max(120),
+      allDay: z.boolean(),
+    })
+    .safeParse(input);
+  if (!parsed.success) return fail("參數有誤");
+  try {
+    const { user } = await getAuthed();
+    return { ok: true, data: await previewSchedulerLesson(user.id, parsed.data) };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "操作失敗");
+  }
+}
+
+/** 家庭老師選相關人物用：把自己分享到行事曆的家長的人物名單（只有名字、稱謂） */
+export async function schedulerContactsAction(): Promise<
+  ActionResult<{ id: string; name: string; role_label: string | null; is_family: boolean }[]>
+> {
+  try {
+    const { user } = await getAuthed();
+    return { ok: true, data: await schedulerContacts(user.id) };
   } catch (e) {
     return fail(e instanceof Error ? e.message : "操作失敗");
   }

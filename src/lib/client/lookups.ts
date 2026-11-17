@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { defaultPlanLabel, type RatePlan } from "@/lib/rate-plans";
 import type { RoutineBlock } from "@/lib/availability";
+import { useAppDataOptional } from "@/components/app/app-data";
+import { schedulerContactsAction } from "@/lib/actions/events";
 
 export interface ContactLite {
   id: string;
@@ -15,16 +17,28 @@ export interface ContactLite {
 }
 
 export function useContacts() {
+  // 家庭老師（分享身分「老師」）讀不到家長的人物表，要另外跟伺服器拿名單（只有名字、稱謂），
+  // 不然排課時選不到家長設定好收費的老師（Elsa 11/17）
+  const isScheduler =
+    useAppDataOptional()?.calendars.some((c) => c.effectiveRole === "scheduler") ?? false;
   return useQuery({
-    queryKey: ["contacts"],
+    queryKey: ["contacts", isScheduler ? "with-parent" : "own"],
     queryFn: async (): Promise<ContactLite[]> => {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("id, name, role_label, is_family, is_self")
-        .order("name", { ascending: true });
+      const [{ data, error }, parent] = await Promise.all([
+        supabase
+          .from("contacts")
+          .select("id, name, role_label, is_family, is_self")
+          .order("name", { ascending: true }),
+        isScheduler ? schedulerContactsAction() : null,
+      ]);
       if (error) throw new Error(error.message);
-      return data ?? [];
+      const own = data ?? [];
+      if (!parent?.ok) return own;
+      const seen = new Set(own.map((c) => c.id));
+      return [...own, ...parent.data.filter((c) => !seen.has(c.id))].sort((a, b) =>
+        a.name.localeCompare(b.name, "zh-Hant"),
+      );
     },
   });
 }
