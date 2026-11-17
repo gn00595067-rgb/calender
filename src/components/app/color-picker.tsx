@@ -27,7 +27,7 @@ export function ColorPicker({
         aria-label={color}
         onClick={() => onChange(color)}
         className={cn(
-          "flex size-7 items-center justify-center rounded-full ring-offset-2 transition sm:size-8",
+          "flex size-[26px] items-center justify-center rounded-full ring-offset-2 transition sm:size-8",
           active ? "ring-2 ring-foreground" : "hover:scale-110",
         )}
         style={{ backgroundColor: color }}
@@ -47,7 +47,7 @@ export function ColorPicker({
       )}
       {/* 同一欄＝同色系：上排鮮色、下排深色 */}
       <div
-        className="grid w-fit gap-1.5 sm:gap-2"
+        className="grid w-fit gap-1 sm:gap-2"
         style={{ gridTemplateColumns: `repeat(${COLOR_PALETTE_COLUMNS}, auto)` }}
       >
         {COLOR_PALETTE.map(swatch)}

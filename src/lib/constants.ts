@@ -44,12 +44,12 @@ export const KIND_DEFAULT_COLOR: Record<CalendarKind, string> = {
 export const CONFLICT_COLOR = "#DC2626";
 
 /**
- * 新增分類時可選的色盤：9 個色系 × 2 種深淺＝18 色。
- * 排列方式：前 9 個為鮮色（上排）、後 9 個為同欄同色系的極深色（下排），
+ * 新增分類時可選的色盤：10 個色系 × 2 種深淺＝20 色。
+ * 排列方式：前 10 個為鮮色（上排）、後 10 個為同欄同色系的極深色（下排），
  * 深淺刻意拉到非常明顯（約 600 級 vs 800–900 級），在淡底＋色條上仍分得出。
  * 避開與衝突紅相近的紅色。已存在的分類若用色盤外顏色，ColorPicker 另外顯示為「目前顏色」。
  */
-export const COLOR_PALETTE_COLUMNS = 9;
+export const COLOR_PALETTE_COLUMNS = 10;
 export const COLOR_PALETTE = [
   // 上排：鮮色
   "#2563EB", // 藍（本人預設）
@@ -61,6 +61,7 @@ export const COLOR_PALETTE = [
   "#DB2777", // 桃紅
   "#9333EA", // 紫（公事預設）
   "#64748B", // 灰
+  "#C026D3", // 洋紅（Elsa 11/17：綠＝外傭、小孩＝藍，兄妹一起的課要一個跟兩者都差很多的顏色）
   // 下排：同色系極深色
   "#1E3A8A", // 海軍藍
   "#164E63", // 深青
@@ -71,6 +72,7 @@ export const COLOR_PALETTE = [
   "#831843", // 酒紅
   "#581C87", // 深紫
   "#1F2937", // 炭黑
+  "#701A75", // 深洋紅
 ];
 
 /** 預設分類（首次登入時建立） */
