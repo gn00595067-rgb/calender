@@ -10,6 +10,7 @@
  * - 人物「數學老師（測試）」：1對1 時薪 1,200、1對2 時薪 1,800、月結。
  *   家庭老師排課選他當相關人物 → 系統自動在家長帳下記費用（docs/specs/家庭老師排課自動記費用.md）。
  * 具冪等性：重跑會重設兩個帳號的密碼、把 3 筆示範行程刪掉重建（家教自己加的行程與回饋也一併清掉）。
+ * 沙盒裡有家教自己加的行程時會停下來列出來，確定要刪才加 --force（Phoenix 真的拿沙盒在用）。
  */
 import { config } from "dotenv";
 import { createClient } from "@supabase/supabase-js";
@@ -155,6 +156,22 @@ async function main() {
     ]),
     "建方案",
   );
+
+  // 5a. 有人在沙盒裡自己加了行程（家教真的在用）就停下來，不要一聲不響全刪（11/17 Phoenix 的資料被重設清掉）
+  const others = must(
+    await db
+      .from("events")
+      .select("title, starts_at")
+      .in("calendar_id", Object.values(calId))
+      .neq("creator_id", parentId),
+    "檢查家教加的行程",
+  );
+  if (others.length && !process.argv.includes("--force")) {
+    console.error(`✗ 沙盒裡有 ${others.length} 筆不是示範的行程（家教自己加的），重設會全部刪掉：`);
+    for (const e of others.slice(0, 20)) console.error(`  - ${e.starts_at.slice(0, 10)} ${e.title}`);
+    console.error("  先跟使用者確認；確定要刪再加 --force 重跑。");
+    process.exit(1);
+  }
 
   // 5. 清掉三個小孩行事曆裡所有行程（含家教測試時加的）與費用，重建 3 筆
   must(await db.from("finance_records").delete().eq("owner_id", parentId), "清費用");
