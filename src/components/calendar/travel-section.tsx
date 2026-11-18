@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Car, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -37,6 +37,7 @@ export function TravelSection({
   onChange,
   fixedOrigin,
   onEstimated,
+  estimateSignal = 0,
 }: {
   location: string;
   startWall: string;
@@ -46,6 +47,8 @@ export function TravelSection({
   fixedOrigin: string | null;
   /** 估算完成（給司機的單程車程用） */
   onEstimated?: (minutes: number) => void;
+  /** 數字每變一次就估算一次（司機區塊的「用地圖估算」按鈕用） */
+  estimateSignal?: number;
 }) {
   const qc = useQueryClient();
   const { data: places } = useQuery({
@@ -61,6 +64,7 @@ export function TravelSection({
   const [needPlace, setNeedPlace] = useState<string | null>(null);
   const [addr, setAddr] = useState("");
   const [pending, startTransition] = useTransition();
+  const boxRef = useRef<HTMLDivElement>(null);
 
   const originNames = [...new Set([DEFAULT_ORIGIN, ...(places ?? []).map((p) => p.name), originPick])];
   const stale = !!value && value.stamp !== stampOf(location, startWall);
@@ -75,6 +79,8 @@ export function TravelSection({
       const body = res ? await res.json().catch(() => ({})) : { error: "連不上伺服器" };
       if (body.needPlace) {
         setNeedPlace(body.needPlace);
+        // 可能是從司機區塊按的：捲過來讓使用者看到要填地址
+        requestAnimationFrame(() => boxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
         return;
       }
       if (!res?.ok || typeof body.minutes !== "number") {
@@ -107,10 +113,20 @@ export function TravelSection({
       estimate();
     });
 
+  // 司機區塊按「用地圖估算」：共用這裡的估算（缺地址時下面會問，並捲過來）
+  const lastSignal = useRef(estimateSignal);
+  useEffect(() => {
+    if (estimateSignal === lastSignal.current) return;
+    lastSignal.current = estimateSignal;
+    if (!location.trim()) return;
+    estimate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimateSignal]);
+
   if (!location.trim()) return null;
 
   return (
-    <div className="space-y-2 rounded-lg border border-dashed px-3 py-2.5">
+    <div ref={boxRef} className="space-y-2 rounded-lg border border-dashed px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <Car className="size-4 text-muted-foreground" aria-hidden />
         <span className="text-sm">從</span>

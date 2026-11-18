@@ -201,6 +201,8 @@ export function EventModal({
   // 車程估算與「該出門了」（0027）；不放進 react-hook-form，值是整包估算結果
   const [travel, setTravelState] = useState<TravelValue | null>(null);
   const travelTouchedRef = useRef(false);
+  /** 司機區塊「用地圖估算」：+1 就叫車程區塊估一次 */
+  const [travelSignal, setTravelSignal] = useState(0);
   const setTravel = (v: TravelValue | null) => setTravelState(v);
   const changeTravel = (v: TravelValue | null) => {
     travelTouchedRef.current = true;
@@ -1124,6 +1126,7 @@ export function EventModal({
                     ? watch("driverPickupLocation").trim() || DEFAULT_PICKUP_PLACE
                     : null
                 }
+                estimateSignal={travelSignal}
                 onEstimated={(m) => {
                   // 有司機：單程車程跟著估算值（進位到 5 分）
                   if (getValues("driverEnabled")) setValue("driverPickupMinutes", Math.ceil(m / 5) * 5);
@@ -1461,7 +1464,7 @@ export function EventModal({
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {!allDay && (
                       <div className="space-y-1.5">
-                        <Label className="text-xs">單程車程（空檔會扣掉）</Label>
+                        <Label className="text-xs">單程車程（司機提早這麼久來接）</Label>
                         <Controller
                           control={control}
                           name="driverPickupMinutes"
@@ -1485,6 +1488,23 @@ export function EventModal({
                             </Select>
                           )}
                         />
+                        {/* 同事不知道車程要查多久（11/18 回饋）：一鍵用地圖估，不知道也有預設可用 */}
+                        {(watch("location") ?? "").trim() ? (
+                          <p className="text-xs text-muted-foreground">
+                            {travel ? `地圖估算約 ${travel.minutes} 分鐘。` : "不知道多久？"}
+                            <button
+                              type="button"
+                              className="ml-1 text-primary underline"
+                              onClick={() => setTravelSignal((n) => n + 1)}
+                            >
+                              {travel ? "重新估算" : "用地圖估算"}
+                            </button>
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            填了上面的「地點」就能用地圖自動估算；不確定先留 30 分鐘。
+                          </p>
+                        )}
                       </div>
                     )}
                     {watch("driverTrip") !== "from" && (
