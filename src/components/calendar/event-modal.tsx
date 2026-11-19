@@ -1539,6 +1539,7 @@ export function EventModal({
                     home={watch("driverPickupLocation").trim() || DEFAULT_PICKUP_PLACE}
                     back={watch("driverDropoffLocation").trim() || DEFAULT_PICKUP_PLACE}
                     dest={watch("location").trim() || "（地點未填）"}
+                    hasNote={(watch("driverNote") ?? "").trim().length > 0}
                   />
                 </div>
               )}
@@ -1975,6 +1976,7 @@ function DriverPreview({
   home,
   back: backTo,
   dest,
+  hasNote,
 }: {
   trip: DriverTrip;
   allDay: boolean;
@@ -1985,17 +1987,22 @@ function DriverPreview({
   /** 回程送到 */
   back: string;
   dest: string;
+  /** 有寫給司機的備註：路線照備註走（可能中途繞好幾站），預覽就不自己猜起訖點 */
+  hasNote: boolean;
 }) {
   const lines: string[] = [];
   const leave = allDay ? "整日" : addMinutesToWall(startWall, -pickupMinutes).slice(11);
   const back = allDay ? "整日" : addMinutesToWall(endWall, pickupMinutes).slice(11);
+  // Elsa 11/19：一趟接好幾個人、中途停便利商店時，「家 → C&C」跟備註對不上，只留時間、路線看備註
   if (trip !== "from") {
-    lines.push(`去程 ${leave} 上車：${home} → ${dest}`);
+    lines.push(hasNote ? `去程 ${leave} 出發` : `去程 ${leave} 上車：${home} → ${dest}`);
   }
   if (trip !== "to") {
     const t = allDay ? "整日" : endWall.slice(11);
-    lines.push(`回程 ${t} 上車：${dest} → ${backTo}${pickupMinutes > 0 && !allDay ? `，約 ${back} 到` : ""}`);
+    const arrive = pickupMinutes > 0 && !allDay ? `，約 ${back} ${hasNote ? "回到" : "到"}` : "";
+    lines.push(hasNote ? `回程 ${t} 接${arrive}` : `回程 ${t} 上車：${dest} → ${backTo}${arrive}`);
   }
+  if (hasNote) lines.push("路線照上面的備註");
   // 車程也算沒空：讓使用者知道空檔會從哪裡算起
   if (!allDay && pickupMinutes > 0) {
     const from = trip === "from" ? startWall.slice(11) : leave;

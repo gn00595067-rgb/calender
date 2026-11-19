@@ -12,8 +12,8 @@ export const DRIVER_TRIPS: { value: DriverTrip; label: string }[] = [
   { value: "from", label: "只有回程" },
 ];
 
-/** 去程提早上車的選項（分鐘） */
-export const DRIVER_PICKUP_OPTIONS = [0, 15, 30, 45, 60, 90];
+/** 去程提早上車的選項（分鐘）：90 分內每 5 分一格（Elsa 11/19：選項太少），再加 105、120 */
+export const DRIVER_PICKUP_OPTIONS = [...Array.from({ length: 19 }, (_, i) => i * 5), 105, 120];
 export const DEFAULT_PICKUP_MINUTES = 30;
 /** 上車地點／回程下車地點空白時的預設稱呼 */
 export const DEFAULT_PICKUP_PLACE = "家";
