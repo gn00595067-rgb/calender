@@ -13,16 +13,23 @@ import { Button } from "@/components/ui/button";
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { me } = useAppData();
+  const { me, calendars } = useAppData();
   // 待審核數字（只有分享過「只看空檔」的人才查）
   const { data: incoming } = useIncomingProposals(me.reviewsProposals ? me.id : "");
   const pendingCount = me.reviewsProposals ? (incoming?.pending.length ?? 0) : 0;
-  const main = [
-    ...(me.canPropose ? [PROPOSE_NAV] : []),
-    MAIN_NAV[0],
-    ...(me.reviewsProposals ? [PROPOSALS_NAV] : []),
-    ...MAIN_NAV.slice(1),
-  ];
+  // 只有「只看空檔」身分（秘書：沒有任何看得到內容的分類）：選單只留幫排行程和手機通知
+  const onlyPropose = me.canPropose && calendars.length === 0;
+  const main = onlyPropose
+    ? [PROPOSE_NAV]
+    : [
+        ...(me.canPropose ? [PROPOSE_NAV] : []),
+        MAIN_NAV[0],
+        ...(me.reviewsProposals ? [PROPOSALS_NAV] : []),
+        ...MAIN_NAV.slice(1),
+      ];
+  const settings = onlyPropose
+    ? SETTINGS_NAV.filter((n) => n.href === "/settings/notifications")
+    : SETTINGS_NAV;
   const render = (items: typeof MAIN_NAV) =>
     items.map((item) => {
       const active =
@@ -56,7 +63,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
       <div className="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
         設定
       </div>
-      {render(SETTINGS_NAV)}
+      {render(settings)}
     </nav>
   );
 }

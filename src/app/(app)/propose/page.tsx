@@ -97,8 +97,7 @@ export default function ProposePage() {
   }
 
   function openNew(day: string, slot: Segment) {
-    // 今天的空檔從現在之後（取整到 5 分）開始
-    const start = day === today ? Math.max(slot.start, Math.ceil(nowMin / 5) * 5) : slot.start;
+    const start = slot.start;
     setForm({
       calendarId: cals[0]?.id ?? "",
       title: "",
@@ -175,14 +174,17 @@ export default function ProposePage() {
               (b) => b.all_day && fmt(b.starts_at, "yyyy-MM-dd") <= day && fmt(new Date(Date.parse(b.ends_at) - 1), "yyyy-MM-dd") >= day,
             );
             const busySegs = busyOnDay(timed, day, WINDOW);
-            const freeSegs = freeOnDay(timed, day, WINDOW, MIN_GAP).filter(
-              (f) => day !== today || f.end - Math.max(f.start, nowMin) >= MIN_GAP,
-            );
+            const pend = pendingByDay.get(day) ?? [];
+            // 空檔扣掉自己已提議、還在等審核的時段（避免重複提議）；今天從現在開始算
+            const win = day === today ? { start: Math.max(WINDOW.start, Math.ceil(nowMin / 5) * 5), end: WINDOW.end } : WINDOW;
+            const freeSegs =
+              win.end <= win.start
+                ? []
+                : freeOnDay([...timed, ...pend.map((p) => ({ ...p, all_day: false }))], day, win, MIN_GAP);
             const items = [
               ...busySegs.map((s) => ({ kind: "busy" as const, s })),
               ...(past ? [] : freeSegs.map((s) => ({ kind: "free" as const, s }))),
             ].sort((a, b) => a.s.start - b.s.start);
-            const pend = pendingByDay.get(day) ?? [];
             return (
               <section key={day} className={cn("rounded-xl border bg-card p-3", past && "opacity-60")}>
                 <h2 className="mb-2 font-bold">
