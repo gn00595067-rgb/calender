@@ -3,12 +3,7 @@
 -- 導致自己的工作紀錄、週報都存不進去。改用 security definer 函式查擁有者。
 -- ============================================================
 
-create or replace function public.contact_owner(p_contact uuid)
-returns uuid language sql stable security definer set search_path = public as $$
-  select owner_id from public.contacts where id = p_contact;
-$$;
-revoke all on function public.contact_owner(uuid) from public, anon;
-grant execute on function public.contact_owner(uuid) to authenticated;
+-- contact_owner(c uuid) 在 0028 已經有了（security definer），直接沿用
 
 drop policy if exists work_logs_staff_insert on public.work_logs;
 create policy work_logs_staff_insert on public.work_logs
