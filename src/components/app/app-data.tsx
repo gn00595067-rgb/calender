@@ -18,6 +18,8 @@ export interface Me {
   canPropose?: boolean;
   /** 自己有分類分享成「只看空檔」：會收到提議、要審核（0030） */
   reviewsProposals?: boolean;
+  /** 連到人物的員工帳號（家庭老師）：可記工作紀錄、寫週報（0031） */
+  isStaff?: boolean;
 }
 
 interface AppDataValue {

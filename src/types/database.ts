@@ -425,6 +425,7 @@ export interface Database {
           author_id?: string | null;
           event_id?: string | null;
           work_date: string;
+          updated_at?: string;
           start_time?: string | null;
           end_time?: string | null;
           hours: number;

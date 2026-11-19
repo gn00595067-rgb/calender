@@ -47,6 +47,8 @@ export const MAIN_NAV: NavItem[] = [
 
 /** 只看空檔的人：幫排行程（0030） */
 export const PROPOSE_NAV: NavItem = { href: "/propose", label: "幫排行程", icon: CalendarPlus };
+/** 員工（家庭老師）：自己的工作紀錄與週報（0031） */
+export const MY_WORK_NAV: NavItem = { href: "/my-work", label: "我的工作", icon: Briefcase };
 /** 擁有者：審核別人提議的行程（0030） */
 export const PROPOSALS_NAV: NavItem = { href: "/proposals", label: "待審核", icon: Inbox };
 

@@ -44,6 +44,7 @@ import type { CalEvent } from "@/lib/client/events";
 import { splitAmount } from "@/lib/rate-plans";
 import { driverLegs } from "@/lib/driver";
 import { NamesWithRules } from "./teacher-rules";
+import { ArrivalSection } from "./arrival-section";
 
 export function EventDetailDialog({
   open,
@@ -227,6 +228,9 @@ export function EventDetailDialog({
               </Row>
             )}
           </div>
+
+          {/* 家庭老師到班：預排課表／工作報告（Elsa 11/19） */}
+          <ArrivalSection event={event} />
 
           <Separator className="my-1" />
 

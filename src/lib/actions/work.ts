@@ -18,6 +18,8 @@ const categorySchema = z.object({
   sub_label: z.string().trim().max(80).nullable(),
   hourly_rate: z.number().int().min(0).max(100000),
   aliases: z.array(z.string().trim().min(1).max(40)).max(50),
+  // 大項（0031）；未提供＝不動
+  group_label: z.string().trim().max(40).nullable().optional(),
 });
 
 const setupSchema = z.object({
@@ -56,6 +58,7 @@ export async function saveWorkSetupAction(input: unknown): Promise<ActionResult>
         hourly_rate: c.hourly_rate,
         aliases: [...new Set(c.aliases)],
         position: i,
+        ...(c.group_label !== undefined ? { group_label: c.group_label || null } : {}),
       };
       const { error } = c.id
         ? await supabase.from("work_categories").update(row).eq("id", c.id)

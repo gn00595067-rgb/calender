@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { saveWorkSetupAction } from "@/lib/actions/work";
+import { applyWorkPresetAction } from "@/lib/actions/staff-work";
+import { WORK_GROUPS } from "@/lib/work-groups";
 import type { WorkCategory } from "@/lib/client/work";
 
 interface Draft {
@@ -23,6 +25,7 @@ interface Draft {
   sub_label: string;
   hourly_rate: string;
   aliases: string[];
+  group_label?: string;
 }
 
 /** Peggy 給 Phoenix 的 9 個大項與暫訂時薪（新的人可一鍵套用再改） */
@@ -63,6 +66,7 @@ export function WorkSetupDialog({
       sub_label: c.sub_label ?? "",
       hourly_rate: String(c.hourly_rate),
       aliases: c.aliases,
+      group_label: c.group_label ?? "",
     }));
   const [rows, setRows] = useState<Draft[]>(toDrafts);
   const [salary, setSalary] = useState(monthlySalary != null ? String(monthlySalary) : "");
@@ -84,6 +88,7 @@ export function WorkSetupDialog({
             sub_label: r.sub_label.trim() || null,
             hourly_rate: Math.max(0, Math.round(Number(r.hourly_rate) || 0)),
             aliases: r.aliases,
+            group_label: r.group_label?.trim() || null,
           })),
       });
       if (!res.ok) {
@@ -130,6 +135,24 @@ export function WorkSetupDialog({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label>工作分類</Label>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={() =>
+                startTransition(async () => {
+                  // 只新增週報用的類別、補大項；不刪舊的、不動時薪（之前存的都保留）
+                  const res = await applyWorkPresetAction(contactId);
+                  if (!res.ok) return void toast.error(res.error);
+                  toast.success(`已套用週報 4 大項（新增 ${res.data.added} 個類別），時薪請再補`);
+                  onSaved();
+                  onOpenChange(false);
+                })
+              }
+            >
+              套用週報 4 大項
+            </Button>
             {rows.length === 0 && (
               <Button
                 type="button"
@@ -142,8 +165,8 @@ export function WorkSetupDialog({
             )}
           </div>
           <div className="grid grid-cols-[1fr_1fr_5rem_2rem] gap-1.5 text-xs text-muted-foreground">
-            <span>大項</span>
-            <span>小項（說明）</span>
+            <span>類別</span>
+            <span>說明</span>
             <span>時薪</span>
             <span />
           </div>
@@ -167,6 +190,19 @@ export function WorkSetupDialog({
                   <Trash2 className="size-4" />
                 </Button>
               </div>
+              <select
+                className="h-8 rounded-md border bg-background px-2 text-xs"
+                value={r.group_label ?? ""}
+                onChange={(e) => set(i, { group_label: e.target.value })}
+                aria-label="週報大項"
+              >
+                <option value="">週報大項：未設定</option>
+                {WORK_GROUPS.map((g) => (
+                  <option key={g} value={g}>
+                    週報大項：{g}
+                  </option>
+                ))}
+              </select>
               {r.aliases.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                   Excel 寫成這些也算：

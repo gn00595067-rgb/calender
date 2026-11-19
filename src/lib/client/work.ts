@@ -11,6 +11,8 @@ export interface WorkCategory {
   hourly_rate: number;
   aliases: string[];
   position: number;
+  /** 大項（0031；週報分組用） */
+  group_label?: string | null;
 }
 
 export interface WorkLog {
@@ -51,14 +53,23 @@ export function useWorkSetup(contactId: string | null) {
       const [{ data: cats, error }, { data: contact }] = await Promise.all([
         supabase
           .from("work_categories")
-          .select("id, name, sub_label, hourly_rate, aliases, position")
+          // 用 *：0031 前沒有 group_label
+          .select("*")
           .eq("contact_id", contactId!)
           .order("position"),
         supabase.from("contacts").select("monthly_salary").eq("id", contactId!).single(),
       ]);
       if (error) throw new Error(error.message);
       return {
-        categories: (cats ?? []) as WorkCategory[],
+        categories: (cats ?? []).map((c) => ({
+          id: c.id,
+          name: c.name,
+          sub_label: c.sub_label,
+          hourly_rate: c.hourly_rate,
+          aliases: c.aliases,
+          position: c.position,
+          group_label: c.group_label ?? null,
+        })),
         monthlySalary: (contact?.monthly_salary as number | null | undefined) ?? null,
       };
     },

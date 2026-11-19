@@ -64,6 +64,7 @@ import {
   deleteContactAction,
 } from "@/lib/actions/contacts";
 import { TeacherAccountPanel } from "@/components/app/teacher-account-panel";
+import { StaffAccountPanel } from "@/components/app/staff-account-panel";
 
 interface FullContact {
   id: string;
@@ -100,6 +101,8 @@ interface FullContact {
   teacher_user_id: string | null;
   /** 0028：司機登入帳號 */
   driver_user_id: string | null;
+  /** 0031：員工帳號（家庭老師記工作紀錄） */
+  staff_user_id: string | null;
   /** 0030：老師的規則（跟家長談好的約定，自由文字） */
   rules: string | null;
   /** 0023 家教填報 */
@@ -162,6 +165,7 @@ function useContactsFull() {
         needs_feedback: c.needs_feedback ?? false,
         teacher_user_id: c.teacher_user_id ?? null,
         driver_user_id: c.driver_user_id ?? null,
+        staff_user_id: c.staff_user_id ?? null,
         rules: c.rules ?? null,
         tutor_kind: c.tutor_kind ?? null,
         tutor_subjects: c.tutor_subjects ?? [],
@@ -819,6 +823,18 @@ function ContactFormDialog({
                   存好這位人物後，再打開編輯就能建立「老師帳號」，讓老師自己登入寫回饋。
                 </p>
               )}
+            </div>
+          )}
+
+          {/* 員工帳號：家庭老師記工作紀錄、寫週報（0031） */}
+          {!isFamily && mode === "edit" && contact && (
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <StaffAccountPanel
+                contactId={contact.id}
+                contactName={contact.name}
+                linked={!!contact.staff_user_id}
+                onChanged={onDone}
+              />
             </div>
           )}
 

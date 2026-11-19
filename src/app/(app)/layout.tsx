@@ -39,7 +39,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   if (teacherLinks && teacherLinks.length > 0) redirect("/teach");
   if (driverLinks && driverLinks.length > 0) redirect("/drive");
 
-  const [calendars, profileRes, { count: freebusyIn }, { count: freebusyOut }] = await Promise.all([
+  const [calendars, profileRes, { count: freebusyIn }, { count: freebusyOut }, { data: staffLinks }] = await Promise.all([
     getAccessibleCalendars(user.id),
     supabase.from("profiles").select("display_name").eq("id", user.id).single(),
     // 只看空檔（0030）：別人分享給我的 → 幫排行程；我分享出去的 → 待審核
@@ -53,6 +53,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       .select("id, calendars!inner(owner_id)", { count: "exact", head: true })
       .eq("role", "freebusy")
       .eq("calendars.owner_id", user.id),
+    // 員工帳號（0031 前查詢失敗 → 不是）
+    supabase.rpc("my_staff_links"),
   ]);
 
   const me = {
@@ -65,6 +67,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       "使用者",
     canPropose: (freebusyIn ?? 0) > 0,
     reviewsProposals: (freebusyOut ?? 0) > 0,
+    isStaff: (staffLinks?.length ?? 0) > 0,
   };
 
   return (

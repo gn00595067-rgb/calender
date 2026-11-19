@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -98,7 +99,10 @@ export default function WorkPage() {
         description="匯入工作報告 Excel，依工作分類時薪算出當月工作價值，跟月薪比對"
         actions={
           contactId ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" asChild>
+                <Link href="/work/weekly">每日紀錄與週報</Link>
+              </Button>
               <Button variant="outline" onClick={() => setSetupOpen(true)}>
                 <Settings2 className="size-4" />
                 月薪與分類

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { CalendarClock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
-import { MAIN_NAV, SETTINGS_NAV, PROPOSE_NAV, PROPOSALS_NAV } from "./nav";
+import { MAIN_NAV, SETTINGS_NAV, PROPOSE_NAV, PROPOSALS_NAV, MY_WORK_NAV } from "./nav";
 import { useAppData } from "./app-data";
 import { useIncomingProposals } from "@/lib/client/proposals";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,8 +20,9 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   // 只有「只看空檔」身分（秘書：沒有任何看得到內容的分類）：選單只留幫排行程和手機通知
   const onlyPropose = me.canPropose && calendars.length === 0;
   const main = onlyPropose
-    ? [PROPOSE_NAV]
+    ? [PROPOSE_NAV, ...(me.isStaff ? [MY_WORK_NAV] : [])]
     : [
+        ...(me.isStaff ? [MY_WORK_NAV] : []),
         ...(me.canPropose ? [PROPOSE_NAV] : []),
         MAIN_NAV[0],
         ...(me.reviewsProposals ? [PROPOSALS_NAV] : []),
