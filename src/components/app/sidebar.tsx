@@ -114,8 +114,10 @@ function CalendarToggle({
 }
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { ownedCalendars, sharedCalendars, isVisible, toggleVisible, setAllVisible } =
+  const { ownedCalendars, sharedCalendars, isVisible, toggleVisible, setAllVisible, me, calendars } =
     useAppData();
+  // 只看空檔的秘書沒有分類可切換，不顯示「我的分類」
+  const onlyPropose = me.canPropose && calendars.length === 0;
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-4">
@@ -128,7 +130,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <NavLinks onNavigate={onNavigate} />
 
-      <div>
+      <div className={onlyPropose ? "hidden" : undefined}>
         <div className="flex items-center justify-between px-2 pb-1">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
             我的分類
