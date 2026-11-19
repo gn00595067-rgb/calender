@@ -140,7 +140,7 @@ alter table public.work_logs add column if not exists updated_at timestamptz not
 
 -- 員工讀自己的分類（不含時薪：走函式）
 create or replace function public.my_work_categories(p_contact uuid)
-returns table (id uuid, name text, sub_label text, group_label text, aliases text[], position int)
+returns table (id uuid, name text, sub_label text, group_label text, aliases text[], "position" int)
 language sql stable security definer set search_path = public as $$
   select w.id, w.name, w.sub_label, w.group_label, w.aliases, w.position
   from public.work_categories w
