@@ -89,7 +89,8 @@ export const DEFAULT_CALENDARS: {
 ];
 
 /** 分享角色 */
-export type ShareRole = "editor" | "contributor" | "viewer" | "scheduler";
+/** freebusy＝只看空檔：看不到行程內容，只能看忙碌時段並提議行程給擁有者審核（0030） */
+export type ShareRole = "editor" | "contributor" | "viewer" | "scheduler" | "freebusy";
 
 export const SHARE_ROLES: { value: ShareRole; label: string; hint: string }[] = [
   { value: "editor", label: "編輯者", hint: "可新增／編輯行程、查看財務金額、填寫回饋" },
@@ -100,6 +101,11 @@ export const SHARE_ROLES: { value: ShareRole; label: string; hint: string }[] = 
     label: "老師",
     hint: "可看全部行程、新增行程，只能改／刪自己登錄的，看不到金額",
   },
+  {
+    value: "freebusy",
+    label: "只看空檔",
+    hint: "看不到行程內容，只看得到哪些時間忙；可以提議行程，要你審核後才成立",
+  },
 ];
 
 export const SHARE_ROLE_LABEL: Record<ShareRole, string> = {
@@ -107,6 +113,7 @@ export const SHARE_ROLE_LABEL: Record<ShareRole, string> = {
   contributor: "協作者",
   viewer: "檢視者",
   scheduler: "老師",
+  freebusy: "只看空檔",
 };
 
 /** 有效角色（含擁有者），用於前端能力判斷 */

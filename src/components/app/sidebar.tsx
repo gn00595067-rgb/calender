@@ -5,13 +5,24 @@ import { usePathname } from "next/navigation";
 import { CalendarClock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
-import { MAIN_NAV, SETTINGS_NAV } from "./nav";
+import { MAIN_NAV, SETTINGS_NAV, PROPOSE_NAV, PROPOSALS_NAV } from "./nav";
 import { useAppData } from "./app-data";
+import { useIncomingProposals } from "@/lib/client/proposals";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const { me } = useAppData();
+  // 待審核數字（只有分享過「只看空檔」的人才查）
+  const { data: incoming } = useIncomingProposals(me.reviewsProposals ? me.id : "");
+  const pendingCount = me.reviewsProposals ? (incoming?.pending.length ?? 0) : 0;
+  const main = [
+    ...(me.canPropose ? [PROPOSE_NAV] : []),
+    MAIN_NAV[0],
+    ...(me.reviewsProposals ? [PROPOSALS_NAV] : []),
+    ...MAIN_NAV.slice(1),
+  ];
   const render = (items: typeof MAIN_NAV) =>
     items.map((item) => {
       const active =
@@ -30,13 +41,18 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
         >
           <item.icon className="size-4 shrink-0" />
           {item.label}
+          {item.href === PROPOSALS_NAV.href && pendingCount > 0 && (
+            <span className="ml-auto rounded-full bg-destructive px-1.5 text-xs leading-5 text-white">
+              {pendingCount}
+            </span>
+          )}
         </Link>
       );
     });
 
   return (
     <nav className="space-y-1">
-      {render(MAIN_NAV)}
+      {render(main)}
       <div className="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground/70">
         設定
       </div>

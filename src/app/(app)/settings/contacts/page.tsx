@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -99,6 +100,8 @@ interface FullContact {
   teacher_user_id: string | null;
   /** 0028：司機登入帳號 */
   driver_user_id: string | null;
+  /** 0030：老師的規則（跟家長談好的約定，自由文字） */
+  rules: string | null;
   /** 0023 家教填報 */
   tutor_kind: "specialist" | "home" | null;
   tutor_subjects: string[];
@@ -159,6 +162,7 @@ function useContactsFull() {
         needs_feedback: c.needs_feedback ?? false,
         teacher_user_id: c.teacher_user_id ?? null,
         driver_user_id: c.driver_user_id ?? null,
+        rules: c.rules ?? null,
         tutor_kind: c.tutor_kind ?? null,
         tutor_subjects: c.tutor_subjects ?? [],
         tutor_shared: c.tutor_shared ?? false,
@@ -348,6 +352,7 @@ function ContactFormDialog({
   const [defaultCalendarId, setDefaultCalendarId] = useState<string | null>(null);
   const [defaultTagNames, setDefaultTagNames] = useState<string[]>([]);
   const [needsFeedback, setNeedsFeedback] = useState(false);
+  const [rules, setRules] = useState("");
   const [tutorKind, setTutorKind] = useState<"" | "specialist" | "home">("");
   const [tutorSubjects, setTutorSubjects] = useState<string[]>([]);
   const [tutorShared, setTutorShared] = useState(false);
@@ -387,6 +392,7 @@ function ContactFormDialog({
     setDefaultCalendarId(contact?.default_calendar_id ?? null);
     setDefaultTagNames(contact?.default_tag_names ?? []);
     setNeedsFeedback(contact?.needs_feedback ?? false);
+    setRules(contact?.rules ?? "");
     setTutorKind(contact?.tutor_kind ?? "");
     setTutorSubjects(contact?.tutor_subjects ?? []);
     setTutorShared(contact?.tutor_shared ?? false);
@@ -439,6 +445,8 @@ function ContactFormDialog({
         defaultCalendarId,
         defaultTagNames,
         needsFeedback: isFamily ? false : needsFeedback,
+        // 只送有改的（沒套 0030 時不會因為空白就報錯）
+        ...(!isFamily && rules.trim() !== (contact?.rules ?? "") ? { rules: rules.trim() } : {}),
         // 家教填報（0023）：家人不能當老師；非家人不能當上課學生
         tutor: {
           kind: isFamily ? null : tutorKind || null,
@@ -525,6 +533,20 @@ function ContactFormDialog({
               placeholder="選填"
             />
           </div>
+          {/* 老師的規則（0030）：排課、看行程時點老師名字就看得到 */}
+          {!isFamily && (
+            <div className="space-y-2">
+              <Label htmlFor="ct-rules">老師的規則</Label>
+              <Textarea
+                id="ct-rules"
+                rows={3}
+                value={rules}
+                onChange={(e) => setRules(e.target.value)}
+                placeholder="跟老師談好的約定，例：請假要提前 24 小時說、當天取消照收、每月最後一堂考試"
+              />
+              <p className="text-xs text-muted-foreground">排課和看行程時，點老師名字就看得到（家庭老師也看得到）</p>
+            </div>
+          )}
 
           {/* 家人：可當「主角（誰的行程）」，例如小孩、本人 */}
           <label className="flex items-start gap-2 rounded-lg border p-3">

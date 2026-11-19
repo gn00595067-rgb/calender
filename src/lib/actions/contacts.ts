@@ -66,6 +66,8 @@ const contactSchema = z.object({
     })
     .optional(),
   isStudent: z.boolean().optional(),
+  // 老師的規則（0030，跟家長談好的個人約定）；未提供＝不動
+  rules: z.string().trim().max(2000).optional().nullable(),
 });
 
 /**
@@ -77,6 +79,14 @@ async function writeEventDefaults(
   id: string,
   d: z.infer<typeof contactSchema>,
 ): Promise<string | null> {
+  if (d.rules !== undefined) {
+    const { error: rErr } = await supabase
+      .from("contacts")
+      .update({ rules: d.rules || null })
+      .eq("id", id);
+    if (rErr && d.rules && /rules/.test(rErr.message))
+      return "人物已儲存，但「老師的規則」需先套用資料庫更新（0030）才能保存";
+  }
   if (d.needsFeedback !== undefined) {
     const { error: fbErr } = await supabase
       .from("contacts")

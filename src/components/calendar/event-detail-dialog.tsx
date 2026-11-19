@@ -43,6 +43,7 @@ import { NotesSection } from "./notes-section";
 import type { CalEvent } from "@/lib/client/events";
 import { splitAmount } from "@/lib/rate-plans";
 import { driverLegs } from "@/lib/driver";
+import { NamesWithRules } from "./teacher-rules";
 
 export function EventDetailDialog({
   open,
@@ -162,7 +163,8 @@ export function EventDetailDialog({
             {event.participantNames.length > 0 && (
               <Row icon={Users}>
                 <span className="text-muted-foreground">相關人物：</span>
-                {event.participantNames.join("、")}
+                {/* 有寫規則的老師：點名字看規則（0030） */}
+                <NamesWithRules names={event.participantNames} rules={event.contactRules} />
               </Row>
             )}
             {event.tagNames.length > 0 && (

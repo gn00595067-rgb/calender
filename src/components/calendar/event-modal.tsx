@@ -87,6 +87,7 @@ import {
   DEFAULT_PICKUP_PLACE,
   type DriverTrip,
 } from "@/lib/driver";
+import { RulesBox } from "./teacher-rules";
 
 interface FormValues {
   calendarId: string;
@@ -143,6 +144,8 @@ function plusMonths(dateStr: string, m: number): string {
 export interface EventDraft {
   calendarId?: string;
   title?: string;
+  /** 說明（提議行程的備註，0030） */
+  description?: string;
   location?: string;
   allDay?: boolean;
   startWall?: string;
@@ -253,7 +256,7 @@ export function EventModal({
     return {
       calendarId: draft?.calendarId ?? defaultCalendarId ?? editableCalendars[0]?.id ?? "",
       title: draft?.title ?? "",
-      description: "",
+      description: draft?.description ?? "",
       location: draft?.location ?? "",
       allDay: draft?.allDay ?? false,
       startWall: start,
@@ -1215,6 +1218,13 @@ export function EventModal({
                     }}
                   />
                 )}
+              />
+              {/* 老師的規則（0030）：選到有寫規則的老師就直接看到 */}
+              <RulesBox
+                items={participantIds
+                  .map((id) => allContacts.find((c) => c.id === id))
+                  .filter((c) => !!c?.rules?.trim())
+                  .map((c) => ({ name: c!.name, rules: c!.rules!.trim() }))}
               />
               {isSchedulerCal && (
                 <SchedulerLessonNote preview={lessonPreview} hasParticipants={participantIds.length > 0} />

@@ -3,7 +3,7 @@
 import { Star, MessageSquare, Car } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { D, twd } from "@/lib/date";
-import { eventStyle, chipStyle, displayTitle } from "./event-visuals";
+import { eventStyle, chipStyle, displayTitle, proposalStyle } from "./event-visuals";
 import { useAppData } from "@/components/app/app-data";
 import { can } from "@/lib/permissions";
 import type { CalEvent } from "@/lib/client/events";
@@ -64,7 +64,7 @@ export function EventTwoLineCard({
     <button
       type="button"
       onClick={onClick}
-      style={eventStyle(color, conflict)}
+      style={{ ...eventStyle(color, conflict), ...(event.proposal ? proposalStyle(color) : {}) }}
       className={cn(
         "flex w-full items-start gap-2 rounded-md px-2.5 py-1.5 text-left transition hover:brightness-95 touch:py-2.5",
         big && "py-2",
@@ -134,6 +134,7 @@ export function MonthSpanBar({
       }}
       style={{
         ...chipStyle(color, conflict),
+        ...(event.proposal ? proposalStyle(color) : {}),
         ...(continuesBefore ? { borderLeftWidth: 0 } : {}),
       }}
       className={cn(
@@ -177,7 +178,7 @@ export function MonthChip({
         e.stopPropagation();
         onClick?.();
       }}
-      style={chipStyle(color, conflict)}
+      style={{ ...chipStyle(color, conflict), ...(event.proposal ? proposalStyle(color) : {}) }}
       // 手機（窄格）：不顯示開始時間、標題可兩行——格子只有約 50px，放了時間就看不到標題
       className="flex w-full items-center gap-1 truncate rounded px-1 py-0.5 text-left text-[11px] leading-tight hover:brightness-95 touch:gap-1.5 touch:px-1.5 touch:py-2 touch:text-xs max-sm:items-start max-sm:gap-0.5 max-sm:px-0.5! max-sm:py-0.5! max-sm:text-[11px]! max-sm:whitespace-normal"
     >

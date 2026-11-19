@@ -39,9 +39,20 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   if (teacherLinks && teacherLinks.length > 0) redirect("/teach");
   if (driverLinks && driverLinks.length > 0) redirect("/drive");
 
-  const [calendars, profileRes] = await Promise.all([
+  const [calendars, profileRes, { count: freebusyIn }, { count: freebusyOut }] = await Promise.all([
     getAccessibleCalendars(user.id),
     supabase.from("profiles").select("display_name").eq("id", user.id).single(),
+    // 只看空檔（0030）：別人分享給我的 → 幫排行程；我分享出去的 → 待審核
+    supabase
+      .from("calendar_shares")
+      .select("id", { count: "exact", head: true })
+      .eq("member_id", user.id)
+      .eq("role", "freebusy"),
+    supabase
+      .from("calendar_shares")
+      .select("id, calendars!inner(owner_id)", { count: "exact", head: true })
+      .eq("role", "freebusy")
+      .eq("calendars.owner_id", user.id),
   ]);
 
   const me = {
@@ -52,6 +63,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       (user.user_metadata?.display_name as string | undefined) ||
       user.email?.split("@")[0] ||
       "使用者",
+    canPropose: (freebusyIn ?? 0) > 0,
+    reviewsProposals: (freebusyOut ?? 0) > 0,
   };
 
   return (

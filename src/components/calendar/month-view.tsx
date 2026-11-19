@@ -198,7 +198,9 @@ export function MonthView({
    * - 家庭視角：本人＋家人
    * - 全部行程：本人＋當天出現的每位主角
    */
-  const freeLinesFor = (dayEvents: CalEvent[], ds: string, minGap: number): FreeLine[] => {
+  const freeLinesFor = (allDayEvents: CalEvent[], ds: string, minGap: number): FreeLine[] => {
+    // 待審核的提議（虛線）不算忙碌
+    const dayEvents = allDayEvents.filter((e) => !e.proposal);
     const self = { label: "本人", match: isSelfEvent };
     const asGroup = (g: GapFilter) => ({ label: g.name, match: g.match });
     // 家人群組：本人已合併，其餘依各自的「月曆空檔」設定決定要不要列
@@ -264,7 +266,7 @@ export function MonthView({
         .slice()
         .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
     : [];
-  const peekTimed = peekEvents.filter((e) => !e.all_day);
+  const peekTimed = peekEvents.filter((e) => !e.all_day && !e.proposal);
   const peekLastEnd =
     peekTimed.length > 0
       ? peekTimed.reduce(
@@ -499,7 +501,7 @@ export function MonthView({
                 : [];
 
               // 當天有時段（非整日）行程時，取最晚結束時間，做為「尾巴結束」提示。
-              const timed = dayEvents.filter((e) => !e.all_day);
+              const timed = dayEvents.filter((e) => !e.all_day && !e.proposal);
               const lastEndIso =
                 timed.length > 0
                   ? timed.reduce(

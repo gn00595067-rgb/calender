@@ -23,7 +23,9 @@ export async function getAccessibleCalendars(
     supabase
       .from("calendar_shares")
       .select("calendar_id, role")
-      .eq("member_id", userId),
+      .eq("member_id", userId)
+      // 只看空檔的分類不放進行事曆畫面（讀不到內容），只在「幫排行程」頁用（0030）
+      .neq("role", "freebusy"),
   ]);
 
   const owned: AccessibleCalendar[] = (ownedRes.data ?? []).map((c) => ({

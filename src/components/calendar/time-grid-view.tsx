@@ -6,7 +6,7 @@ import { zoned, layoutDay } from "@/lib/calendar-utils";
 import { cn } from "@/lib/utils";
 import { D } from "@/lib/date";
 import { eventSegmentOnDay } from "@/lib/availability";
-import { eventStyle, chipStyle, displayTitle } from "./event-visuals";
+import { eventStyle, chipStyle, displayTitle, proposalStyle } from "./event-visuals";
 import { useNarrow } from "@/lib/client/use-narrow";
 import { Plus, Star } from "lucide-react";
 import type { CalEvent } from "@/lib/client/events";
@@ -187,10 +187,9 @@ export function TimeGridView({
             });
             const positioned = layoutDay(dayEvents);
             // 聚焦時空檔只依所選對象計算；否則用全部行程
-            const busy = busyIntervals(
-              gapFilter ? dayEvents.filter(isTarget) : dayEvents,
-              ds,
-            );
+            // 待審核的提議（虛線）不算忙碌
+            const real = dayEvents.filter((e) => !e.proposal);
+            const busy = busyIntervals(gapFilter ? real.filter(isTarget) : real, ds);
             const lastEndMin = busy.length > 0 ? busy[busy.length - 1][1] : null;
             return (
               <div
@@ -261,6 +260,7 @@ export function TimeGridView({
                               left: `calc(${col * widthPct}% + 2px)`,
                               width: `calc(${span * widthPct}% - 4px)`,
                             }),
+                        ...(event.proposal ? proposalStyle(colorOf(event.calendar_id)) : {}),
                       }}
                       className={cn(
                         "flex flex-col items-stretch justify-start overflow-hidden rounded-md px-1.5 py-0.5 text-left hover:brightness-95 touch:min-h-8",

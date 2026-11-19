@@ -215,6 +215,8 @@ export interface Database {
           aliases?: string[];
           // 0018 月薪（工作效益比對用）
           monthly_salary?: number | null;
+          // 0030 老師的規則
+          rules?: string | null;
           // 0020 排行程預設
           default_calendar_id?: string | null;
           default_tag_names?: string[];
@@ -256,6 +258,8 @@ export interface Database {
           // 0017 別名（英文名等）
           aliases?: string[];
           monthly_salary?: number | null;
+          // 0030 老師的規則
+          rules?: string | null;
           // 0020 排行程預設
           default_calendar_id?: string | null;
           default_tag_names?: string[];
@@ -297,6 +301,8 @@ export interface Database {
           // 0017 別名（英文名等）
           aliases?: string[];
           monthly_salary?: number | null;
+          // 0030 老師的規則
+          rules?: string | null;
           // 0020 排行程預設
           default_calendar_id?: string | null;
           default_tag_names?: string[];
@@ -742,6 +748,49 @@ export interface Database {
         };
         Relationships: [];
       };
+      // 0030 提議的行程（只看空檔的人提議，擁有者審核）
+      event_proposals: {
+        Row: {
+          id: string;
+          owner_id: string;
+          calendar_id: string;
+          proposer_id: string;
+          proposer_name: string | null;
+          title: string;
+          starts_at: string;
+          ends_at: string;
+          location: string | null;
+          note: string | null;
+          status: "pending" | "approved" | "rejected";
+          review_note: string | null;
+          reviewed_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          calendar_id: string;
+          proposer_id: string;
+          title: string;
+          starts_at: string;
+          ends_at: string;
+          location?: string | null;
+          note?: string | null;
+          status?: "pending" | "approved" | "rejected";
+        };
+        Update: {
+          calendar_id?: string;
+          title?: string;
+          starts_at?: string;
+          ends_at?: string;
+          location?: string | null;
+          note?: string | null;
+          status?: "pending" | "approved" | "rejected";
+          review_note?: string | null;
+          reviewed_at?: string | null;
+        };
+        Relationships: [];
+      };
       // 0023 家教填報
       tutor_reports: {
         Row: {
@@ -917,7 +966,7 @@ export interface Database {
           calendar_id: string;
           invited_email: string;
           member_id: string | null;
-          role: "editor" | "contributor" | "viewer" | "scheduler";
+          role: "editor" | "contributor" | "viewer" | "scheduler" | "freebusy";
           created_at: string;
         };
         Insert: {
@@ -925,7 +974,7 @@ export interface Database {
           calendar_id: string;
           invited_email: string;
           member_id?: string | null;
-          role: "editor" | "contributor" | "viewer" | "scheduler";
+          role: "editor" | "contributor" | "viewer" | "scheduler" | "freebusy";
           created_at?: string;
         };
         Update: {
@@ -933,7 +982,7 @@ export interface Database {
           calendar_id?: string;
           invited_email?: string;
           member_id?: string | null;
-          role?: "editor" | "contributor" | "viewer" | "scheduler";
+          role?: "editor" | "contributor" | "viewer" | "scheduler" | "freebusy";
           created_at?: string;
         };
         Relationships: [];
@@ -965,6 +1014,18 @@ export interface Database {
           owner_id: string;
           owner_name: string;
           monthly_salary: number | null;
+        }[];
+      };
+      busy_blocks: {
+        Args: { p_from: string; p_to: string };
+        Returns: {
+          calendar_id: string;
+          starts_at: string;
+          ends_at: string;
+          all_day: boolean;
+          needs_driver: boolean;
+          driver_trip: "to" | "from" | "round" | null;
+          driver_pickup_minutes: number | null;
         }[];
       };
       driver_trips: {

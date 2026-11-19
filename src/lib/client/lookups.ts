@@ -14,6 +14,8 @@ export interface ContactLite {
   is_family: boolean;
   /** 本人（老闆）；0015 前的庫沒有此欄 */
   is_self?: boolean;
+  /** 老師的規則（0030）；沒有＝null／undefined */
+  rules?: string | null;
 }
 
 export function useContacts() {
@@ -28,12 +30,20 @@ export function useContacts() {
       const [{ data, error }, parent] = await Promise.all([
         supabase
           .from("contacts")
-          .select("id, name, role_label, is_family, is_self")
+          // 用 *：0030 前沒有 rules，列出欄位會查詢失敗
+          .select("*")
           .order("name", { ascending: true }),
         isScheduler ? schedulerContactsAction() : null,
       ]);
       if (error) throw new Error(error.message);
-      const own = data ?? [];
+      const own: ContactLite[] = (data ?? []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        role_label: c.role_label,
+        is_family: c.is_family,
+        is_self: c.is_self,
+        rules: c.rules ?? null,
+      }));
       if (!parent?.ok) return own;
       const seen = new Set(own.map((c) => c.id));
       return [...own, ...parent.data.filter((c) => !seen.has(c.id))].sort((a, b) =>

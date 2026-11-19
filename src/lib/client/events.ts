@@ -4,6 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useAppData } from "@/components/app/app-data";
 import { driverFromRow, type DriverInfo, type DriverTrip } from "@/lib/driver";
+import type { ProposalRow } from "@/lib/client/proposals";
 
 /** 視圖用行程（含精簡關聯） */
 export interface CalEvent {
@@ -46,6 +47,10 @@ export interface CalEvent {
   driver: DriverInfo | null;
   /** 估算車程與「該出門了」（0027）；沒估算過為 null */
   travel: TravelInfo | null;
+  /** 老師的規則（0030）：人物名字 → 規則；只放有寫的 */
+  contactRules?: Record<string, string>;
+  /** 待審核的提議（0030）：只在擁有者的月曆上用虛線顯示，不是正式行程 */
+  proposal?: ProposalRow;
 }
 
 export type TravelInfo = {
@@ -108,14 +113,22 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
   const contactIds = [...new Set((ecRes.data ?? []).map((r) => r.contact_id))];
   const tagIds = [...new Set((etRes.data ?? []).map((r) => r.tag_id))];
 
-  const [contactsRes, tagsRes] = await Promise.all([
+  const [contactsRes, tagsRes, rulesRes] = await Promise.all([
     contactIds.length
       ? supabase.from("contacts").select("id, name").in("id", contactIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
     tagIds.length
       ? supabase.from("tags").select("id, name").in("id", tagIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    // 老師的規則另外查：0030 前沒有這欄 → 查詢失敗就當沒有
+    contactIds.length
+      ? supabase.from("contacts").select("id, rules").in("id", contactIds)
+      : Promise.resolve({ data: [] as { id: string; rules: string | null }[] }),
   ]);
+  const rulesById = new Map(
+    (rulesRes.data ?? []).filter((c) => c.rules?.trim()).map((c) => [c.id, c.rules!.trim()]),
+  );
+  const rulesByEvent = new Map<string, Record<string, string>>();
 
   const contactName = new Map((contactsRes.data ?? []).map((c) => [c.id, c.name]));
   const tagName = new Map((tagsRes.data ?? []).map((t) => [t.id, t.name]));
@@ -131,6 +144,8 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
   for (const r of ecRes.data ?? []) {
     const n = contactName.get(r.contact_id);
     if (!n) continue;
+    const rule = rulesById.get(r.contact_id);
+    if (rule) rulesByEvent.set(r.event_id, { ...rulesByEvent.get(r.event_id), [n]: rule });
     if (r.role === "subject") pushInto(subjectsByEvent, r.event_id, n);
     else pushInto(participantsByEvent, r.event_id, n);
   }
@@ -182,6 +197,7 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
       ...(participantsByEvent.get(e.id) ?? []),
     ],
     tagNames: tagsByEvent.get(e.id) ?? [],
+    contactRules: rulesByEvent.get(e.id),
     finance: finByEvent.get(e.id) ?? [],
     noteCount: noteCount.get(e.id) ?? 0,
     noteAuthorIds: [...(noteAuthors.get(e.id) ?? [])],

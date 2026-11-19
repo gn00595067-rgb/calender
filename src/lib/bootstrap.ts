@@ -32,7 +32,8 @@ export async function ensureBootstrap(user: User): Promise<void> {
     supabase
       .from("calendar_shares")
       .select("id", { count: "exact", head: true })
-      .eq("role", "scheduler")
+      // 只看空檔的人（秘書）也一樣，只用被分享的分類（0030）
+      .in("role", ["scheduler", "freebusy"])
       .or(`member_id.eq.${user.id},invited_email.eq."${email}"`),
     // 3. 回填受邀分享的 member_id
     user.email

@@ -123,13 +123,20 @@ export async function schedulerContacts(userId: string) {
   ];
   if (owners.length === 0) return [];
   const [{ data }, { data: plans }] = await Promise.all([
-    admin.from("contacts").select("id, name, role_label, is_family, tutor_kind").in("owner_id", owners),
+    // 用 *：0030 前沒有 rules（老師的規則），列出欄位會查詢失敗
+    admin.from("contacts").select("*").in("owner_id", owners),
     admin.from("contact_rate_plans").select("contact_id").in("owner_id", owners),
   ]);
   const billed = new Set((plans ?? []).map((p) => p.contact_id));
   return (data ?? [])
     .filter((c) => c.is_family || billed.has(c.id) || !!c.tutor_kind)
-    .map(({ id, name, role_label, is_family }) => ({ id, name, role_label, is_family }));
+    .map(({ id, name, role_label, is_family, rules }) => ({
+      id,
+      name,
+      role_label,
+      is_family,
+      rules: rules ?? null,
+    }));
 }
 
 /** 家長已經結清（付過錢）的那筆不再自動改；「每次付現」這類一建立就結清的照常跟著改 */

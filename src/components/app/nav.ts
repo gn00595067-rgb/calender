@@ -20,6 +20,8 @@ import {
   Sparkles,
   MapPin,
   Timer,
+  CalendarPlus,
+  Inbox,
   type LucideIcon,
 } from "lucide-react";
 
@@ -42,6 +44,11 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/driver", label: "司機行程", icon: Car },
   { href: "/overtime", label: "司機加班", icon: Timer },
 ];
+
+/** 只看空檔的人：幫排行程（0030） */
+export const PROPOSE_NAV: NavItem = { href: "/propose", label: "幫排行程", icon: CalendarPlus };
+/** 擁有者：審核別人提議的行程（0030） */
+export const PROPOSALS_NAV: NavItem = { href: "/proposals", label: "待審核", icon: Inbox };
 
 export const SETTINGS_NAV: NavItem[] = [
   { href: "/settings/notifications", label: "手機通知", icon: BellRing },

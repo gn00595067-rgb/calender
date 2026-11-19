@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getAuthed, fail, type ActionResult } from "./helpers";
 import type { ShareRole } from "@/lib/constants";
 
-const roleEnum = z.enum(["editor", "contributor", "viewer", "scheduler"]);
+const roleEnum = z.enum(["editor", "contributor", "viewer", "scheduler", "freebusy"]);
 
 const inviteSchema = z.object({
   calendarId: z.uuid(),

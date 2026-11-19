@@ -28,6 +28,15 @@ export function chipStyle(color: string, conflict = false): CSSProperties {
   };
 }
 
+/** 待審核的提議（0030）：虛線框、淡底，一眼看出還不是正式行程 */
+export function proposalStyle(color: string): CSSProperties {
+  return {
+    backgroundColor: hexToRgba(color, 0.04),
+    border: `1.5px dashed ${color}`,
+    boxShadow: "none",
+  };
+}
+
 /**
  * 顯示用標題：去掉開頭與「開始時間相同」的時間字樣，省下窄格空間。
  *   07:30「0730-0900小游-豪哥」→「小游-豪哥」；17:00「17-22 Phoenix」→「Phoenix」

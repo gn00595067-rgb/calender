@@ -14,6 +14,10 @@ export interface Me {
   id: string;
   email: string;
   displayName: string;
+  /** 被分享了「只看空檔」的分類：可以幫人排行程（0030） */
+  canPropose?: boolean;
+  /** 自己有分類分享成「只看空檔」：會收到提議、要審核（0030） */
+  reviewsProposals?: boolean;
 }
 
 interface AppDataValue {
