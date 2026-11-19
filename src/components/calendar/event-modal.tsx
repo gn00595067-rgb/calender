@@ -248,6 +248,10 @@ export function EventModal({
   const { data: allContacts = [] } = useContacts();
   /** 使用者手動改過主角 → 換分類時不再自動帶入 */
   const subjectsTouchedRef = useRef(false);
+  /** 這次打開後使用者自己改過主角（編輯時換分類要不要跟著帶主角用） */
+  const subjectsPickedRef = useRef(false);
+  /** 編輯時打開那一刻的分類：之後換了分類才跟著帶主角 */
+  const openedCalendarRef = useRef<string | null>(null);
   /** 使用者手動改過提醒 → 切整日時不再自動改 */
   const reminderTouchedRef = useRef(false);
 
@@ -314,6 +318,8 @@ export function EventModal({
     );
     // 語音已判斷出主角時以語音為準；編輯舊行程不自動改
     subjectsTouchedRef.current = mode === "edit" || !!draft?.subjectIds?.length;
+    subjectsPickedRef.current = false;
+    openedCalendarRef.current = mode === "edit" && event ? event.calendar_id : null;
     if (mode === "edit" && event) {
       // 語音修改：draft 帶著要改的欄位（新時間、地點…），其餘照原本
       reset({
@@ -449,6 +455,18 @@ export function EventModal({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, inferredSubjects.join(","), speaker?.id]);
+
+  // 編輯時換了分類（例：妹妹 → 哥哥+妹妹）：主角跟著新分類帶入，標題的「-主角名」存檔時也會跟著改
+  // （Phoenix 11/19：選錯人後改分類，主角和標題都沒更新，只好刪掉重建）。自己動過主角就不蓋掉。
+  useEffect(() => {
+    if (!open || mode !== "edit" || subjectsPickedRef.current) return;
+    if (!openedCalendarRef.current || calendarId === openedCalendarRef.current) return;
+    if (!inferredSubjects.length) return;
+    setValue("subjectIds", inferredSubjects);
+    const calName = calendarById.get(calendarId)?.name;
+    setAutoSubjectNote(calName ? `已依新分類「${calName}」改主角；只有其中一人參加時，把另一位拿掉即可。` : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, calendarId, inferredSubjects.join(",")]);
   const startWall = watch("startWall");
   const endWall = watch("endWall");
   // 財務相關（自動帶入、預繳扣抵）一律看「相關人物」＝收費老師
@@ -1172,6 +1190,7 @@ export function EventModal({
                     value={field.value}
                     onChange={(ids) => {
                       subjectsTouchedRef.current = true;
+                      subjectsPickedRef.current = true;
                       field.onChange(ids);
                     }}
                     placeholder="選擇主角…（誰的行程）"
