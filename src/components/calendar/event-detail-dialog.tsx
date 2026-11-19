@@ -45,6 +45,7 @@ import { splitAmount } from "@/lib/rate-plans";
 import { driverLegs } from "@/lib/driver";
 import { NamesWithRules } from "./teacher-rules";
 import { ArrivalSection } from "./arrival-section";
+import { ClassroomCards } from "./classroom-cards";
 
 export function EventDetailDialog({
   open,
@@ -231,6 +232,8 @@ export function EventDetailDialog({
 
           {/* 家庭老師到班：預排課表／工作報告（Elsa 11/19） */}
           <ArrivalSection event={event} />
+          {/* 教室資料（0033）：標題或地點對到教室名稱 */}
+          <ClassroomCards event={event} />
 
           <Separator className="my-1" />
 

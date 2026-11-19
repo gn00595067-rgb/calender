@@ -821,6 +821,48 @@ export interface Database {
         };
         Relationships: [];
       };
+      // 0033 教室資料庫
+      classrooms: {
+        Row: {
+          id: string;
+          owner_id: string;
+          name: string;
+          makeup_rules: string;
+          term_rules: string;
+          contact: string;
+          address: string;
+          fee: string;
+          note: string;
+          updated_by: string | null;
+          updated_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          name: string;
+          makeup_rules?: string;
+          term_rules?: string;
+          contact?: string;
+          address?: string;
+          fee?: string;
+          note?: string;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          name?: string;
+          makeup_rules?: string;
+          term_rules?: string;
+          contact?: string;
+          address?: string;
+          fee?: string;
+          note?: string;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       // 0031 週報
       weekly_reports: {
         Row: {
