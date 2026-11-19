@@ -13,6 +13,8 @@ import { getAuthed, fail, type ActionResult } from "./helpers";
  * spec：docs/specs/只看空檔與提議行程審核.md
  */
 
+/** 前端看到這句會改成「仍要送出」再送一次 */
+const BUSY_MSG = "這段時間已有行程（看不到是什麼事）。確定仍要提議，請再按一次「仍要送出」";
 const MISSING_0030 = "資料庫還沒更新（0030），請先套用 migration";
 const missing = (msg: string) => /does not exist|Could not find|schema cache/i.test(msg);
 
@@ -25,6 +27,8 @@ const proposeSchema = z.object({
   end: z.string().regex(/^\d{2}:\d{2}$/),
   location: z.string().trim().max(200).optional().default(""),
   note: z.string().trim().max(1000).optional().default(""),
+  /** 已看過「這段時間已有行程」的提醒、仍要送（Elsa：提醒但可送，由 Peggy 決定） */
+  allowBusy: z.boolean().optional().default(false),
 });
 
 /** 「11/20(五) 14:00–15:00」 */
@@ -63,7 +67,7 @@ export async function submitProposalAction(input: unknown): Promise<ActionResult
       const pad = travelPadding({ driver: driverFromRow(b) });
       return Date.parse(b.starts_at) - pad.before * 60000 < e && Date.parse(b.ends_at) + pad.after * 60000 > s;
     });
-    if (clash) return fail("這段時間已經有行程了，請重新整理後選別的空檔");
+    if (clash && !v.allowBusy) return fail(BUSY_MSG);
 
     const fields = {
       calendar_id: v.calendarId,
@@ -93,7 +97,7 @@ export async function submitProposalAction(input: unknown): Promise<ActionResult
       const { data: me } = await supabase.from("profiles").select("display_name").eq("id", user.id).single();
       notified =
         (await sendPushToUser(createAdminClient(), cal.owner_id, {
-          title: `${me?.display_name || "有人"}${v.id ? "修改了" : "提議"}行程，等你審核`,
+          title: `${me?.display_name || "有人"}${v.id ? "修改了" : "提議"}行程，等你審核${clash ? "（跟既有行程重疊）" : ""}`,
           body: `${whenLabel(startsAt, endsAt)}｜${v.title}`,
           tag: `proposal-${v.date}`,
           url: "/proposals",
@@ -163,6 +167,38 @@ export async function reviewProposalAction(input: unknown): Promise<ActionResult
       }
     }
     return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err instanceof Error ? err.message : "操作失敗");
+  }
+}
+
+/**
+ * Peggy 一鍵同意：直接用提議的內容建正式行程（要補司機、費用就用「審核」打開表單）。
+ */
+export async function approveProposalDirectAction(id: string): Promise<ActionResult> {
+  if (!z.uuid().safeParse(id).success) return fail("資料有誤");
+  try {
+    const { supabase, user } = await getAuthed();
+    const { data: p, error } = await supabase
+      .from("event_proposals")
+      .select("*")
+      .eq("id", id)
+      .eq("owner_id", user.id)
+      .eq("status", "pending")
+      .maybeSingle();
+    if (error) return fail(missing(error.message) ? MISSING_0030 : error.message);
+    if (!p) return fail("找不到這筆待審核的提議（可能已經處理過）");
+    const { error: evErr } = await supabase.from("events").insert({
+      calendar_id: p.calendar_id,
+      creator_id: user.id,
+      title: p.title,
+      starts_at: p.starts_at,
+      ends_at: p.ends_at,
+      location: p.location,
+      description: [p.note, `（${p.proposer_name ?? "有人"} 提議）`].filter(Boolean).join("\n"),
+    });
+    if (evErr) return fail(evErr.message);
+    return await reviewProposalAction({ id, status: "approved" });
   } catch (err) {
     return fail(err instanceof Error ? err.message : "操作失敗");
   }

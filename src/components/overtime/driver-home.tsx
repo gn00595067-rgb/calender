@@ -141,7 +141,7 @@ function DriverHomeInner({ link }: { link: DriverLink }) {
     setDraft({
       ...base,
       end: arrive,
-      reason: `接送${leg.passengers === "本人" ? "" : leg.passengers}${leg.title}（${leg.to === "家" ? `${leg.from}回家` : `${leg.from}→${leg.to}`}）`,
+      reason: `接送${leg.passengers}（${leg.to === "家" ? `${leg.from}回家` : `${leg.from}→${leg.to}`}）`,
       eventId: leg.eventId,
     });
     setTab("fill");
@@ -229,7 +229,7 @@ function DriverHomeInner({ link }: { link: DriverLink }) {
       {lateLeg ? (
         <div className="space-y-2 rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
           <div>
-            今天送「{lateLeg.leg.title}」回來約 <b>{lateLeg.arrive}</b>，超過下班 {todayShift?.end}。有加班的話記得今天填：
+            今天送{lateLeg.leg.passengers}（{lateLeg.leg.from}→{lateLeg.leg.to}）回來約 <b>{lateLeg.arrive}</b>，超過下班 {todayShift?.end}。有加班的話記得今天填：
           </div>
           <Button size="sm" onClick={() => fillFromLeg(lateLeg.leg, lateLeg.arrive)}>
             <Clock className="size-4" />
@@ -273,7 +273,7 @@ function DriverHomeInner({ link }: { link: DriverLink }) {
                 <ul className="space-y-2 text-sm">
                   {g.legs.map((l) => (
                     <li key={`${l.eventId}-${l.kind}`} className="flex items-start justify-between gap-2">
-                      <span>{legLine(l, true)}</span>
+                      <span>{legLine(l, false)}</span>
                       {l.kind === "from" && !l.allDay ? (
                         <button
                           type="button"

@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EventModal } from "@/components/calendar/event-modal";
 import { useAppData } from "@/components/app/app-data";
-import { reviewProposalAction } from "@/lib/actions/proposals";
-import type { ProposalRow } from "@/lib/client/proposals";
+import { approveProposalDirectAction, reviewProposalAction } from "@/lib/actions/proposals";
+import { waitingDays, type ProposalRow } from "@/lib/client/proposals";
 import { fmt, utcToTaipeiWall } from "@/lib/date";
 import { ProposalStatus } from "./proposal-status";
 
@@ -37,6 +37,22 @@ export function ProposalReviewCard({
     qc.invalidateQueries({ queryKey: ["events"] });
   };
 
+  function approveNow() {
+    startTransition(async () => {
+      const res = await approveProposalDirectAction(p.id);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("已同意，行程已上曆");
+      refresh();
+      onDone?.();
+    });
+  }
+
+  /** 送出超過 2 天還沒處理（Elsa：久未處理要提醒） */
+  const waitDays = waitingDays(p.created_at);
+
   function review(status: "approved" | "rejected" | "pending") {
     startTransition(async () => {
       const res = await reviewProposalAction({ id: p.id, status, reviewNote: reason });
@@ -58,6 +74,9 @@ export function ProposalReviewCard({
       <div className="flex flex-wrap items-center gap-2">
         <ProposalStatus status={p.status} />
         <span className="font-medium">{p.title}</span>
+        {p.status === "pending" && waitDays >= 2 && (
+          <span className="text-xs font-medium text-destructive">已等 {waitDays} 天</span>
+        )}
       </div>
       <div className="mt-1 tabular-nums">
         {fmt(p.starts_at, "M/d(EEEEE) HH:mm")}–{fmt(p.ends_at, "HH:mm")}
@@ -97,9 +116,12 @@ export function ProposalReviewCard({
             </Button>
           </div>
         ) : (
-          <div className="mt-2 flex gap-2">
-            <Button size="sm" disabled={pending} onClick={() => setCreating(true)}>
-              審核（打開表單）
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button size="sm" disabled={pending} onClick={approveNow}>
+              同意
+            </Button>
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => setCreating(true)}>
+              補資料再同意
             </Button>
             <Button size="sm" variant="outline" disabled={pending} onClick={() => setRejecting(true)}>
               退回

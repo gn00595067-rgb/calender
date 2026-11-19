@@ -59,7 +59,8 @@ export default function DriverSchedulePage() {
   const [customStart, setCustomStart] = useState(today);
   const [customEnd, setCustomEnd] = useState(addDaysStr(today, 6));
   // 不想讓司機知道行程內容（如看醫生）時可關掉
-  const [showTitle, setShowTitle] = useState(true);
+  // 預設不給事由（Elsa 11/19：司機只需要點到點與時間）
+  const [showTitle, setShowTitle] = useState(false);
 
   const { start, end } = useMemo(() => {
     if (preset === "7") return { start: today, end: addDaysStr(today, 6) };

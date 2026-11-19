@@ -166,3 +166,8 @@ export function usePendingProposalsInRange(meId: string, fromIso: string, toIso:
     },
   });
 }
+
+/** 提議送出到現在過了幾天（久未審核提醒用） */
+export function waitingDays(createdAt: string): number {
+  return Math.floor((new Date().getTime() - Date.parse(createdAt)) / 864e5);
+}

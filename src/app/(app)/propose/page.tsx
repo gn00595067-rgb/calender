@@ -14,6 +14,7 @@ import {
   useBusyBlocks,
   useFreebusyCalendars,
   useMyProposals,
+  waitingDays,
   type ProposalRow,
 } from "@/lib/client/proposals";
 import { withdrawProposalAction } from "@/lib/actions/proposals";
@@ -192,9 +193,19 @@ export default function ProposePage() {
             ].sort((a, b) => a.s.start - b.s.start);
             return (
               <section key={day} className={cn("rounded-xl border bg-card p-3", past && "opacity-60")}>
-                <h2 className="mb-2 font-bold">
+                <h2 className="mb-2 flex items-center font-bold">
                   {md(day)}（{WEEKDAY[weekday(day)]}）
                   {day === today && <span className="ml-2 text-xs font-normal text-primary">今天</span>}
+                  {!past && (
+                    // 空檔以外的時間也能提議（撞到會提醒，由擁有者決定）
+                    <button
+                      type="button"
+                      className="ml-auto text-xs font-normal text-primary underline"
+                      onClick={() => openNew(day, { start: 9 * 60, end: 10 * 60 })}
+                    >
+                      提議其他時間
+                    </button>
+                  )}
                 </h2>
                 {hasAllDay && (
                   <p className="mb-1 text-xs text-amber-700 dark:text-amber-400">這天有整日行程，排之前最好先問一下</p>
@@ -253,6 +264,9 @@ export default function ProposePage() {
               <div className="flex flex-wrap items-center gap-2">
                 <ProposalStatus status={p.status} />
                 <span className="font-medium">{p.title}</span>
+                {p.status === "pending" && waitingDays(p.created_at) >= 2 && (
+                  <span className="text-xs font-medium text-destructive">超過 2 天還沒審核，可以提醒一下</span>
+                )}
                 <span className="text-muted-foreground tabular-nums">
                   {fmt(p.starts_at, "M/d(EEEEE) HH:mm")}–{fmt(p.ends_at, "HH:mm")}
                 </span>
@@ -296,6 +310,7 @@ export default function ProposePage() {
         form={form}
         calendars={cals}
         ownerName={ownerName}
+        busy={busy}
         onClose={() => setForm(null)}
         onSaved={() => {
           setForm(null);

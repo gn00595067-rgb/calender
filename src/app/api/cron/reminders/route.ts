@@ -129,7 +129,56 @@ export async function GET(req: Request) {
     dueCount += due.length;
     sent += await sendDueEmails(sb, slot, due, resendKey, from);
   }
-  return NextResponse.json({ sent, due: dueCount, pushed });
+  const overdue = await remindOverdueProposals(sb, now);
+  return NextResponse.json({ sent, due: dueCount, pushed, overdue });
+}
+
+/**
+ * 提議送出超過 2 天還沒審核（Elsa 11/19：久未處理要提醒，避免行程漏掉）：
+ * 推播給擁有者與提議者各一次，記 reminded_at 不再重推。0031 前沒有 reminded_at → 略過。
+ */
+async function remindOverdueProposals(sb: SupabaseClient, now: Date): Promise<number> {
+  if (!pushConfigured()) return 0;
+  const cutoff = new Date(now.getTime() - 2 * 864e5).toISOString();
+  const { data, error } = await sb
+    .from("event_proposals")
+    .select("id, owner_id, proposer_id, proposer_name, title, starts_at")
+    .eq("status", "pending")
+    .is("reminded_at", null)
+    .lt("created_at", cutoff)
+    .gt("starts_at", now.toISOString())
+    .limit(20);
+  if (error || !data?.length) return 0;
+  let n = 0;
+  for (const p of data) {
+    const when = new Date(p.starts_at).toLocaleString("zh-TW", {
+      timeZone: "Asia/Taipei",
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    try {
+      await sendPushToUser(sb, p.owner_id, {
+        title: "有行程等你審核超過 2 天",
+        body: `${p.proposer_name ?? "有人"}提議：${when}｜${p.title}`,
+        tag: `proposal-overdue-${p.id}`,
+        url: "/proposals",
+      });
+      await sendPushToUser(sb, p.proposer_id, {
+        title: "你提議的行程還沒審核",
+        body: `${when}｜${p.title}（已等超過 2 天，可以提醒一下）`,
+        tag: `proposal-overdue-${p.id}`,
+        url: "/propose",
+      });
+    } catch (err) {
+      console.error("[proposal overdue push]", err);
+    }
+    await sb.from("event_proposals").update({ reminded_at: now.toISOString() }).eq("id", p.id);
+    n++;
+  }
+  return n;
 }
 
 /** 寄 Email 給行事曆擁有者，成功才標記已寄 */

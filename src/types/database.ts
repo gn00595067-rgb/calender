@@ -225,6 +225,8 @@ export interface Database {
           teacher_user_id?: string | null;
           // 0028 司機帳號
           driver_user_id?: string | null;
+          // 0031 員工帳號（家庭老師記工作紀錄）
+          staff_user_id?: string | null;
           // 0023 家教填報
           tutor_kind?: "specialist" | "home" | null;
           tutor_subjects?: string[];
@@ -268,6 +270,8 @@ export interface Database {
           teacher_user_id?: string | null;
           // 0028 司機帳號
           driver_user_id?: string | null;
+          // 0031 員工帳號（家庭老師記工作紀錄）
+          staff_user_id?: string | null;
           // 0023 家教填報
           tutor_kind?: "specialist" | "home" | null;
           tutor_subjects?: string[];
@@ -311,6 +315,8 @@ export interface Database {
           teacher_user_id?: string | null;
           // 0028 司機帳號
           driver_user_id?: string | null;
+          // 0031 員工帳號（家庭老師記工作紀錄）
+          staff_user_id?: string | null;
           // 0023 家教填報
           tutor_kind?: "specialist" | "home" | null;
           tutor_subjects?: string[];
@@ -367,6 +373,8 @@ export interface Database {
           aliases: string[];
           position: number;
           created_at: string;
+          // 0031 大項
+          group_label?: string | null;
         };
         Insert: {
           id?: string;
@@ -374,6 +382,7 @@ export interface Database {
           contact_id: string;
           name: string;
           sub_label?: string | null;
+          group_label?: string | null;
           hourly_rate?: number;
           aliases?: string[];
           position?: number;
@@ -382,6 +391,7 @@ export interface Database {
         Update: {
           name?: string;
           sub_label?: string | null;
+          group_label?: string | null;
           hourly_rate?: number;
           aliases?: string[];
           position?: number;
@@ -401,11 +411,19 @@ export interface Database {
           category_raw: string | null;
           category_id: string | null;
           created_at: string;
+          // 0031 細項、登錄人、到班行程
+          sub_label?: string | null;
+          author_id?: string | null;
+          event_id?: string | null;
+          updated_at?: string;
         };
         Insert: {
           id?: string;
           owner_id: string;
           contact_id: string;
+          sub_label?: string | null;
+          author_id?: string | null;
+          event_id?: string | null;
           work_date: string;
           start_time?: string | null;
           end_time?: string | null;
@@ -417,6 +435,15 @@ export interface Database {
         };
         Update: {
           category_id?: string | null;
+          work_date?: string;
+          start_time?: string | null;
+          end_time?: string | null;
+          hours?: number;
+          content?: string | null;
+          category_raw?: string | null;
+          sub_label?: string | null;
+          event_id?: string | null;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -765,6 +792,7 @@ export interface Database {
           review_note: string | null;
           reviewed_at: string | null;
           created_at: string;
+          reminded_at?: string | null;
         };
         Insert: {
           id?: string;
@@ -788,6 +816,40 @@ export interface Database {
           status?: "pending" | "approved" | "rejected";
           review_note?: string | null;
           reviewed_at?: string | null;
+          reminded_at?: string | null;
+        };
+        Relationships: [];
+      };
+      // 0031 週報
+      weekly_reports: {
+        Row: {
+          id: string;
+          owner_id: string;
+          contact_id: string;
+          week_start: string;
+          summaries: Record<string, string>;
+          review: string;
+          submitted_at: string | null;
+          author_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          contact_id: string;
+          week_start: string;
+          summaries?: Record<string, string>;
+          review?: string;
+          submitted_at?: string | null;
+          author_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          summaries?: Record<string, string>;
+          review?: string;
+          submitted_at?: string | null;
+          author_id?: string | null;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -1006,6 +1068,21 @@ export interface Database {
         }[];
       };
       // 0028 司機
+      my_staff_links: {
+        Args: Record<string, never>;
+        Returns: { contact_id: string; contact_name: string; owner_id: string; owner_name: string }[];
+      };
+      my_work_categories: {
+        Args: { p_contact: string };
+        Returns: {
+          id: string;
+          name: string;
+          sub_label: string | null;
+          group_label: string | null;
+          aliases: string[];
+          position: number;
+        }[];
+      };
       my_driver_links: {
         Args: Record<string, never>;
         Returns: {

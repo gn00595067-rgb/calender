@@ -9,6 +9,7 @@ import { SidebarContent } from "./sidebar";
 import { UserMenu } from "./user-menu";
 import { CommandPaletteProvider, useCommandPalette } from "./command-palette";
 import { AppDataProvider, type Me } from "./app-data";
+import { PendingProposalsPopup } from "@/components/proposals/pending-popup";
 import { VoiceAddButton } from "@/components/voice/voice-add-button";
 import type { AccessibleCalendar } from "@/types/domain";
 
@@ -79,6 +80,7 @@ export function AppChrome({
 
   return (
     <AppDataProvider me={me} calendars={calendars}>
+      <PendingProposalsPopup />
       <CommandPaletteProvider>
         <div className="flex min-h-screen w-full">
           {/* 桌面側欄 */}
