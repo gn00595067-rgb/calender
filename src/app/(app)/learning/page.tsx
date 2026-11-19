@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, GraduationCap } from "lucide-react";
+import { ChevronLeft, ChevronRight, GraduationCap, Printer } from "lucide-react";
 import { PageHeader } from "@/components/app/page-header";
 import { EmptyState, ListSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
@@ -48,10 +48,25 @@ export default function LearningPage() {
   const withEntries = groups.filter((g) => g.entries.length > 0);
 
   const [y, m] = month.split("-").map(Number);
+  const childName = children.find((c) => c.id === childId)?.name ?? "";
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader title="學習回饋" description="每個小孩各科的上課堂數與老師回饋" />
+      {/* 這頁直式列印（全站預設橫式給週行程表用） */}
+      <style>{"@media print { @page { size: A4 portrait; margin: 12mm; } }"}</style>
+      <PageHeader
+        title="學習回饋"
+        description="每個小孩各科的上課堂數與老師回饋"
+        actions={
+          childId ? (
+            // Peggy 11/19：主要自己看，能匯出列印更好 → 印目前選的小孩這個月
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer className="size-4" />
+              列印／存 PDF
+            </Button>
+          ) : undefined
+        }
+      />
 
       {/* 月份 */}
       <div className="mb-3 flex items-center gap-2">
@@ -96,8 +111,13 @@ export default function LearningPage() {
             ))}
           </div>
 
+          <div id="print-area">
+          {/* 列印時的標題（畫面上已有月份與小孩按鈕） */}
+          <h1 className="mb-3 hidden text-xl font-bold print:block">
+            {childName} {y} 年 {m} 月 學習回饋
+          </h1>
           {/* 統計：每位老師上課幾堂、回饋幾則 */}
-          <div className="mb-6 grid gap-2 sm:grid-cols-2">
+          <div className="mb-6 grid gap-2 sm:grid-cols-2 print:grid-cols-2">
             {groups.map((g) => (
               <div key={g.key} className="flex items-center justify-between rounded-lg border bg-card px-3 py-2">
                 <span className="truncate text-sm font-medium">
@@ -122,6 +142,7 @@ export default function LearningPage() {
               ))}
             </div>
           )}
+          </div>
         </>
       )}
     </div>
@@ -141,7 +162,7 @@ function GroupSection({ group }: { group: LearningGroup }) {
       </h2>
       <ol className="relative space-y-3 border-l pl-4">
         {group.entries.map((e) => (
-          <li key={e.noteId} className="relative rounded-lg border bg-card p-3">
+          <li key={e.noteId} className="relative rounded-lg border bg-card p-3 print:break-inside-avoid">
             <span className="absolute -left-[21px] top-4 size-2 rounded-full bg-primary" />
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">{D.date(e.eventStart)}</span>
@@ -155,7 +176,12 @@ function GroupSection({ group }: { group: LearningGroup }) {
             </div>
             {e.progressLabel && <ProgressBlock text={e.progressLabel} />}
             {e.shared && (
-              <details className="mt-1.5 text-sm text-muted-foreground">
+              <p className="mt-1.5 hidden whitespace-pre-wrap text-sm text-muted-foreground print:block">
+                共同內容：{e.shared}
+              </p>
+            )}
+            {e.shared && (
+              <details className="mt-1.5 text-sm text-muted-foreground print:hidden">
                 <summary className="cursor-pointer select-none text-xs">共同內容（教學概念等）</summary>
                 <p className="mt-1 whitespace-pre-wrap">{e.shared}</p>
               </details>

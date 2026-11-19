@@ -161,8 +161,15 @@ export async function POST(req: Request) {
     result = message.parsed_output;
   } catch (err) {
     console.error("[voice/parse-event]", err);
+    // 額度用完、服務過載：重說也沒用，直接請使用者手動新增（11/18 Peggy 連按 6 次都失敗）
+    const msg = err instanceof Error ? err.message : String(err);
+    const serviceDown = /credit balance|overloaded|rate.?limit|529|billing/i.test(msg);
     return NextResponse.json(
-      { error: "解析失敗，請再說一次或改用手動新增" },
+      {
+        error: serviceDown
+          ? "語音服務暫時無法使用，請先按「新增行程」手動輸入（不用再重說）"
+          : "解析失敗，請再說一次或改用手動新增",
+      },
       { status: 502 },
     );
   }

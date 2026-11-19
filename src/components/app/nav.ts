@@ -22,6 +22,7 @@ import {
   Timer,
   CalendarPlus,
   Inbox,
+  CalendarSearch,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,6 +35,7 @@ export interface NavItem {
 export const MAIN_NAV: NavItem[] = [
   { href: "/calendar", label: "行事曆", icon: CalendarDays },
   { href: "/digest", label: "區間總覽", icon: LayoutDashboard },
+  { href: "/weekly-free", label: "逐週查空檔", icon: CalendarSearch },
   { href: "/week-sheet", label: "週行程表", icon: Printer },
   { href: "/search", label: "搜尋", icon: Search },
   { href: "/recent", label: "新增紀錄", icon: ClipboardCheck },
@@ -47,6 +49,8 @@ export const MAIN_NAV: NavItem[] = [
 
 /** 只看空檔的人：幫排行程（0030） */
 export const PROPOSE_NAV: NavItem = { href: "/propose", label: "幫排行程", icon: CalendarPlus };
+/** 逐週查空檔（只看空檔的人也能用） */
+export const WEEKLY_FREE_NAV: NavItem = { href: "/weekly-free", label: "逐週查空檔", icon: CalendarSearch };
 /** 員工（家庭老師）：自己的工作紀錄與週報（0031） */
 export const MY_WORK_NAV: NavItem = { href: "/my-work", label: "我的工作", icon: Briefcase };
 /** 擁有者：審核別人提議的行程（0030） */
