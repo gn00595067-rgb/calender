@@ -184,6 +184,11 @@ export default function ProposePage() {
             const items = [
               ...busySegs.map((s) => ({ kind: "busy" as const, s })),
               ...(past ? [] : freeSegs.map((s) => ({ kind: "free" as const, s }))),
+              // 自己待審核的提議也照時間排進去（虛線）
+              ...pend.map((p) => {
+                const st = fmt(p.starts_at, "HH:mm");
+                return { kind: "pending" as const, s: { start: Number(st.slice(0, 2)) * 60 + Number(st.slice(3)), end: 0 }, p };
+              }),
             ].sort((a, b) => a.s.start - b.s.start);
             return (
               <section key={day} className={cn("rounded-xl border bg-card p-3", past && "opacity-60")}>
@@ -198,8 +203,18 @@ export default function ProposePage() {
                   {items.length === 0 && (
                     <li className="text-sm text-muted-foreground">{past ? "已過" : "沒有 30 分鐘以上的空檔"}</li>
                   )}
-                  {items.map(({ kind, s }) =>
-                    kind === "busy" ? (
+                  {items.map((it) => {
+                    const { kind, s } = it;
+                    if (it.kind === "pending")
+                      return (
+                        <li key={it.p.id} className="rounded-md border border-dashed border-primary/60 px-3 py-1.5 text-sm">
+                          <span className="tabular-nums">
+                            {fmt(it.p.starts_at, "HH:mm")}–{fmt(it.p.ends_at, "HH:mm")}
+                          </span>{" "}
+                          待審核：{it.p.title}
+                        </li>
+                      );
+                    return kind === "busy" ? (
                       <li key={`b${s.start}`} className="flex items-center gap-2 rounded-md bg-muted px-3 py-1.5 text-sm text-muted-foreground">
                         <span className="tabular-nums">
                           {minToHHMM(s.start)}–{minToHHMM(s.end)}
@@ -219,16 +234,8 @@ export default function ProposePage() {
                           ＋ 提議
                         </Button>
                       </li>
-                    ),
-                  )}
-                  {pend.map((p) => (
-                    <li key={p.id} className="rounded-md border border-dashed border-primary/60 px-3 py-1.5 text-sm">
-                      <span className="tabular-nums">
-                        {fmt(p.starts_at, "HH:mm")}–{fmt(p.ends_at, "HH:mm")}
-                      </span>{" "}
-                      待審核：{p.title}
-                    </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               </section>
             );
