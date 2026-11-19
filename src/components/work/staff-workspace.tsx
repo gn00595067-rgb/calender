@@ -409,14 +409,14 @@ function WeeklyReport({
         <p className="text-sm text-muted-foreground">這週還沒有工作紀錄。</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] border-collapse text-sm">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-muted/60">
                 <th className="border px-2 py-1.5 text-left">工作大項</th>
                 <th className="border px-2 py-1.5 text-left">類別</th>
                 <th className="border px-2 py-1.5 text-right">工時(h)</th>
                 <th className="border px-2 py-1.5 text-right">佔比</th>
-                <th className="border px-2 py-1.5 text-left">執行內容與成效概述</th>
+                <th className="hidden border px-2 py-1.5 text-left sm:table-cell print:table-cell">執行內容與成效概述</th>
               </tr>
             </thead>
             <tbody>
@@ -435,7 +435,7 @@ function WeeklyReport({
                     <td className="border px-2 py-1.5 text-right align-top tabular-nums">{r.hours.toFixed(2)}</td>
                     <td className="border px-2 py-1.5 text-right align-top tabular-nums">{pctText(r.hours, total)}</td>
                     {i === 0 && (
-                      <td className="border px-2 py-1 align-top" rowSpan={g.rows.length}>
+                      <td className="hidden border px-2 py-1 align-top sm:table-cell print:table-cell" rowSpan={g.rows.length}>
                         <Textarea
                           rows={Math.max(2, g.rows.length)}
                           className="min-h-0 border-0 px-0 shadow-none focus-visible:ring-0 print:hidden"
@@ -454,10 +454,28 @@ function WeeklyReport({
                 <td className="border px-2 py-1.5" />
                 <td className="border px-2 py-1.5 text-right tabular-nums">{total.toFixed(2)}</td>
                 <td className="border px-2 py-1.5 text-right">100%</td>
-                <td className="border px-2 py-1.5" />
+                <td className="hidden border px-2 py-1.5 sm:table-cell print:table-cell" />
               </tr>
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* 手機：表格放不下概述欄，改排在表格下面 */}
+      {total > 0 && (
+        <div className="space-y-2 sm:hidden print:hidden">
+          <p className="text-sm font-medium">執行內容與成效概述</p>
+          {groups.map((g) => (
+            <div key={g.group} className="space-y-1">
+              <Label className="text-xs">{g.group}</Label>
+              <Textarea
+                rows={2}
+                value={summaries[g.group] ?? ""}
+                onChange={(e) => setSummaries({ ...summaries, [g.group]: e.target.value })}
+                placeholder="這個大項做了什麼、有什麼成果"
+              />
+            </div>
+          ))}
         </div>
       )}
 
