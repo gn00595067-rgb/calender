@@ -2,7 +2,7 @@
 
 import { Star } from "lucide-react";
 import { layoutDay } from "@/lib/calendar-utils";
-import { eventStyle, stripLeadingTime } from "@/components/calendar/event-visuals";
+import { eventStyle, proposalStyle, stripLeadingTime } from "@/components/calendar/event-visuals";
 import { D, taipeiDateStartUtcISO } from "@/lib/date";
 import { cn } from "@/lib/utils";
 import type { CalEvent } from "@/lib/client/events";
@@ -63,8 +63,9 @@ export function IntervalGrid({
           <div className="border-r bg-muted/40" />
           {days.map((ds) => {
             const a = dayAvailability(events, ds, w, minGap);
+            // 只算正式行程；待審核的提議（虛線）不算
             const timedCount = events.filter(
-              (e) => eventSegmentOnDay(e, ds) !== null,
+              (e) => !e.proposal && eventSegmentOnDay(e, ds) !== null,
             ).length;
             const isToday = ds === todayStr;
             return (
@@ -183,6 +184,7 @@ export function IntervalGrid({
                       }`}
                       style={{
                         ...eventStyle(colorOf(event.calendar_id), isConflict),
+                        ...(event.proposal ? proposalStyle(colorOf(event.calendar_id)) : {}),
                         position: "absolute",
                         top,
                         height,

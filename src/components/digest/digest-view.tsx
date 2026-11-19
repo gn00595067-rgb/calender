@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, ListSkeleton } from "@/components/app/states";
 import { EventTwoLineCard } from "@/components/calendar/event-card";
+import { useProposalGhosts } from "@/components/proposals/use-proposal-ghosts";
 import { EventDetailDialog } from "@/components/calendar/event-detail-dialog";
 import { EventModal } from "@/components/calendar/event-modal";
 import { useAppData } from "@/components/app/app-data";
@@ -125,13 +126,17 @@ export function DigestView() {
     [...visibleIds],
   );
 
+  // 待審核的提議（0030）用虛線併進來；空檔、衝突、忙碌時數都會略過它
+  const ghosts = useProposalGhosts(events, startIso, endIso);
+  const selectEvent = (e: CalEvent) => ghosts.select(e, setDetail);
+
   // 依「空檔對象」過濾：影響空檔計算、行程顯示與衝突
   const shownEvents = useMemo(
     () =>
       avTargets.size === 0
-        ? events
-        : events.filter((e) => avTargets.has(e.calendar_id)),
-    [events, avTargets],
+        ? ghosts.events
+        : ghosts.events.filter((e) => avTargets.has(e.calendar_id)),
+    [ghosts.events, avTargets],
   );
 
   const conflicts = useMemo(() => conflictIds(shownEvents), [shownEvents]);
@@ -186,7 +191,7 @@ export function DigestView() {
           colorOf={colorOf}
           conflicts={conflicts}
           minGap={minGap}
-          onSelect={setDetail}
+          onSelect={selectEvent}
           onCreateAt={canCreate ? openCreate : undefined}
           todayStr={todayStr}
         />
@@ -198,7 +203,7 @@ export function DigestView() {
           events={shownEvents}
           colorOf={colorOf}
           conflicts={conflicts}
-          onSelect={setDetail}
+          onSelect={selectEvent}
         />
       );
     return (
@@ -207,7 +212,7 @@ export function DigestView() {
         finance={finance}
         colorOf={colorOf}
         calendarNameOf={(id) => calendarById.get(id)?.name ?? "分類"}
-        onSelect={setDetail}
+        onSelect={selectEvent}
         financeVisible={anyFinanceVisible}
         days={days}
         w={w}
@@ -371,6 +376,7 @@ export function DigestView() {
         )}
       </div>
 
+      {ghosts.dialog}
       <EventDetailDialog
         open={!!detail}
         onOpenChange={(o) => !o && setDetail(null)}
@@ -591,6 +597,8 @@ function MonthlySummary({
   const months = useMemo(() => {
     const map = new Map<string, CalEvent[]>();
     for (const e of events) {
+      // 月摘要只統計正式行程；待審核的提議在待審核頁看
+      if (e.proposal) continue;
       const key = format(zoned(e.starts_at), "yyyy-MM");
       const arr = map.get(key);
       if (arr) arr.push(e);

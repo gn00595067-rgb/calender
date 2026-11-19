@@ -33,15 +33,13 @@ import { MonthView } from "./month-view";
 import { TimeGridView } from "./time-grid-view";
 import { EventModal } from "./event-modal";
 import { EventDetailDialog } from "./event-detail-dialog";
-import { usePendingProposalsInRange, type ProposalRow } from "@/lib/client/proposals";
-import { ProposalReviewCard } from "@/components/proposals/proposal-review";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useProposalGhosts } from "@/components/proposals/use-proposal-ghosts";
 import type { CalEvent } from "@/lib/client/events";
 
 type ViewMode = "month" | "week" | "day";
 
 export function CalendarView() {
-  const { calendars, calendarById, me, visibleIds } = useAppData();
+  const { calendars, calendarById } = useAppData();
   const canCreate = calendars.some((c) => can.editEvents(c.effectiveRole));
 
   const [view, setView] = useState<ViewMode>("month");
@@ -203,46 +201,10 @@ export function CalendarView() {
 
   const conflicts = useMemo(() => conflictIds(events), [events]);
 
-  // 待審核的提議（0030）：用虛線畫在月曆／週曆上；不算衝突、不算空檔（各視圖會略過 proposal）
-  const { data: proposals = [] } = usePendingProposalsInRange(
-    me.reviewsProposals ? me.id : "",
-    range.startIso,
-    range.endIso,
-  );
-  const [reviewing, setReviewing] = useState<ProposalRow | null>(null);
-  const shownEvents = useMemo(() => {
-    if (proposals.length === 0) return events;
-    const ghosts: CalEvent[] = proposals
-      .filter((p) => calendarById.has(p.calendar_id) && visibleIds.has(p.calendar_id))
-      .map((p) => ({
-        id: `proposal-${p.id}`,
-        calendar_id: p.calendar_id,
-        creator_id: p.proposer_id,
-        title: `待審核：${p.title}`,
-        description: p.note,
-        location: p.location,
-        starts_at: p.starts_at,
-        ends_at: p.ends_at,
-        all_day: false,
-        is_important: false,
-        recurrence_rule: null,
-        recurrence_group_id: null,
-        reminder_minutes: null,
-        reminder2_minutes: null,
-        contactNames: [],
-        subjectNames: [],
-        participantNames: [],
-        tagNames: [],
-        finance: [],
-        noteCount: 0,
-        noteAuthorIds: [],
-        driver: null,
-        travel: null,
-        proposal: p,
-      }));
-    return [...events, ...ghosts].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-  }, [events, proposals, calendarById, visibleIds]);
-  const selectEvent = (e: CalEvent) => (e.proposal ? setReviewing(e.proposal) : setDetail(e));
+  // 待審核的提議（0030）：用虛線畫在月曆／週曆上；不算衝突、不算空檔
+  const ghosts = useProposalGhosts(events, range.startIso, range.endIso);
+  const shownEvents = ghosts.events;
+  const selectEvent = (e: CalEvent) => ghosts.select(e, setDetail);
   const colorOf = (calendarId: string) =>
     calendarById.get(calendarId)?.color ?? "#64748B";
 
@@ -486,14 +448,7 @@ export function CalendarView() {
       />
 
       {/* 待審核的提議：審核／退回 */}
-      <Dialog open={!!reviewing} onOpenChange={(o) => !o && setReviewing(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>待審核的行程</DialogTitle>
-          </DialogHeader>
-          {reviewing && <ProposalReviewCard proposal={reviewing} onDone={() => setReviewing(null)} />}
-        </DialogContent>
-      </Dialog>
+      {ghosts.dialog}
 
       {/* 新增 */}
       <EventModal

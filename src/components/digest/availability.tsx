@@ -183,6 +183,10 @@ export function DayLoadBar({
               left: `${pct(seg.start, w)}%`,
               width: `${Math.max(1, pct(seg.end, w) - pct(seg.start, w))}%`,
               backgroundColor: colorOf(e.calendar_id),
+              // 待審核的提議（0030）：虛線框、不填色
+              ...(e.proposal
+                ? { backgroundColor: "transparent", border: `1.5px dashed ${colorOf(e.calendar_id)}` }
+                : {}),
             }}
           />
         ))}

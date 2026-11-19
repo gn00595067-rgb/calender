@@ -90,6 +90,8 @@ interface TimeSpan {
   id: string;
   starts_at: string;
   ends_at: string;
+  /** 待審核的提議（0030）：不算衝突 */
+  proposal?: unknown;
 }
 
 /** 兩事件是否時間重疊（以 UTC 瞬間比較） */
@@ -102,7 +104,7 @@ export function overlaps(a: TimeSpan, b: TimeSpan): boolean {
 
 /** 回傳與至少一筆其他行程時間重疊的行程 id 集合（衝突） */
 export function conflictIds(events: TimeSpan[]): Set<string> {
-  const sorted = [...events].sort(
+  const sorted = events.filter((e) => !e.proposal).sort(
     (a, b) => +new Date(a.starts_at) - +new Date(b.starts_at),
   );
   const conflict = new Set<string>();

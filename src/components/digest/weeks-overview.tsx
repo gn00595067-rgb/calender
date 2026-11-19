@@ -30,7 +30,8 @@ function busyMinutes(ds: string, events: CalEvent[]): number {
   const from = dayStart + DAY_FROM_MIN * 60000;
   const to = dayStart + DAY_TO_MIN * 60000;
   const segs = events
-    .filter((e) => !e.all_day)
+    // 待審核的提議（0030）不算忙碌
+    .filter((e) => !e.all_day && !e.proposal)
     .map((e) => [Math.max(Date.parse(e.starts_at), from), Math.min(Date.parse(e.ends_at), to)] as const)
     .filter(([s, en]) => en > s)
     .sort((a, b) => a[0] - b[0]);

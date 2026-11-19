@@ -8,7 +8,8 @@ import { ErrorState, ListSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
 import { EventDetailDialog } from "@/components/calendar/event-detail-dialog";
 import { EventModal } from "@/components/calendar/event-modal";
-import { eventStyle, stripLeadingTime } from "@/components/calendar/event-visuals";
+import { eventStyle, proposalStyle, stripLeadingTime } from "@/components/calendar/event-visuals";
+import { useProposalGhosts } from "@/components/proposals/use-proposal-ghosts";
 import { useAppData } from "@/components/app/app-data";
 import { useCalendarEvents, type CalEvent } from "@/lib/client/events";
 import { layoutDay } from "@/lib/calendar-utils";
@@ -162,7 +163,10 @@ function WeekSheetInner() {
   const days = Array.from({ length: span }, (_, i) => addDaysStr(start, i));
   const startIso = taipeiDateStartUtcISO(start);
   const endIso = taipeiDateStartUtcISO(addDaysStr(start, span));
-  const { data: events = [], isLoading, isError, error, refetch } = useCalendarEvents(startIso, endIso);
+  const { data: realEvents = [], isLoading, isError, error, refetch } = useCalendarEvents(startIso, endIso);
+  // 待審核的提議（0030）用虛線併進來；列印時不印
+  const ghosts = useProposalGhosts(realEvents, startIso, endIso);
+  const events = ghosts.events;
 
   /** 這筆行程屬於誰：主角裡的這四位；都沒有就算本人 */
   const visible = useMemo(() => {
@@ -301,7 +305,7 @@ function WeekSheetInner() {
               toH={toH}
               today={today}
               colorOf={(id) => calendarById.get(id)?.color ?? "#64748B"}
-              onSelect={setDetail}
+              onSelect={(e) => ghosts.select(e, setDetail)}
               onCreateAt={canCreate ? openCreate : undefined}
             />
           ))}
@@ -311,6 +315,7 @@ function WeekSheetInner() {
         </div>
       )}
 
+      {ghosts.dialog}
       <EventDetailDialog
         open={!!detail}
         onOpenChange={(o) => !o && setDetail(null)}
@@ -515,13 +520,17 @@ function WeekBlock({
                         title={`${time} ${event.title}`}
                         style={{
                           ...eventStyle(colorOf(event.calendar_id)),
+                          ...(event.proposal ? proposalStyle(colorOf(event.calendar_id)) : {}),
                           position: "absolute",
                           top,
                           height: h,
                           left: `calc(${col * w}% + 1px)`,
                           width: `calc(${span * w}% - 2px)`,
                         }}
-                        className="flex flex-col overflow-hidden rounded px-1 py-px text-left leading-[1.25] hover:brightness-95"
+                        className={cn(
+                          "flex flex-col overflow-hidden rounded px-1 py-px text-left leading-[1.25] hover:brightness-95",
+                          event.proposal && "print:hidden",
+                        )}
                       >
                         <span
                           className={cn(

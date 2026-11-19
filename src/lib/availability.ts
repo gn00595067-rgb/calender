@@ -26,6 +26,8 @@ interface TimedLike {
   all_day: boolean;
   /** 有司機接送時，車程也算沒空（見 travelPadding） */
   driver?: { trip: "to" | "from" | "round"; pickupMinutes: number } | null;
+  /** 待審核的提議（0030，虛線顯示）：還不是正式行程，不算忙碌 */
+  proposal?: unknown;
 }
 
 /**
@@ -151,6 +153,7 @@ export function busyOnDay(
 ): Segment[] {
   const segs: Segment[] = [];
   for (const e of events) {
+    if (e.proposal) continue;
     const seg = eventSegmentOnDay(e, dayStr);
     if (!seg) continue;
     const pad = travelPadding(e);
