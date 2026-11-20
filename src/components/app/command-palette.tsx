@@ -17,7 +17,8 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import { MAIN_NAV, SETTINGS_NAV } from "./nav";
+import { MAIN_NAV, SETTINGS_NAV, TUTOR_MAIN_HREFS, TUTOR_SETTINGS_HREFS } from "./nav";
+import { useAppDataOptional } from "./app-data";
 import { MicButton } from "@/components/voice/mic-button";
 import { Search } from "lucide-react";
 
@@ -61,6 +62,9 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
 
   const value = useMemo<CommandPaletteValue>(() => ({ open: () => setOpen(true) }), []);
 
+  // 家庭老師只列用得到的頁（同側欄）
+  const cals = useAppDataOptional()?.calendars ?? [];
+  const tutorOnly = cals.length > 0 && cals.every((c) => !c.isOwned && c.effectiveRole === "scheduler");
   const go = (href: string) => {
     setOpen(false);
     router.push(href);
@@ -105,7 +109,7 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
             </>
           )}
           <CommandGroup heading="前往">
-            {MAIN_NAV.map((item) => (
+            {MAIN_NAV.filter((n) => !tutorOnly || TUTOR_MAIN_HREFS.has(n.href)).map((item) => (
               <CommandItem key={item.href} value={item.label} onSelect={() => go(item.href)}>
                 <item.icon className="size-4" />
                 {item.label}
@@ -113,7 +117,7 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
             ))}
           </CommandGroup>
           <CommandGroup heading="設定">
-            {SETTINGS_NAV.map((item) => (
+            {SETTINGS_NAV.filter((n) => !tutorOnly || TUTOR_SETTINGS_HREFS.has(n.href)).map((item) => (
               <CommandItem key={item.href} value={item.label} onSelect={() => go(item.href)}>
                 <item.icon className="size-4" />
                 {item.label}

@@ -5,7 +5,16 @@ import { usePathname } from "next/navigation";
 import { CalendarClock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
-import { MAIN_NAV, SETTINGS_NAV, PROPOSE_NAV, PROPOSALS_NAV, MY_WORK_NAV, WEEKLY_FREE_NAV } from "./nav";
+import {
+  MAIN_NAV,
+  SETTINGS_NAV,
+  PROPOSE_NAV,
+  PROPOSALS_NAV,
+  MY_WORK_NAV,
+  WEEKLY_FREE_NAV,
+  TUTOR_MAIN_HREFS,
+  TUTOR_SETTINGS_HREFS,
+} from "./nav";
 import { useAppData } from "./app-data";
 import { useIncomingProposals } from "@/lib/client/proposals";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,6 +28,9 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pendingCount = me.reviewsProposals ? (incoming?.pending.length ?? 0) : 0;
   // 只有「只看空檔」身分（秘書：沒有任何看得到內容的分類）：選單只留幫排行程和手機通知
   const onlyPropose = me.canPropose && calendars.length === 0;
+  // 家庭老師：沒有自己的分類、被分享的全是「老師」身分 → 只列用得到的頁
+  const tutorOnly =
+    calendars.length > 0 && calendars.every((c) => !c.isOwned && c.effectiveRole === "scheduler");
   const main = onlyPropose
     ? [PROPOSE_NAV, WEEKLY_FREE_NAV, ...(me.isStaff ? [MY_WORK_NAV] : [])]
     : [
@@ -27,10 +39,12 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
         MAIN_NAV[0],
         ...(me.reviewsProposals ? [PROPOSALS_NAV] : []),
         ...MAIN_NAV.slice(1),
-      ];
+      ].filter((n) => !tutorOnly || n === MY_WORK_NAV || n === PROPOSE_NAV || TUTOR_MAIN_HREFS.has(n.href));
   const settings = onlyPropose
     ? SETTINGS_NAV.filter((n) => n.href === "/settings/notifications")
-    : SETTINGS_NAV;
+    : tutorOnly
+      ? SETTINGS_NAV.filter((n) => TUTOR_SETTINGS_HREFS.has(n.href))
+      : SETTINGS_NAV;
   const render = (items: typeof MAIN_NAV) =>
     items.map((item) => {
       const active =

@@ -58,6 +58,23 @@ export const MY_WORK_NAV: NavItem = { href: "/my-work", label: "我的工作", i
 /** 擁有者：審核別人提議的行程（0030） */
 export const PROPOSALS_NAV: NavItem = { href: "/proposals", label: "待審核", icon: Inbox };
 
+/**
+ * 家庭老師（只有被分享「老師」身分、沒有自己的分類）看得到的頁面。
+ * 報表、工作效益、司機、費用、人物管理等她用不到（點進去也是空的），選單不列（Elsa 11/20）。
+ */
+export const TUTOR_MAIN_HREFS = new Set([
+  "/calendar",
+  "/digest",
+  "/weekly-free",
+  "/week-sheet",
+  "/search",
+  "/recent",
+  "/learning",
+  "/classrooms",
+  "/tutoring",
+]);
+export const TUTOR_SETTINGS_HREFS = new Set(["/settings/notifications", "/settings/habits"]);
+
 export const SETTINGS_NAV: NavItem[] = [
   { href: "/settings/notifications", label: "手機通知", icon: BellRing },
   { href: "/settings/calendars", label: "分類管理", icon: FolderCog },
