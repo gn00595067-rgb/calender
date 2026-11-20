@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { fetchSafeContacts } from "@/lib/client/shared-contacts";
 import { pickTeacher, type PersonLite } from "@/lib/learning";
 
 export interface NoteView {
@@ -82,7 +83,7 @@ export function useNoteContext(eventId: string | null, noteIds: string[]) {
       const links = ecRes.data ?? [];
       // 用 * 而非列欄位：0017 前的庫沒有 aliases
       const { data: cts } = links.length
-        ? await supabase.from("contacts").select("*").in("id", links.map((l) => l.contact_id))
+        ? { data: await fetchSafeContacts(links.map((l) => l.contact_id)) }
         : { data: [] };
       const byId = new Map((cts ?? []).map((c) => [c.id, c]));
       const people = links.flatMap((l) => {

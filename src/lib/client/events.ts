@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAppData } from "@/components/app/app-data";
 import { driverFromRow, type DriverInfo, type DriverTrip } from "@/lib/driver";
 import type { ProposalRow } from "@/lib/client/proposals";
+import { fetchSafeContacts } from "@/lib/client/shared-contacts";
 
 /** 視圖用行程（含精簡關聯） */
 export interface CalEvent {
@@ -113,20 +114,16 @@ export async function enrichEvents(rows: EventRowLite[]): Promise<CalEvent[]> {
   const contactIds = [...new Set((ecRes.data ?? []).map((r) => r.contact_id))];
   const tagIds = [...new Set((etRes.data ?? []).map((r) => r.tag_id))];
 
-  const [contactsRes, tagsRes, rulesRes] = await Promise.all([
-    contactIds.length
-      ? supabase.from("contacts").select("id, name").in("id", contactIds)
-      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+  const [safeContacts, tagsRes] = await Promise.all([
+    // 不含錢的欄位（家庭老師讀不到人物表整列，0034）
+    fetchSafeContacts(contactIds),
     tagIds.length
       ? supabase.from("tags").select("id, name").in("id", tagIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
-    // 老師的規則另外查：0030 前沒有這欄 → 查詢失敗就當沒有
-    contactIds.length
-      ? supabase.from("contacts").select("id, rules").in("id", contactIds)
-      : Promise.resolve({ data: [] as { id: string; rules: string | null }[] }),
   ]);
+  const contactsRes = { data: safeContacts };
   const rulesById = new Map(
-    (rulesRes.data ?? []).filter((c) => c.rules?.trim()).map((c) => [c.id, c.rules!.trim()]),
+    safeContacts.filter((c) => c.rules?.trim()).map((c) => [c.id, c.rules!.trim()]),
   );
   const rulesByEvent = new Map<string, Record<string, string>>();
 

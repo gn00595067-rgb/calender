@@ -1111,6 +1111,21 @@ export interface Database {
         }[];
       };
       // 0028 司機
+      shared_contacts: {
+        Args: { p_ids?: string[] | null };
+        Returns: {
+          id: string;
+          owner_id: string;
+          name: string;
+          role_label: string | null;
+          is_family: boolean;
+          is_self: boolean;
+          aliases: string[];
+          rules: string | null;
+          routine: unknown;
+          gap_mode: string;
+        }[];
+      };
       my_staff_links: {
         Args: Record<string, never>;
         Returns: { contact_id: string; contact_name: string; owner_id: string; owner_name: string }[];

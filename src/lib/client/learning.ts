@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { fetchSafeContacts } from "@/lib/client/shared-contacts";
 import { taipeiDateEndExclusiveUtcISO, taipeiDateStartUtcISO } from "@/lib/date";
 import { pickTeacher, type PersonLite } from "@/lib/learning";
 
@@ -82,7 +83,8 @@ export function useLearningFeed(start: string, end: string) {
       const authorIds = [...new Set(notes.map((n) => n.author_id))];
       const [contacts, parts, profiles] = await Promise.all([
         inChunks(contactIds, async (c) =>
-          (await supabase.from("contacts").select("id, name, role_label").in("id", c)).data ?? [],
+          // 不含錢的欄位（0034）
+          await fetchSafeContacts(c),
         ),
         inChunks(noteIds, async (c) => {
           const res = await supabase

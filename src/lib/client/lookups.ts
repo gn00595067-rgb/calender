@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { fetchSafeContacts } from "@/lib/client/shared-contacts";
 import { defaultPlanLabel, type RatePlan } from "@/lib/rate-plans";
 import type { RoutineBlock } from "@/lib/availability";
 import { useAppDataOptional } from "@/components/app/app-data";
@@ -75,8 +76,10 @@ export function useGapProfiles() {
   return useQuery({
     queryKey: ["contacts", "gap-profiles"],
     queryFn: async (): Promise<GapProfiles> => {
-      const supabase = createClient();
-      const { data, error } = await supabase.from("contacts").select("*").eq("is_family", true);
+      // 不含錢的欄位（家庭老師也要看得到家長的家人作息，0034）
+      const all = await fetchSafeContacts(null).catch(() => null);
+      const data = all?.filter((c) => c.is_family) ?? null;
+      const error = all ? null : true;
       const out: GapProfiles = {
         routines: new Map(),
         gapMode: new Map(),
