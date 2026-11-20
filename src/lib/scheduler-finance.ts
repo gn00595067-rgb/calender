@@ -168,7 +168,7 @@ export async function syncSchedulerFinance(
       .in("id", eventIds)
       .eq("creator_id", userId),
     admin.from("event_contacts").select("event_id, contact_id, role").in("event_id", eventIds),
-    admin.from("finance_records").select("id, event_id, is_settled, payment_method").in("event_id", eventIds),
+    admin.from("finance_records").select("id, event_id, is_settled, payment_method, rate_plan_id").in("event_id", eventIds),
   ]);
 
   const ids = (role: string, eventId: string) =>
@@ -205,7 +205,9 @@ export async function syncSchedulerFinance(
     const subjectIds = ids("subject", ev.id);
     const plan = lessonPlan(teacher, subjectIds, ev.title, ev.all_day);
     const old = (existing ?? []).find((f) => f.event_id === ev.id);
-    if (old && lockedByParent(old)) continue;
+    // 家長手動記的費用（沒有用收費方案，例如 Elsa 用 Peggy 帳號 key 的）一律不動：
+    // 行程改成家庭老師登錄後，她改時間或人物也不能把原本的金額蓋掉或刪掉（秘書 11/20）
+    if (old && (lockedByParent(old) || !old.rate_plan_id)) continue;
 
     const minutes = (new Date(ev.ends_at).getTime() - new Date(ev.starts_at).getTime()) / 60000;
     const salaried = isMonthlyPlan(plan);
@@ -260,8 +262,9 @@ export async function deleteSchedulerFinance(userId: string, eventIds: string[])
   if (!calId || !(await schedulerOwner(admin, userId, calId))) return;
   const { data: fins } = await admin
     .from("finance_records")
-    .select("id, is_settled, payment_method")
+    .select("id, is_settled, payment_method, rate_plan_id")
     .in("event_id", events.map((e) => e.id));
-  const drop = (fins ?? []).filter((f) => !lockedByParent(f)).map((f) => f.id);
+  // 只刪系統依收費方案代記的；家長手動記的留著
+  const drop = (fins ?? []).filter((f) => !lockedByParent(f) && !!f.rate_plan_id).map((f) => f.id);
   if (drop.length) await admin.from("finance_records").delete().in("id", drop);
 }
