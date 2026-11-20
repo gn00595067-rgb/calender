@@ -39,7 +39,10 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
         MAIN_NAV[0],
         ...(me.reviewsProposals ? [PROPOSALS_NAV] : []),
         ...MAIN_NAV.slice(1),
-      ].filter((n) => !tutorOnly || n === MY_WORK_NAV || n === PROPOSE_NAV || TUTOR_MAIN_HREFS.has(n.href));
+      ]
+        .filter((n) => !tutorOnly || n === MY_WORK_NAV || n === PROPOSE_NAV || TUTOR_MAIN_HREFS.has(n.href))
+        // 家庭老師打開家教填報只看得到週課表，選單直接叫週課表
+        .map((n) => (tutorOnly && n.href === "/tutoring" ? { ...n, label: "週課表（預排）" } : n));
   const settings = onlyPropose
     ? SETTINGS_NAV.filter((n) => n.href === "/settings/notifications")
     : tutorOnly

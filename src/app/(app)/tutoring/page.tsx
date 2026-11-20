@@ -46,6 +46,26 @@ function monthEnd(ym: string): string {
  * spec：docs/specs/家教老師填報.md
  */
 export default function TutoringPage() {
+  const { me, calendars } = useAppData();
+  // 家庭老師（只被分享「老師」身分、沒有自己的分類）：這頁只給她排家長家的週課表（Phoenix 11/20）
+  const tutorOnly =
+    calendars.length > 0 && calendars.every((c) => !c.isOwned && c.effectiveRole === "scheduler");
+  if (tutorOnly) {
+    const parentId = calendars[0].owner_id;
+    return (
+      <div className="mx-auto max-w-5xl">
+        <PageHeader
+          title="週課表（預排）"
+          description="事前排好每個時段做什麼；行事曆上的「到班」區塊點進去，可以跟實際的工作報告對照。"
+        />
+        <ScheduleView ownerId={parentId} userId={me.id} />
+      </div>
+    );
+  }
+  return <ParentTutoringPage />;
+}
+
+function ParentTutoringPage() {
   const { me } = useAppData();
   const qc = useQueryClient();
   const today = taipeiTodayStr();
