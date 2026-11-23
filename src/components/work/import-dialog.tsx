@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { importWorkLogsAction } from "@/lib/actions/work";
-import type { WorkCategory } from "@/lib/client/work";
+import type { WorkCategoryLite } from "@/lib/work-import";
 import { matchCategory, parseWorkbook, type Cell, type ParseResult } from "@/lib/work-import";
 import { taipeiTodayStr } from "@/lib/date";
 
@@ -27,7 +27,7 @@ function monthLabel(ym: string): string {
 
 /**
  * 匯入工作報告 Excel：讀檔 → 預覽（月份、對不到的類別）→ 寫入。
- * 同一個月重新匯入會以新檔為準（先清掉該月舊紀錄）。
+ * 檔案裡有的日期以新檔為準（先清掉那幾天的舊紀錄），其他天不動。
  */
 export function WorkImportDialog({
   open,
@@ -41,8 +41,9 @@ export function WorkImportDialog({
   onOpenChange: (o: boolean) => void;
   contactId: string;
   contactName: string;
-  categories: WorkCategory[];
-  onImported: (months: string[]) => void;
+  categories: (WorkCategoryLite & { hourly_rate?: number })[];
+  /** months：匯入的月份；lastDate：最後一筆的日期（我的工作用來跳到那一週） */
+  onImported: (months: string[], lastDate?: string) => void;
 }) {
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [fileName, setFileName] = useState("");
@@ -139,7 +140,7 @@ export function WorkImportDialog({
       toast.success(
         `已匯入 ${res.data.inserted} 筆${res.data.replaced ? `（取代原本 ${res.data.replaced} 筆）` : ""}`,
       );
-      onImported([...monthPick].sort());
+      onImported([...monthPick].sort(), rows.map((r) => r.workDate).sort().at(-1));
       reset();
       onOpenChange(false);
     });
@@ -210,7 +211,7 @@ export function WorkImportDialog({
                 ))}
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
-                已經匯入過的月份會以這次的檔案為準（舊的那個月會被取代，不會重複）。
+                檔案裡有出現的日期會以這次為準（那幾天原本的紀錄會被取代，不會重複）；其他天不受影響。
               </p>
             </div>
 
@@ -237,7 +238,7 @@ export function WorkImportDialog({
                         <option value={NONE}>不分類</option>
                         {categories.map((c) => (
                           <option key={c.id} value={c.id}>
-                            {c.name}（{c.hourly_rate}）
+                            {c.name}{c.hourly_rate != null ? `（${c.hourly_rate}）` : ""}
                           </option>
                         ))}
                       </select>

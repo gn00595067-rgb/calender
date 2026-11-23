@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Pencil, Plus, Printer, Sparkles, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileSpreadsheet, Pencil, Plus, Printer, Sparkles, Trash2 } from "lucide-react";
+import { WorkImportDialog } from "./import-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +43,8 @@ export function StaffWorkspace({
   const [pick, setPick] = useState<string | null>(null);
   const [weekStart, setWeekStart] = useState(mondayOf(today));
   const [tab, setTab] = useState(defaultTab);
+  const [importOpen, setImportOpen] = useState(false);
+  const qc = useQueryClient();
   const contactId = pick ?? people[0]?.id ?? null;
   const weekEnd = addDays(weekStart, 6);
   const cats = useStaffCategories(contactId);
@@ -77,7 +80,11 @@ export function StaffWorkspace({
         <span className="text-lg font-bold">
           {md(weekStart)}–{md(weekEnd)}
         </span>
-        <div className="ml-auto flex rounded-md border p-0.5">
+        <Button variant="outline" className="ml-auto" onClick={() => setImportOpen(true)} disabled={!contactId}>
+          <FileSpreadsheet className="size-4" />
+          匯入 Excel
+        </Button>
+        <div className="flex rounded-md border p-0.5">
           {(
             [
               ["logs", "每日紀錄"],
@@ -95,6 +102,22 @@ export function StaffWorkspace({
           ))}
         </div>
       </div>
+
+      {contactId && (
+        <WorkImportDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          contactId={contactId}
+          contactName={people.find((p) => p.id === contactId)?.name ?? ""}
+          categories={cats.data ?? []}
+          onImported={(_months, lastDate) => {
+            qc.invalidateQueries({ queryKey: ["staff"] });
+            qc.invalidateQueries({ queryKey: ["work"] });
+            // 跳到最後一筆那一週，馬上看得到匯入的內容
+            if (lastDate) setWeekStart(mondayOf(lastDate));
+          }}
+        />
+      )}
 
       {!contactId ? null : cats.isLoading || logs.isLoading ? (
         <ListSkeleton rows={5} />
@@ -189,7 +212,7 @@ function DailyLogs({
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        本週合計 <b className="text-foreground">{weekHours.toFixed(2)}</b> 小時。到班時做完一件事記一筆；也可以照舊在「工作效益」匯入 Excel。
+        本週合計 <b className="text-foreground">{weekHours.toFixed(2)}</b> 小時。到班時做完一件事記一筆；已經用 Excel 記的，按上面「匯入 Excel」。
       </p>
       {categories.length === 0 && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">

@@ -76,7 +76,7 @@ export async function saveWorkSetupAction(input: unknown): Promise<ActionResult>
 
 const importSchema = z.object({
   contactId: z.uuid(),
-  /** 要匯入的月份 yyyy-MM：這些月份原本的紀錄會先清掉再寫入（重複匯入不會變兩倍） */
+  /** 要匯入的月份 yyyy-MM（只匯入這些月份的列；檔案裡出現的日期，原本的紀錄會先清掉再寫入） */
   months: z.array(z.string().regex(/^\d{4}-\d{2}$/)).min(1).max(24),
   rows: z
     .array(
@@ -103,20 +103,33 @@ export async function importWorkLogsAction(
   const d = parsed.data;
   try {
     const { supabase, user } = await getAuthed();
+    // 家長自己匯入，或家庭老師（員工帳號）在「我的工作」匯入自己的（0031；Phoenix 11/23）
+    const { data: own } = await supabase
+      .from("contacts")
+      .select("owner_id")
+      .eq("id", d.contactId)
+      .eq("owner_id", user.id)
+      .maybeSingle();
+    let ownerId = own?.owner_id ?? null;
+    if (!ownerId) {
+      const { data: links } = await supabase.rpc("my_staff_links");
+      ownerId = links?.find((l) => l.contact_id === d.contactId)?.owner_id ?? null;
+    }
+    if (!ownerId) return fail("你沒有權限匯入這位的工作紀錄");
+    const isStaff = ownerId !== user.id;
     const months = new Set(d.months);
     const rows = d.rows.filter((r) => months.has(r.workDate.slice(0, 7)));
 
-    // 先清掉這些月份的舊紀錄（重新匯入同一個月＝以新檔為準）
+    // 只替換檔案裡有的那幾天（同一天重新匯入＝以新檔為準）；其他天、手動記的都不動
+    // （原本整月清掉：只匯一週會刪掉同月其他天，Phoenix 11/23 要試匯上週）
     let replaced = 0;
-    for (const m of months) {
-      const [y, mo] = m.split("-").map(Number);
-      const next = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, "0")}-01`;
+    const days = [...new Set(rows.map((r) => r.workDate))];
+    for (let i = 0; i < days.length; i += 100) {
       const { data: del, error } = await supabase
         .from("work_logs")
         .delete()
         .eq("contact_id", d.contactId)
-        .gte("work_date", `${m}-01`)
-        .lt("work_date", next)
+        .in("work_date", days.slice(i, i + 100))
         .select("id");
       if (error) return fail(error.message);
       replaced += del?.length ?? 0;
@@ -125,8 +138,9 @@ export async function importWorkLogsAction(
     if (rows.length) {
       const { error } = await supabase.from("work_logs").insert(
         rows.map((r) => ({
-          owner_id: user.id,
+          owner_id: ownerId,
           contact_id: d.contactId,
+          author_id: user.id,
           work_date: r.workDate,
           start_time: r.startTime,
           end_time: r.endTime,
@@ -139,9 +153,9 @@ export async function importWorkLogsAction(
       if (error) return fail(error.message);
     }
 
-    // 記住對應（別名）
+    // 記住對應（別名）：分類只有家長能改，家庭老師匯入時不記
     const byCat = new Map<string, string[]>();
-    for (const a of d.aliasAdds) byCat.set(a.categoryId, [...(byCat.get(a.categoryId) ?? []), a.alias]);
+    for (const a of isStaff ? [] : d.aliasAdds) byCat.set(a.categoryId, [...(byCat.get(a.categoryId) ?? []), a.alias]);
     for (const [catId, aliases] of byCat) {
       const { data: cat } = await supabase
         .from("work_categories")
