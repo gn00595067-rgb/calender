@@ -36,6 +36,7 @@ export function WorkImportDialog({
   contactName,
   categories,
   onImported,
+  staffMode = false,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -44,6 +45,8 @@ export function WorkImportDialog({
   categories: (WorkCategoryLite & { hourly_rate?: number })[];
   /** months：匯入的月份；lastDate：最後一筆的日期（我的工作用來跳到那一週） */
   onImported: (months: string[], lastDate?: string) => void;
+  /** 家庭老師自己匯入：說明文字不提錢、不說會記住對應（只有家長能改分類） */
+  staffMode?: boolean;
 }) {
   const [parsed, setParsed] = useState<ParseResult | null>(null);
   const [fileName, setFileName] = useState("");
@@ -219,7 +222,9 @@ export function WorkImportDialog({
               <div>
                 <div className="mb-1.5 font-medium">這些類別要算哪一項？</div>
                 <p className="mb-2 text-xs text-muted-foreground">
-                  Excel 裡的類別寫法跟工作分類對不上。選了之後會記住，下次自動對應；選「不分類」就先不算錢，之後可在明細改。
+                  {staffMode
+                    ? "Excel 裡的類別寫法跟工作類別對不上，請選要算哪一項；不確定就選「不分類」，之後可以在每日紀錄改。"
+                    : "Excel 裡的類別寫法跟工作分類對不上。選了之後會記住，下次自動對應；選「不分類」就先不算錢，之後可在明細改。"}
                 </p>
                 <div className="space-y-2">
                   {unmatched.map(([raw, hours]) => (

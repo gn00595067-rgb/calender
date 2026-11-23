@@ -25,7 +25,7 @@ export default function MyWorkPage() {
           description="請家長到「人物管理」→ 你的名字 →「員工帳號」輸入你的登入 Email。"
         />
       ) : (
-        <StaffWorkspace people={people} />
+        <StaffWorkspace people={people} asStaff />
       )}
     </div>
   );

@@ -34,10 +34,13 @@ const wd = (d: string) => WD[new Date(`${d}T12:00:00Z`).getUTCDay()];
 export function StaffWorkspace({
   people,
   defaultTab = "logs",
+  asStaff = false,
 }: {
   /** 可以看／記的人（家長：自己的員工；老師：自己） */
   people: { id: string; name: string }[];
   defaultTab?: "logs" | "report";
+  /** 家庭老師自己用（我的工作）：匯入說明不提錢 */
+  asStaff?: boolean;
 }) {
   const today = taipeiTodayStr();
   const [pick, setPick] = useState<string | null>(null);
@@ -110,6 +113,7 @@ export function StaffWorkspace({
           contactId={contactId}
           contactName={people.find((p) => p.id === contactId)?.name ?? ""}
           categories={cats.data ?? []}
+          staffMode={asStaff}
           onImported={(_months, lastDate) => {
             qc.invalidateQueries({ queryKey: ["staff"] });
             qc.invalidateQueries({ queryKey: ["work"] });
@@ -216,7 +220,7 @@ function DailyLogs({
       </p>
       {categories.length === 0 && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          還沒有工作類別。請家長到「工作效益」→「月薪與分類」設定（可一鍵套用週報 4 大項）。
+          還沒有工作類別，請先請家長設定。
         </p>
       )}
       {days.map((day) => {
