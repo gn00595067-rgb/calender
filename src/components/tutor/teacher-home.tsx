@@ -60,6 +60,8 @@ export function TeacherHome({ userId }: { userId: string }) {
   if (profileQ.isLoading) return <ListSkeleton rows={4} />;
   // 0023 還沒套用或讀不到 → 退回原本的「我的課與回饋」，老師照樣能寫回饋
   if (profileQ.isError || !profile) return <TeachView userId={userId} />;
+  // 沒設定專科／家庭老師的老師（例如只要寫回饋的 Jack）：直接進「我的課與回饋」，不顯示填報分頁
+  if (profile.kind == null) return <TeachView userId={userId} />;
 
   const nameOf = (id: string) => profile.students.find((s) => s.id === id)?.name ?? "學生";
   const isHome = profile.kind === "home";
