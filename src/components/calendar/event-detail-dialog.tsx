@@ -60,7 +60,7 @@ export function EventDetailDialog({
   onEdit: () => void;
   onChanged?: () => void;
 }) {
-  const { calendarById, me } = useAppData();
+  const { calendarById } = useAppData();
   const router = useRouter();
   const qc = useQueryClient();
   const [pending, startTransition] = useTransition();
@@ -71,7 +71,7 @@ export function EventDetailDialog({
   if (!event) return null;
   const cal = calendarById.get(event.calendar_id);
   const role = cal?.effectiveRole ?? "viewer";
-  const editable = can.editEvent(role, event.creator_id, me.id);
+  const editable = can.editEvent(role);
   const financeVisible = can.viewFinance(role) && event.finance.length > 0;
   const isRecurring = !!event.recurrence_group_id;
 

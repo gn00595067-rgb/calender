@@ -10,13 +10,13 @@ export const can = {
   viewEvents: (role: EffectiveRole): boolean =>
     role === "owner" || role === "editor" || role === "contributor" || role === "viewer",
 
-  /** 可在此行事曆新增行程（老師 scheduler 也可以，但只能改／刪自己登錄的，見 editEvent） */
+  /** 可在此行事曆新增行程（老師 scheduler 也可以） */
   editEvents: (role: EffectiveRole): boolean =>
     role === "owner" || role === "editor" || role === "scheduler",
 
-  /** 可改／刪這一筆行程：老師只限自己登錄的（與 0025 RLS 一致） */
-  editEvent: (role: EffectiveRole, creatorId: string, meId: string): boolean =>
-    role === "owner" || role === "editor" || (role === "scheduler" && creatorId === meId),
+  /** 可改／刪這一筆行程：老師也可以改別人 key 的（0035，Phoenix 11/23） */
+  editEvent: (role: EffectiveRole): boolean =>
+    role === "owner" || role === "editor" || role === "scheduler",
 
   addNotes: (role: EffectiveRole): boolean =>
     role === "owner" || role === "editor" || role === "contributor" || role === "scheduler",

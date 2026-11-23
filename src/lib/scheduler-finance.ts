@@ -149,7 +149,7 @@ function lockedByParent(f: { is_settled: boolean; payment_method: string | null 
 /**
  * 家庭老師新增／修改行程後呼叫：依行程現在的老師、主角、時長，把每一堂的費用記到家長帳下
  * （沒有就新增、有就更新、已不算上課就刪掉）。不是 scheduler 時什麼都不做。
- * 只處理這位老師自己登錄的行程（scheduler 本來就只能改自己的）。
+ * 老師改別人 key 的課也會同步（0035）；家長手動記、已付款的費用不動。
  */
 export async function syncSchedulerFinance(
   userId: string,
@@ -165,8 +165,7 @@ export async function syncSchedulerFinance(
     admin
       .from("events")
       .select("id, title, starts_at, ends_at, all_day, calendar_id, creator_id")
-      .in("id", eventIds)
-      .eq("creator_id", userId),
+      .in("id", eventIds),
     admin.from("event_contacts").select("event_id, contact_id, role").in("event_id", eventIds),
     admin.from("finance_records").select("id, event_id, is_settled, payment_method, rate_plan_id").in("event_id", eventIds),
   ]);
@@ -256,8 +255,7 @@ export async function deleteSchedulerFinance(userId: string, eventIds: string[])
   const { data: events } = await admin
     .from("events")
     .select("id, calendar_id")
-    .in("id", eventIds)
-    .eq("creator_id", userId);
+    .in("id", eventIds);
   const calId = events?.[0]?.calendar_id;
   if (!calId || !(await schedulerOwner(admin, userId, calId))) return;
   const { data: fins } = await admin

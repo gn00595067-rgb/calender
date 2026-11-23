@@ -74,7 +74,7 @@ export function VoiceTargetDialog({
 }) {
   const router = useRouter();
   const qc = useQueryClient();
-  const { calendars, calendarById, me } = useAppData();
+  const { calendars, calendarById } = useAppData();
   const { data: contacts = [] } = useContacts();
   const selfName = contacts.find((c) => c.is_self)?.name ?? null;
   const editableIds = calendars.filter((c) => can.editEvents(c.effectiveRole)).map((c) => c.id);
@@ -93,9 +93,8 @@ export function VoiceTargetDialog({
   const candidates: Candidate[] = [];
   const byKey = new Map<string, Candidate>();
   for (const e of results.events) {
-    // 老師身分只能改／刪自己登錄的
     const role = calendarById.get(e.calendar_id)?.effectiveRole ?? "viewer";
-    if (!can.editEvent(role, e.creator_id, me.id)) continue;
+    if (!can.editEvent(role)) continue;
     const key = e.recurrence_group_id ?? e.id;
     const c = byKey.get(key);
     if (c) c.inRange.push(e);
