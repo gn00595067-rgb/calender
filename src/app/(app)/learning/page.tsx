@@ -11,6 +11,7 @@ import { teacherLabel } from "@/lib/learning";
 import { ProgressBlock } from "@/components/calendar/notes-section";
 import { taipeiTodayStr, D } from "@/lib/date";
 import { cn } from "@/lib/utils";
+import { AiSummary } from "@/components/learning/ai-summary";
 
 /** yyyy-MM 加減 n 個月 */
 function shiftMonth(ym: string, n: number): string {
@@ -36,6 +37,8 @@ export default function LearningPage() {
   const { data, isLoading } = useLearningFeed(start, end);
   // 可以複選（Peggy 11/24：一起看兩個小孩的差異）；空＝預設回饋最多的那位
   const [picks, setPicks] = useState<string[]>([]);
+  // 點老師卡片只看那位老師（Peggy 11/24：找某老師某天不用一直往下拉）；再點一次取消
+  const [teacherKey, setTeacherKey] = useState<string | null>(null);
 
   const children = data?.children ?? [];
   // 預設選回饋最多的小孩；換月份後原本選的不在名單就改回預設
@@ -55,7 +58,7 @@ export default function LearningPage() {
       return [...now, id];
     });
   const groups = (childId && data?.groupsByChild.get(childId)) || [];
-  const withEntries = groups.filter((g) => g.entries.length > 0);
+  const withEntries = groups.filter((g) => g.entries.length > 0 && (!teacherKey || g.key === teacherKey));
 
   const [y, m] = month.split("-").map(Number);
   const childName = selected.map((id) => children.find((c) => c.id === id)?.name ?? "").join("、");
@@ -129,13 +132,29 @@ export default function LearningPage() {
             {childName} {y} 年 {m} 月 學習回饋
           </h1>
           {compare ? (
-            <CompareView ids={selected} names={selected.map((id) => children.find((c) => c.id === id)?.name ?? "")} groupsByChild={data!.groupsByChild} />
+            <CompareView
+              ids={selected}
+              names={selected.map((id) => children.find((c) => c.id === id)?.name ?? "")}
+              groupsByChild={data!.groupsByChild}
+              teacherKey={teacherKey}
+              onPickTeacher={setTeacherKey}
+            />
           ) : (
           <>
           {/* 統計：每位老師上課幾堂、回饋幾則 */}
           <div className="mb-6 grid gap-2 sm:grid-cols-2 print:grid-cols-2">
             {groups.map((g) => (
-              <div key={g.key} className="flex items-center justify-between rounded-lg border bg-card px-3 py-2">
+              <button
+                type="button"
+                key={g.key}
+                onClick={() => setTeacherKey(teacherKey === g.key ? null : g.key)}
+                aria-pressed={teacherKey === g.key}
+                className={cn(
+                  "flex items-center justify-between rounded-lg border bg-card px-3 py-2 text-left hover:bg-accent",
+                  teacherKey === g.key && "border-primary ring-2 ring-primary/30",
+                  teacherKey && teacherKey !== g.key && "opacity-50",
+                )}
+              >
                 <span className="truncate text-sm font-medium">
                   {g.teacher ? teacherLabel(g.teacher) : "其他（未指定老師）"}
                 </span>
@@ -145,7 +164,7 @@ export default function LearningPage() {
                     回饋 {g.entries.length} 則
                   </span>
                 </span>
-              </div>
+              </button>
             ))}
           </div>
 
@@ -154,7 +173,7 @@ export default function LearningPage() {
           ) : (
             <div className="space-y-6">
               {withEntries.map((g) => (
-                <GroupSection key={g.key} group={g} />
+                <GroupSection key={`${g.key}-${month}-${childId}`} group={g} childName={childName} />
               ))}
             </div>
           )}
@@ -171,12 +190,15 @@ function countEntries(groups: LearningGroup[] | undefined): number {
   return (groups ?? []).reduce((n, g) => n + g.entries.length, 0);
 }
 
-function GroupSection({ group }: { group: LearningGroup }) {
+function GroupSection({ group, childName }: { group: LearningGroup; childName: string }) {
+  const label = group.teacher ? teacherLabel(group.teacher) : "其他（未指定老師）";
   return (
     <section>
-      <h2 className="mb-2 flex items-center gap-2 text-base font-semibold">
-        {group.teacher ? teacherLabel(group.teacher) : "其他（未指定老師）"}
+      <h2 className="mb-2 flex flex-wrap items-center gap-2 text-base font-semibold">
+        {label}
         <Badge variant="secondary">{group.entries.length} 則</Badge>
+        <span className="ml-auto" />
+        <AiSummary teacher={label} items={group.entries.map((entry) => ({ child: childName, entry }))} />
       </h2>
       <ol className="relative space-y-3 border-l pl-4">
         {group.entries.map((e) => (
@@ -219,10 +241,14 @@ function CompareView({
   ids,
   names,
   groupsByChild,
+  teacherKey,
+  onPickTeacher,
 }: {
   ids: string[];
   names: string[];
   groupsByChild: Map<string, LearningGroup[]>;
+  teacherKey: string | null;
+  onPickTeacher: (k: string | null) => void;
 }) {
   // 老師（key）→ 每堂回饋（noteId）→ 各小孩內容
   const teachers = new Map<
@@ -249,11 +275,42 @@ function CompareView({
     }
   });
   const cols = { gridTemplateColumns: `8rem repeat(${ids.length}, minmax(0, 1fr))` };
+  const list = [...teachers.entries()];
   return (
     <div className="space-y-8">
-      {[...teachers.values()].map((t) => (
-        <section key={t.label} className="print:break-inside-avoid">
-          <h2 className="mb-2 text-base font-semibold">{t.label}</h2>
+      {/* 老師：點一位只看他 */}
+      <div className="flex flex-wrap gap-2 print:hidden">
+        {list.map(([k, t]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => onPickTeacher(teacherKey === k ? null : k)}
+            aria-pressed={teacherKey === k}
+            className={cn(
+              "rounded-full border px-3 py-1 text-sm",
+              teacherKey === k ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {list.filter(([k]) => !teacherKey || k === teacherKey).map(([k, t]) => (
+        <section key={k} className="print:break-inside-avoid">
+          <h2 className="mb-2 flex flex-wrap items-center gap-2 text-base font-semibold">
+            {t.label}
+            <span className="ml-auto" />
+            <AiSummary
+              key={`${k}-${ids.join()}`}
+              teacher={t.label}
+              items={[...t.rows.values()].flatMap((r) =>
+                ids.flatMap((cid, i) => {
+                  const e = r.byChild.get(cid);
+                  return e ? [{ child: names[i], entry: e }] : [];
+                }),
+              )}
+            />
+          </h2>
           <div className="overflow-x-auto rounded-lg border">
             <div className="grid min-w-[560px] border-b bg-muted/40 text-sm font-medium" style={cols}>
               <div className="px-2 py-1.5" />

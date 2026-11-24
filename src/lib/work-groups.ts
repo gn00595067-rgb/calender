@@ -24,6 +24,24 @@ export const WORK_PRESET: { name: string; group: string; aliases: string[] }[] =
   { name: "採購", group: "生活物資採買", aliases: [] },
 ];
 
+/** 10 月建的舊類別（Peggy 給 Phoenix 的 9 項）沒有大項 → 預設歸到哪個大項 */
+export const LEGACY_GROUP: Record<string, string> = {
+  英文教學: "老師的教學",
+  "複習.檢討": "老師的教學",
+  檢查作業: "老師的教學",
+  專題輔導: "老師的教學",
+  阿姨國語教學: "老師的教學",
+  "外出/陪上課": "陪上課與試上觀察",
+  聯絡老師: "師資招募與行政",
+  "行政/其他": "師資招募與行政",
+  採購: "生活物資採買",
+};
+
+/** 類別屬於哪個大項：有設就用設的，舊類別用預設對應，都沒有就用類別名稱（不再全部變成「其他」） */
+export function groupOf(c: { name: string; group_label?: string | null }): string {
+  return c.group_label || LEGACY_GROUP[c.name] || c.name;
+}
+
 /** 「17:30」→ 分鐘 */
 export function hmToMin(hm: string): number {
   const [h, m] = hm.split(":").map(Number);
@@ -74,7 +92,7 @@ export function groupStats(logs: GroupStatLog[], cats: GroupStatCategory[]): { g
   let total = 0;
   for (const l of logs) {
     const c = l.category_id ? catById.get(l.category_id) : undefined;
-    const g = c ? c.group_label || "其他" : "未分類";
+    const g = c ? groupOf(c) : "未分類";
     const n = c ? c.name : "未分類";
     const rows = groups.get(g) ?? new Map();
     const r = rows.get(n) ?? { hours: 0, contents: [] };

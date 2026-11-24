@@ -20,7 +20,7 @@ import {
   type StaffLog,
 } from "@/lib/client/staff";
 import { deleteWorkLogAction, saveWeeklyReportAction, saveWorkLogAction } from "@/lib/actions/staff-work";
-import { addDays, groupStats, hoursBetween, mondayOf, pctText } from "@/lib/work-groups";
+import { addDays, groupOf, groupStats, hoursBetween, mondayOf, pctText } from "@/lib/work-groups";
 
 /**
  * 家庭老師的「工作紀錄（每日分時表）」與「週報」。家長（工作效益）與老師（我的工作）共用。
@@ -210,7 +210,7 @@ function DailyLogs({
     });
   }
 
-  const groups = [...new Set(categories.map((c) => c.group_label || "其他"))];
+  const groups = [...new Set(categories.map((c) => groupOf(c)))];
   const weekHours = logs.reduce((s, l) => s + l.hours, 0);
 
   return (
@@ -314,7 +314,7 @@ function DailyLogs({
                     {groups.map((g) => (
                       <optgroup key={g} label={g}>
                         {categories
-                          .filter((c) => (c.group_label || "其他") === g)
+                          .filter((c) => groupOf(c) === g)
                           .map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.name}

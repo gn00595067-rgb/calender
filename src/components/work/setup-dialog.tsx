@@ -145,7 +145,7 @@ export function WorkSetupDialog({
                   // 只新增週報用的類別、補大項；不刪舊的、不動時薪（之前存的都保留）
                   const res = await applyWorkPresetAction(contactId);
                   if (!res.ok) return void toast.error(res.error);
-                  toast.success(`已套用週報 4 大項（新增 ${res.data.added} 個類別），時薪請再補`);
+                  toast.success(res.data.added ? `已套用週報 4 大項（新增 ${res.data.added} 個類別），時薪請再補` : `已把 ${res.data.grouped ?? 0} 個類別歸到週報 4 大項`);
                   onSaved();
                   onOpenChange(false);
                 })

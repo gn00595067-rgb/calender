@@ -1,5 +1,7 @@
 "use client";
 
+import { ShareDonut } from "@/components/work/share-donut";
+import { groupOf } from "@/lib/work-groups";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -232,6 +234,21 @@ export default function WorkPage() {
                 )}
               </div>
 
+              {/* 各大項佔比（Peggy 11/24：看投入在哪裡最多） */}
+              <ShareDonut
+                parts={[
+                  ...[...new Map(
+                    stats.rows.map((r) => [groupOf(r.cat), 0] as const),
+                  ).keys()]
+                    .map((g) => ({
+                      label: g,
+                      hours: stats.rows.filter((r) => groupOf(r.cat) === g).reduce((s, r) => s + r.hours, 0),
+                    }))
+                    .sort((a, b) => b.hours - a.hours),
+                  ...(stats.unclassified.hours > 0 ? [{ label: "未分類", hours: stats.unclassified.hours }] : []),
+                ]}
+              />
+
               {/* 各分類 */}
               <div className="overflow-hidden rounded-xl border bg-card">
                 <table className="w-full text-sm">
@@ -239,6 +256,7 @@ export default function WorkPage() {
                     <tr>
                       <th className="p-2 text-left font-medium">大項</th>
                       <th className="p-2 text-right font-medium">時數</th>
+                      <th className="p-2 text-right font-medium">佔比</th>
                       <th className="p-2 text-right font-medium">時薪</th>
                       <th className="p-2 text-right font-medium">價值</th>
                     </tr>
@@ -253,6 +271,9 @@ export default function WorkPage() {
                           )}
                         </td>
                         <td className="p-2 text-right tabular-nums">{r.hours ? h1(r.hours) : "—"}</td>
+                        <td className="p-2 text-right tabular-nums">
+                          {r.hours && stats.totalHours ? `${((r.hours / stats.totalHours) * 100).toFixed(1)}%` : "—"}
+                        </td>
                         <td className="p-2 text-right tabular-nums">{r.cat.hourly_rate}</td>
                         <td className="p-2 text-right tabular-nums">{r.value ? twd(r.value) : "—"}</td>
                       </tr>
@@ -261,6 +282,9 @@ export default function WorkPage() {
                       <tr className="border-t text-amber-700 dark:text-amber-400">
                         <td className="p-2">未分類</td>
                         <td className="p-2 text-right tabular-nums">{h1(stats.unclassified.hours)}</td>
+                        <td className="p-2 text-right tabular-nums">
+                          {stats.totalHours ? `${((stats.unclassified.hours / stats.totalHours) * 100).toFixed(1)}%` : "—"}
+                        </td>
                         <td className="p-2 text-right">—</td>
                         <td className="p-2 text-right">不計</td>
                       </tr>
@@ -268,6 +292,7 @@ export default function WorkPage() {
                     <tr className="border-t bg-muted/30 font-semibold">
                       <td className="p-2">合計</td>
                       <td className="p-2 text-right tabular-nums">{h1(stats.totalHours)}</td>
+                      <td className="p-2 text-right">100%</td>
                       <td className="p-2" />
                       <td className="p-2 text-right tabular-nums">{twd(stats.value)}</td>
                     </tr>

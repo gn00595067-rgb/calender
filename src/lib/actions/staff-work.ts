@@ -5,7 +5,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthed, fail, type ActionResult } from "./helpers";
 import { makePassword, ownNonFamilyContact } from "./account-helpers";
-import { WORK_PRESET, hoursBetween } from "@/lib/work-groups";
+import { LEGACY_GROUP, WORK_PRESET, hoursBetween } from "@/lib/work-groups";
 
 /**
  * 家庭老師（員工帳號）自己記工作紀錄、寫週報；家長連結員工帳號、套用週報大項。
@@ -208,7 +208,7 @@ export async function staffAccountEmailAction(contactId: string): Promise<Action
 /**
  * 家長：幫這位人物加上週報 4 大項的類別（已有同名的只補大項，不刪舊的、不動時薪）。
  */
-export async function applyWorkPresetAction(contactId: string): Promise<ActionResult<{ added: number }>> {
+export async function applyWorkPresetAction(contactId: string): Promise<ActionResult<{ added: number; grouped?: number }>> {
   if (!z.uuid().safeParse(contactId).success) return fail("參數有誤");
   try {
     const { supabase, user } = await getAuthed();
@@ -218,6 +218,18 @@ export async function applyWorkPresetAction(contactId: string): Promise<ActionRe
       .eq("contact_id", contactId)
       .eq("owner_id", user.id);
     if (error) return fail(error.message);
+    // 已經有類別（例如 Phoenix 10 月的 9 項）：只把舊類別歸到 4 大項，不另外加新類別
+    if (existing?.length) {
+      let n = 0;
+      for (const c of existing) {
+        const g = LEGACY_GROUP[c.name] ?? WORK_PRESET.find((p) => p.name === c.name)?.group;
+        if (!g) continue;
+        const { error: e } = await supabase.from("work_categories").update({ group_label: g }).eq("id", c.id);
+        if (e) return fail(missing(e.message) ? MISSING_0031 : e.message);
+        n++;
+      }
+      return { ok: true, data: { added: 0, grouped: n } };
+    }
     const byName = new Map((existing ?? []).map((c) => [c.name, c]));
     let pos = Math.max(-1, ...(existing ?? []).map((c) => c.position)) + 1;
     let added = 0;
@@ -240,7 +252,7 @@ export async function applyWorkPresetAction(contactId: string): Promise<ActionRe
       if (e) return fail(missing(e.message) ? MISSING_0031 : e.message);
       added++;
     }
-    return { ok: true, data: { added } };
+    return { ok: true, data: { added, grouped: 0 } };
   } catch (e) {
     return fail(e instanceof Error ? e.message : "操作失敗");
   }

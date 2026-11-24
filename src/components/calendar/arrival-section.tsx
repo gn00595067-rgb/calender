@@ -103,9 +103,14 @@ export function ArrivalSection({ event }: { event: CalEvent }) {
           <li className="text-xs text-muted-foreground">合計 {hours.toFixed(2)} 小時</li>
         </ul>
       )}
-      <Link href={isOwner ? "/work/weekly" : "/my-work"} className="text-xs text-primary underline">
-        {isOwner ? "看每日紀錄與週報 →" : "記工作紀錄 →"}
-      </Link>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        <Link href={isOwner ? "/tutoring?tab=schedule" : "/tutoring"} className="text-xs text-primary underline">
+          排週課表（預排）→
+        </Link>
+        <Link href={isOwner ? "/work/weekly" : "/my-work"} className="text-xs text-primary underline">
+          {isOwner ? "看每日紀錄與週報 →" : "記工作紀錄 →"}
+        </Link>
+      </div>
     </div>
   );
 }

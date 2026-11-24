@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -69,7 +69,12 @@ function ParentTutoringPage() {
   const { me } = useAppData();
   const qc = useQueryClient();
   const today = taipeiTodayStr();
+  // ?tab=schedule 直接開週課表（行事曆到班區塊的「排週課表」連過來；Peggy 11/24 找不到預排課表）
   const [tab, setTab] = useState<"records" | "report" | "schedule" | "units">("records");
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 依網址開一次
+    if (new URLSearchParams(window.location.search).get("tab") === "schedule") setTab("schedule");
+  }, []);
   const [month, setMonth] = useState(today.slice(0, 7));
   // 趨勢、進度、待辦看近半年；清單與時數看選的月份
   const sixMonths = `${shiftMonth(today.slice(0, 7), -5)}-01`;
