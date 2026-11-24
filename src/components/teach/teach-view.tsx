@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { CheckCircle2, CircleAlert, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { notifyNoteAction } from "@/lib/actions/note-notify";
+import { AddLesson } from "./add-lesson";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { D } from "@/lib/date";
@@ -92,13 +93,18 @@ export function TeachView({ userId }: { userId: string }) {
     );
   if ((lessonsQ.data ?? []).length === 0)
     return (
-      <p className="py-8 text-center text-sm text-muted-foreground">
-        最近 31 天與未來 7 天沒有您的課。如果應該有，請跟家長確認行程的「相關人物」有選到您。
-      </p>
+      <div className="space-y-4">
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          最近 31 天與未來 7 天沒有您的課。如果應該有，請跟家長確認行程的「相關人物」有選到您，或先補登。
+        </p>
+        <AddLesson onAdded={refresh} />
+      </div>
     );
 
   return (
     <div className="space-y-6">
+      {/* 家庭老師漏排的課，老師可以自己補登再寫回饋（Peggy 11/24） */}
+      <AddLesson onAdded={refresh} />
       <Section
         title={`還沒寫回饋（${groups.todo.length}）`}
         empty="都寫好了，謝謝老師！"
