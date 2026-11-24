@@ -155,9 +155,14 @@ export async function reviewProposalAction(input: unknown): Promise<ActionResult
     if (v.status !== "pending") {
       try {
         await sendPushToUser(createAdminClient(), data.proposer_id, {
-          title: v.status === "approved" ? "你提議的行程已核准" : "你提議的行程被退回",
+          title:
+            v.status === "approved"
+              ? "你提議的行程已核准"
+              : v.reviewNote.startsWith("請改時間")
+                ? "對方請你改時間"
+                : "你提議的行程被退回",
           body: `${whenLabel(data.starts_at, data.ends_at)}｜${data.title}${
-            v.status === "rejected" && v.reviewNote ? `（${v.reviewNote}）` : ""
+            v.status === "rejected" && v.reviewNote ? `（${v.reviewNote.replace(/^請改時間：/, "")}）` : ""
           }`,
           tag: `proposal-review-${v.id}`,
           url: "/propose",

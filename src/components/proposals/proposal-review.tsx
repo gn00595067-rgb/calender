@@ -27,7 +27,8 @@ export function ProposalReviewCard({
   const qc = useQueryClient();
   const { calendarById } = useAppData();
   const [creating, setCreating] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
+  /** reject＝退回；time＝請對方改時間（Peggy 11/24：沒撞期但不想參加，想請對方改時間） */
+  const [rejecting, setRejecting] = useState<false | "reject" | "time">(false);
   const [reason, setReason] = useState("");
   const [pending, startTransition] = useTransition();
   const cal = calendarById.get(p.calendar_id);
@@ -55,7 +56,8 @@ export function ProposalReviewCard({
 
   function review(status: "approved" | "rejected" | "pending") {
     startTransition(async () => {
-      const res = await reviewProposalAction({ id: p.id, status, reviewNote: reason });
+      const note = rejecting === "time" ? `請改時間：${reason.trim() || "這個時間不方便"}` : reason;
+      const res = await reviewProposalAction({ id: p.id, status, reviewNote: note });
       if (!res.ok) {
         toast.error(res.error);
         return;
@@ -96,7 +98,11 @@ export function ProposalReviewCard({
         </div>
         {p.location && <div>地點：{p.location}</div>}
         {p.note && <div>備註：{p.note}</div>}
-        {p.status === "rejected" && p.review_note && <div className="text-destructive">退回原因：{p.review_note}</div>}
+        {p.status === "rejected" && p.review_note && (
+          <div className="text-destructive">
+            {p.review_note.startsWith("請改時間") ? p.review_note : `退回原因：${p.review_note}`}
+          </div>
+        )}
       </div>
 
       {p.status === "pending" ? (
@@ -106,10 +112,12 @@ export function ProposalReviewCard({
               className="h-8 flex-1"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="退回原因（選填），例：那天要陪小孩"
+              placeholder={
+                rejecting === "time" ? "希望改到哪天、幾點？例：改週三下午 2 點以後" : "退回原因（選填），例：那天要陪小孩"
+              }
             />
             <Button size="sm" variant="destructive" disabled={pending} onClick={() => review("rejected")}>
-              確定退回
+              {rejecting === "time" ? "送出，請對方改時間" : "確定退回"}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setRejecting(false)}>
               取消
@@ -123,7 +131,10 @@ export function ProposalReviewCard({
             <Button size="sm" variant="outline" disabled={pending} onClick={() => setCreating(true)}>
               補資料再同意
             </Button>
-            <Button size="sm" variant="outline" disabled={pending} onClick={() => setRejecting(true)}>
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => setRejecting("time")}>
+              請對方改時間
+            </Button>
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => setRejecting("reject")}>
               退回
             </Button>
           </div>

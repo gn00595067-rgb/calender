@@ -274,7 +274,31 @@ export default function ProposePage() {
               {p.location && <div className="mt-1 text-muted-foreground">地點：{p.location}</div>}
               {p.note && <div className="mt-1 text-muted-foreground">備註：{p.note}</div>}
               {p.status === "rejected" && p.review_note && (
-                <div className="mt-1 text-destructive">退回原因：{p.review_note}</div>
+                <div className="mt-1 text-destructive">
+                  {p.review_note.startsWith("請改時間") ? p.review_note : `退回原因：${p.review_note}`}
+                </div>
+              )}
+              {p.status === "rejected" && (
+                // 對方請改時間或退回 → 帶入原本內容，改個時間重新提議（舊的那筆保留當紀錄）
+                <div className="mt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setForm({
+                        calendarId: p.calendar_id,
+                        title: p.title,
+                        date: fmt(p.starts_at, "yyyy-MM-dd"),
+                        start: fmt(p.starts_at, "HH:mm"),
+                        end: fmt(p.ends_at, "HH:mm"),
+                        location: p.location ?? "",
+                        note: p.note ?? "",
+                      })
+                    }
+                  >
+                    改時間重新提議
+                  </Button>
+                </div>
               )}
               {p.status === "pending" && (
                 <div className="mt-2 flex gap-2">
