@@ -59,10 +59,13 @@ async function requestTranslate(
 export function NotesSection({
   eventId,
   canAdd,
+  canSplitOthers = false,
   title = "",
 }: {
   eventId: string;
   canAdd: boolean;
+  /** 家長（擁有者／編輯者）可以把別人寫的回饋依小孩拆開（0037） */
+  canSplitOthers?: boolean;
   /** 行程標題：用來判斷是不是上課（開會、吃飯就不顯示課程進度／學習回饋） */
   title?: string;
 }) {
@@ -272,7 +275,7 @@ export function NotesSection({
                 ) : (
                   <>
                     <p className="mt-1.5 whitespace-pre-wrap text-sm">{n.content}</p>
-                    {multi && mine && (
+                    {multi && (mine || canSplitOthers) && (
                       <Button
                         type="button"
                         size="sm"

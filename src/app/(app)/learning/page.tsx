@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/app/page-header";
 import { EmptyState, ListSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useLearningFeed, type LearningGroup } from "@/lib/client/learning";
+import { useLearningFeed, type LearningEntry, type LearningGroup } from "@/lib/client/learning";
 import { teacherLabel } from "@/lib/learning";
 import { ProgressBlock } from "@/components/calendar/notes-section";
 import { taipeiTodayStr, D } from "@/lib/date";
@@ -34,24 +34,34 @@ export default function LearningPage() {
   const [month, setMonth] = useState(thisMonth);
   const { start, end } = monthRange(month);
   const { data, isLoading } = useLearningFeed(start, end);
-  const [childPick, setChildPick] = useState<string | null>(null);
+  // 可以複選（Peggy 11/24：一起看兩個小孩的差異）；空＝預設回饋最多的那位
+  const [picks, setPicks] = useState<string[]>([]);
 
   const children = data?.children ?? [];
   // 預設選回饋最多的小孩；換月份後原本選的不在名單就改回預設
-  const childId =
-    childPick && children.some((c) => c.id === childPick)
-      ? childPick
-      : ([...children].sort(
-          (a, b) => countEntries(data?.groupsByChild.get(b.id)) - countEntries(data?.groupsByChild.get(a.id)),
-        )[0]?.id ?? null);
+  const validPicks = picks.filter((id) => children.some((c) => c.id === id));
+  const defaultId =
+    [...children].sort(
+      (a, b) => countEntries(data?.groupsByChild.get(b.id)) - countEntries(data?.groupsByChild.get(a.id)),
+    )[0]?.id ?? null;
+  const selected = validPicks.length ? validPicks : defaultId ? [defaultId] : [];
+  const childId = selected[0] ?? null;
+  const compare = selected.length >= 2;
+  const toggle = (id: string) =>
+    setPicks((cur) => {
+      const base = cur.filter((x) => children.some((c) => c.id === x));
+      const now = base.length ? base : defaultId ? [defaultId] : [];
+      if (now.includes(id)) return now.length > 1 ? now.filter((x) => x !== id) : now;
+      return [...now, id];
+    });
   const groups = (childId && data?.groupsByChild.get(childId)) || [];
   const withEntries = groups.filter((g) => g.entries.length > 0);
 
   const [y, m] = month.split("-").map(Number);
-  const childName = children.find((c) => c.id === childId)?.name ?? "";
+  const childName = selected.map((id) => children.find((c) => c.id === id)?.name ?? "").join("、");
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className={cn("mx-auto", compare ? "max-w-6xl" : "max-w-3xl")}>
       {/* 這頁直式列印（全站預設橫式給週行程表用） */}
       <style>{"@media print { @page { size: A4 portrait; margin: 12mm; } }"}</style>
       <PageHeader
@@ -95,15 +105,17 @@ export default function LearningPage() {
       ) : (
         <>
           {/* 小孩 */}
+          <p className="mb-1.5 text-xs text-muted-foreground print:hidden">可以點多個，並排比較</p>
           <div className="mb-4 flex flex-wrap gap-2">
             {children.map((c) => (
               <button
                 key={c.id}
                 type="button"
-                onClick={() => setChildPick(c.id)}
+                onClick={() => toggle(c.id)}
+                aria-pressed={selected.includes(c.id)}
                 className={cn(
                   "rounded-full border px-4 py-1.5 text-sm font-medium transition",
-                  c.id === childId ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
+                  selected.includes(c.id) ? "border-primary bg-primary text-primary-foreground" : "hover:bg-accent",
                 )}
               >
                 {c.name}
@@ -116,6 +128,10 @@ export default function LearningPage() {
           <h1 className="mb-3 hidden text-xl font-bold print:block">
             {childName} {y} 年 {m} 月 學習回饋
           </h1>
+          {compare ? (
+            <CompareView ids={selected} names={selected.map((id) => children.find((c) => c.id === id)?.name ?? "")} groupsByChild={data!.groupsByChild} />
+          ) : (
+          <>
           {/* 統計：每位老師上課幾堂、回饋幾則 */}
           <div className="mb-6 grid gap-2 sm:grid-cols-2 print:grid-cols-2">
             {groups.map((g) => (
@@ -141,6 +157,8 @@ export default function LearningPage() {
                 <GroupSection key={g.key} group={g} />
               ))}
             </div>
+          )}
+          </>
           )}
           </div>
         </>
@@ -191,5 +209,89 @@ function GroupSection({ group }: { group: LearningGroup }) {
         ))}
       </ol>
     </section>
+  );
+}
+
+/**
+ * 並排比較（選兩個以上小孩）：依老師分組，每一堂課一列，各小孩的回饋放同一列不同欄。
+ */
+function CompareView({
+  ids,
+  names,
+  groupsByChild,
+}: {
+  ids: string[];
+  names: string[];
+  groupsByChild: Map<string, LearningGroup[]>;
+}) {
+  // 老師（key）→ 每堂回饋（noteId）→ 各小孩內容
+  const teachers = new Map<
+    string,
+    {
+      label: string;
+      counts: Map<string, { classes: number; notes: number }>;
+      rows: Map<string, { entry: LearningEntry; byChild: Map<string, LearningEntry> }>;
+    }
+  >();
+  ids.forEach((cid) => {
+    for (const g of groupsByChild.get(cid) ?? []) {
+      let t = teachers.get(g.key);
+      if (!t) {
+        t = { label: g.teacher ? teacherLabel(g.teacher) : "其他（未指定老師）", counts: new Map(), rows: new Map() };
+        teachers.set(g.key, t);
+      }
+      t.counts.set(cid, { classes: g.classCount, notes: g.entries.length });
+      for (const e of g.entries) {
+        const r = t.rows.get(e.noteId) ?? { entry: e, byChild: new Map() };
+        r.byChild.set(cid, e);
+        t.rows.set(e.noteId, r);
+      }
+    }
+  });
+  const cols = { gridTemplateColumns: `8rem repeat(${ids.length}, minmax(0, 1fr))` };
+  return (
+    <div className="space-y-8">
+      {[...teachers.values()].map((t) => (
+        <section key={t.label} className="print:break-inside-avoid">
+          <h2 className="mb-2 text-base font-semibold">{t.label}</h2>
+          <div className="overflow-x-auto rounded-lg border">
+            <div className="grid min-w-[560px] border-b bg-muted/40 text-sm font-medium" style={cols}>
+              <div className="px-2 py-1.5" />
+              {ids.map((cid, i) => {
+                const c = t.counts.get(cid);
+                return (
+                  <div key={cid} className="border-l px-2 py-1.5">
+                    {names[i]}
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      {c ? `上課 ${c.classes} 堂 · 回饋 ${c.notes} 則` : "沒有這門課"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {[...t.rows.values()]
+              .sort((a, b) => a.entry.eventStart.localeCompare(b.entry.eventStart))
+              .map(({ entry, byChild }) => (
+                <div key={entry.noteId} className="grid min-w-[560px] border-b text-sm last:border-b-0" style={cols}>
+                  <div className="px-2 py-2 text-xs text-muted-foreground">
+                    <div className="font-semibold text-foreground">{D.date(entry.eventStart).slice(5)}</div>
+                    {entry.progressLabel && <div className="mt-1">進度：{entry.progressLabel}</div>}
+                    {entry.unsplit && <div className="mt-1 text-amber-700">未依小孩拆開</div>}
+                  </div>
+                  {ids.map((cid) => {
+                    const e = byChild.get(cid);
+                    return (
+                      <div key={cid} className="whitespace-pre-wrap border-l px-2 py-2">
+                        {e ? e.content : <span className="text-muted-foreground">—</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            {t.rows.size === 0 && <div className="px-2 py-2 text-sm text-muted-foreground">這個月還沒有回饋</div>}
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }

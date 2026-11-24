@@ -237,7 +237,12 @@ export function EventDetailDialog({
 
           <Separator className="my-1" />
 
-          <NotesSection eventId={event.id} canAdd={can.addNotes(role)} title={event.title} />
+          <NotesSection
+            eventId={event.id}
+            canAdd={can.addNotes(role)}
+            canSplitOthers={can.viewFinance(role)}
+            title={event.title}
+          />
 
           {editable && (
             <div className="mt-2 flex justify-end gap-2">
