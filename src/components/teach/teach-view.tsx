@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CheckCircle2, CircleAlert, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { notifyNoteAction } from "@/lib/actions/note-notify";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { D } from "@/lib/date";
@@ -194,13 +195,19 @@ function LessonCard({
       const text = content.trim();
       if (!text) return void toast.error("請先寫回饋內容");
       const supabase = createClient();
-      const { error } = await supabase.from("event_notes").insert({
-        event_id: l.event_id,
-        author_id: userId,
-        content: text,
-        progress_label: progress.trim() || null,
-      });
+      const { data: note, error } = await supabase
+        .from("event_notes")
+        .insert({
+          event_id: l.event_id,
+          author_id: userId,
+          content: text,
+          progress_label: progress.trim() || null,
+        })
+        .select("id")
+        .single();
       if (error) return void toast.error(`送出失敗：${error.message}`);
+      // 推播給家長（失敗不影響）
+      void notifyNoteAction(note.id);
       setContent("");
       setProgress("");
       toast.success("已送出回饋，謝謝老師");

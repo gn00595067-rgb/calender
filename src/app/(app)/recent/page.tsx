@@ -18,6 +18,9 @@ import type { CalEvent } from "@/lib/client/events";
 import { eventSentence, summaryFromEvents } from "@/lib/event-summary";
 import { fmt, taipeiDateStartUtcISO, taipeiTodayStr } from "@/lib/date";
 import { cn } from "@/lib/utils";
+import { ActivityFeed } from "@/components/app/activity-feed";
+import { enrichEvents } from "@/lib/client/events";
+import { createClient } from "@/lib/supabase/client";
 
 type Range = "today" | "week" | "lastWeek";
 /** 排序：輸入／修改時間（新→舊）、行程日期近→遠、遠→近、依分類 */
@@ -102,6 +105,13 @@ export default function RecentPage() {
   const [detail, setDetail] = useState<CalEvent | null>(null);
   const [editing, setEditing] = useState<CalEvent | null>(null);
   const verb = kind === "added" ? "輸入" : "修改";
+  // 未讀更新清單點一筆 → 打開那個行程
+  const openEvent = async (id: string) => {
+    const { data: row } = await createClient().from("events").select("*").eq("id", id).maybeSingle();
+    if (!row) return;
+    const [ev] = await enrichEvents([row]);
+    if (ev) setDetail(ev);
+  };
 
   // 分組：依輸入／修改日（本週才有多天）或依分類；其他排序不分組
   const sections = useMemo((): [string, RecentItem[]][] => {
@@ -141,6 +151,9 @@ export default function RecentPage() {
         title="新增紀錄"
         description="依輸入或修改的日期列出行程，方便第二個人核對有沒有漏、有沒有改錯"
       />
+
+      {/* 上次查看後別人的更新（像 LINE 的未讀，Peggy 11/24） */}
+      <ActivityFeed onOpen={(id) => void openEvent(id)} />
 
       <div className="mb-3 space-y-2">
         <Chips

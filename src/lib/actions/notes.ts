@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { notifyOwnerOfNote } from "@/lib/note-notify";
 import { getAuthed, fail, type ActionResult } from "./helpers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
@@ -105,6 +106,8 @@ export async function createNoteAction(
       partsWarning = await writeParts(supabase, note.id, parsed.data.parts);
     }
     if (parsed.data.learnAliases?.length) await learnAliases(supabase, parsed.data.learnAliases);
+    // 不是擁有者寫的 → 推播給擁有者（Peggy 11/24）
+    await notifyOwnerOfNote(note.id);
     revalidatePath("/", "layout");
     return { ok: true, data: { partsWarning } };
   } catch (e) {

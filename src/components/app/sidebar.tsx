@@ -17,6 +17,7 @@ import {
 } from "./nav";
 import { useAppData } from "./app-data";
 import { useIncomingProposals } from "@/lib/client/proposals";
+import { useUnseenCount } from "@/lib/client/activity";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 
@@ -26,6 +27,8 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   // 待審核數字（只有分享過「只看空檔」的人才查）
   const { data: incoming } = useIncomingProposals(me.reviewsProposals ? me.id : "");
   const pendingCount = me.reviewsProposals ? (incoming?.pending.length ?? 0) : 0;
+  // 新增紀錄的未讀數字（別人新增／修改的行程、寫的回饋）
+  const { data: unseen = 0 } = useUnseenCount(me.id);
   // 只有「只看空檔」身分（秘書：沒有任何看得到內容的分類）：選單只留幫排行程和手機通知
   const onlyPropose = me.canPropose && calendars.length === 0;
   // 家庭老師：沒有自己的分類、被分享的全是「老師」身分 → 只列用得到的頁
@@ -69,6 +72,11 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           {item.href === PROPOSALS_NAV.href && pendingCount > 0 && (
             <span className="ml-auto rounded-full bg-destructive px-1.5 text-xs leading-5 text-white">
               {pendingCount}
+            </span>
+          )}
+          {item.href === "/recent" && unseen > 0 && (
+            <span className="ml-auto rounded-full bg-destructive px-1.5 text-xs leading-5 text-white">
+              {unseen > 99 ? "99+" : unseen}
             </span>
           )}
         </Link>

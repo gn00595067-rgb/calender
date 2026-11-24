@@ -25,6 +25,8 @@ export interface Database {
           created_at: string;
           /** 0026 使用習慣（自己寫的） */
           habits_text?: string | null;
+          // 0036 上次看新增紀錄的時間
+          activity_seen_at?: string | null;
         };
         Insert: {
           id: string;
@@ -39,6 +41,7 @@ export interface Database {
           display_name?: string;
           created_at?: string;
           habits_text?: string | null;
+          activity_seen_at?: string | null;
         };
         Relationships: [];
       };

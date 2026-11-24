@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { notifyNoteAction } from "@/lib/actions/note-notify";
 import type { Tables } from "@/types/database";
 import { lessonNoteText, type LessonContent, type Photo } from "@/lib/tutor";
 
@@ -256,6 +257,7 @@ async function saveReportCore(
     .select("id")
     .single();
   if (noteErr) return { id, warning: NOTE_WARN };
+  void notifyNoteAction(note.id); // 推播給家長（失敗不影響）
   const { error: linkErr } = await supabase.from("tutor_reports").update({ event_note_id: note.id }).eq("id", id!);
   if (linkErr) {
     // 連不上就把剛寫的摘要刪掉，下次修改才不會多一則
