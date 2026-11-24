@@ -24,6 +24,7 @@ import {
   Inbox,
   CalendarSearch,
   School,
+  LayoutGrid,
   type LucideIcon,
 } from "lucide-react";
 
@@ -41,6 +42,7 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/search", label: "搜尋", icon: Search },
   { href: "/recent", label: "新增紀錄", icon: ClipboardCheck },
   { href: "/learning", label: "學習回饋", icon: GraduationCap },
+  { href: "/subjects", label: "各科儀表板", icon: LayoutGrid },
   { href: "/classrooms", label: "教室資料", icon: School },
   { href: "/tutoring", label: "家教填報", icon: NotebookPen },
   { href: "/reports", label: "報表結算", icon: BarChart3 },
@@ -70,6 +72,7 @@ export const TUTOR_MAIN_HREFS = new Set([
   "/search",
   "/recent",
   "/learning",
+  "/subjects",
   "/classrooms",
   "/tutoring",
 ]);

@@ -7,6 +7,7 @@ import { CheckCircle2, CircleAlert, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { notifyNoteAction } from "@/lib/actions/note-notify";
 import { AddLesson } from "./add-lesson";
+import { TeacherScores } from "./teacher-scores";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { D } from "@/lib/date";
@@ -105,6 +106,7 @@ export function TeachView({ userId }: { userId: string }) {
     <div className="space-y-6">
       {/* 家庭老師漏排的課，老師可以自己補登再寫回饋（Peggy 11/24） */}
       <AddLesson onAdded={refresh} />
+      <TeacherScores userId={userId} />
       <Section
         title={`還沒寫回饋（${groups.todo.length}）`}
         empty="都寫好了，謝謝老師！"

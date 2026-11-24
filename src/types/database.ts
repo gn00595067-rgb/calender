@@ -824,6 +824,44 @@ export interface Database {
         };
         Relationships: [];
       };
+      // 0039 成績登記
+      student_scores: {
+        Row: {
+          id: string;
+          owner_id: string;
+          student_id: string;
+          subject: string;
+          test_date: string;
+          label: string;
+          score: number;
+          full_score: number;
+          note: string;
+          author_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          student_id: string;
+          subject: string;
+          test_date: string;
+          label?: string;
+          score: number;
+          full_score?: number;
+          note?: string;
+          author_id?: string | null;
+        };
+        Update: {
+          student_id?: string;
+          subject?: string;
+          test_date?: string;
+          label?: string;
+          score?: number;
+          full_score?: number;
+          note?: string;
+        };
+        Relationships: [];
+      };
       // 0033 教室資料庫
       classrooms: {
         Row: {
