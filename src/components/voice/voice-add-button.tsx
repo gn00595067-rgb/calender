@@ -88,6 +88,8 @@ export function VoiceAddButton({
   const savedRef = useRef(false);
   /** 使用者自己按停止（要再改字）→ 不自動送出 */
   const manualStopRef = useRef(false);
+  /** 每次送出解析遞增；取消後回來的舊結果比對不符就丟掉 */
+  const submitSeqRef = useRef(0);
 
   // 語音：按下語音助理就開始聽；停頓 2.5 秒沒講話自動結束並送出解析
   const speech = useSpeech({
@@ -130,10 +132,13 @@ export function VoiceAddButton({
     }
   }
 
+  /** 取消／✕：立即關麥克風、丟掉這次結果（含解析中的請求），不等瀏覽器回應 */
   function closeVoice(o: boolean) {
     if (!o) {
       manualStopRef.current = true;
-      speech.stop();
+      speech.cancel();
+      submitSeqRef.current++;
+      setLoading(false);
     }
     setOpen(o);
   }
@@ -245,9 +250,11 @@ export function VoiceAddButton({
   async function submit(spoken?: string) {
     const transcript = (spoken ?? text).trim();
     if (!transcript || loading) return;
+    const seq = ++submitSeqRef.current;
     setLoading(true);
     try {
       const { ok, data } = await callParse({ transcript });
+      if (seq !== submitSeqRef.current) return; // 已取消
       if (!ok) {
         toast.error(data?.error ?? "解析失敗，請再試一次");
         return;
@@ -282,9 +289,9 @@ export function VoiceAddButton({
       savedRef.current = false;
       openNext(drafts);
     } catch {
-      toast.error("網路錯誤，請再試一次");
+      if (seq === submitSeqRef.current) toast.error("網路錯誤，請再試一次");
     } finally {
-      setLoading(false);
+      if (seq === submitSeqRef.current) setLoading(false);
     }
   }
 
@@ -371,7 +378,7 @@ export function VoiceAddButton({
           />
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => closeVoice(false)} disabled={loading}>
+            <Button variant="outline" onClick={() => closeVoice(false)}>
               取消
             </Button>
             <Button

@@ -74,10 +74,19 @@ export interface UseSpeechResult {
   start: (prefix?: string) => void;
   /** 停止聆聽（會觸發最終結果）。 */
   stop: () => void;
+  /** 放棄這次收音：立即關麥克風，不觸發 onFinal（取消用）。 */
+  cancel: () => void;
 }
 
 /** 最長收音時間：避免忘了關一直聽 */
 const MAX_MS = 90_000;
+/** 開始後多久都沒講話就結束（要給人開口的時間，比 silenceMs 長） */
+const FIRST_SPEECH_MS = 8000;
+/**
+ * 呼叫 stop() 後等瀏覽器 onend 的上限。iPad Safari 常常 stop 後不回 onend，
+ * 會一直卡在「正在聽」，超過這時間就自己收尾。
+ */
+const STOP_GRACE_MS = 1200;
 
 /** 兩段之間補標點：前一段沒標點結尾才加「，」 */
 function joinText(base: string, add: string): string {
@@ -103,6 +112,8 @@ export function useSpeech(options: UseSpeechOptions = {}): UseSpeechResult {
     startedAt: number;
     emptyRuns: number;
     silenceTimer: ReturnType<typeof setTimeout> | null;
+    /** 強制收尾（不等瀏覽器 onend）；帶 false＝不送出結果 */
+    finish: (emit?: boolean) => void;
   } | null>(null);
 
   // 用 ref 保存最新 callback，避免每次 render 重建辨識器。
@@ -117,17 +128,26 @@ export function useSpeech(options: UseSpeechOptions = {}): UseSpeechResult {
     setSupported(getRecognitionCtor() != null);
   }, []);
 
-  const stop = useCallback(() => {
+  /** 請瀏覽器停止；等不到 onend 就自己收尾 */
+  const stopSession = useCallback(() => {
     const sess = sessRef.current;
-    if (sess) {
-      sess.active = false;
-      if (sess.silenceTimer) clearTimeout(sess.silenceTimer);
-    }
+    if (!sess) return;
+    sess.active = false;
+    if (sess.silenceTimer) clearTimeout(sess.silenceTimer);
+    sess.silenceTimer = setTimeout(() => sess.finish(), STOP_GRACE_MS);
     try {
       recRef.current?.stop();
     } catch {
-      /* ignore */
+      sess.finish();
     }
+  }, []);
+
+  const stop = stopSession;
+
+  const cancel = useCallback(() => {
+    const sess = sessRef.current;
+    if (sess) sess.finish(false);
+    else setListening(false);
   }, []);
 
   const start = useCallback(
@@ -137,43 +157,47 @@ export function useSpeech(options: UseSpeechOptions = {}): UseSpeechResult {
         cbRef.current.onError?.("unsupported");
         return;
       }
-      // 若已有進行中的辨識器，先中止（舊的 onend 會因 session 不同而略過）。
-      try {
-        recRef.current?.abort();
-      } catch {
-        /* ignore */
-      }
-      if (sessRef.current?.silenceTimer) clearTimeout(sessRef.current.silenceTimer);
+      // 若已有進行中的收音，先放棄（不送出）。
+      sessRef.current?.finish(false);
 
+      /** 目前這段還沒併進 base 的文字（強制收尾時一併收下） */
+      let pending = "";
+      const finish = (emit = true) => {
+        if (sessRef.current !== sess) return;
+        if (sess.silenceTimer) clearTimeout(sess.silenceTimer);
+        sessRef.current = null;
+        const rec = recRef.current;
+        recRef.current = null;
+        if (rec) {
+          rec.onresult = null;
+          rec.onerror = null;
+          rec.onend = null;
+          try {
+            rec.abort();
+          } catch {
+            /* ignore */
+          }
+        }
+        setListening(false);
+        const text = joinText(sess.base, pending.trim());
+        if (emit && text) cbRef.current.onFinal?.(text);
+      };
       const sess = {
         base: prefix.trim(),
         active: true,
         startedAt: Date.now(),
         emptyRuns: 0,
         silenceTimer: null as ReturnType<typeof setTimeout> | null,
+        finish,
       };
       sessRef.current = sess;
 
-      const finish = () => {
-        if (sessRef.current !== sess) return;
-        if (sess.silenceTimer) clearTimeout(sess.silenceTimer);
-        sessRef.current = null;
-        recRef.current = null;
-        setListening(false);
-        if (sess.base) cbRef.current.onFinal?.(sess.base);
-      };
-
-      /** 講話中一直重設；停頓超過 silenceMs 就結束 */
-      const armSilence = () => {
+      /** 講話中一直重設；停頓超過 ms 就結束 */
+      const armSilence = (ms = silenceMs) => {
         if (sess.silenceTimer) clearTimeout(sess.silenceTimer);
         sess.silenceTimer = setTimeout(() => {
-          sess.active = false;
-          try {
-            recRef.current?.stop();
-          } catch {
-            finish();
-          }
-        }, silenceMs);
+          if (sessRef.current === sess) stopSession();
+        }, ms);
       };
 
       const run = () => {
@@ -193,22 +217,25 @@ export function useSpeech(options: UseSpeechOptions = {}): UseSpeechResult {
             if (res.isFinal) finalText += text;
             else interim += text;
           }
-          const combined = joinText(sess.base, (finalText + interim).trim());
+          pending = finalText + interim;
+          const combined = joinText(sess.base, pending.trim());
           if (combined) cbRef.current.onInterim?.(combined);
-          armSilence();
+          if (sess.active) armSilence();
         };
         rec.onerror = (e) => {
           const code = e.error || "error";
           // 沒聽到聲音／被中止：交給 onend 決定要不要接續
           if (code === "no-speech" || code === "aborted") return;
-          sess.active = false;
           cbRef.current.onError?.(code);
+          // 出錯後 iPad 不一定會回 onend，一樣限時收尾
+          if (sessRef.current === sess) stopSession();
         };
         rec.onend = () => {
           if (sessRef.current !== sess) return;
           // 有些瀏覽器結束前沒把最後的中間結果轉成 final，一併收下
           const heard = (finalText || interim).trim();
           sess.base = joinText(sess.base, heard);
+          pending = "";
           sess.emptyRuns = heard ? 0 : sess.emptyRuns + 1;
           const keepGoing =
             sess.active && sess.emptyRuns < 2 && Date.now() - sess.startedAt < MAX_MS;
@@ -230,28 +257,23 @@ export function useSpeech(options: UseSpeechOptions = {}): UseSpeechResult {
       try {
         run();
         setListening(true);
+        // 一開始就計時：iPad 沒講話時可能永遠不回事件，不能只靠 onend
+        armSilence(Math.max(silenceMs, FIRST_SPEECH_MS));
       } catch {
         sessRef.current = null;
         setListening(false);
         cbRef.current.onError?.("start-failed");
       }
     },
-    [lang, silenceMs],
+    [lang, silenceMs, stopSession],
   );
 
   // 卸載時清理。
   useEffect(() => {
     return () => {
-      const sess = sessRef.current;
-      if (sess?.silenceTimer) clearTimeout(sess.silenceTimer);
-      sessRef.current = null;
-      try {
-        recRef.current?.abort();
-      } catch {
-        /* ignore */
-      }
+      sessRef.current?.finish(false);
     };
   }, []);
 
-  return { supported, listening, start, stop };
+  return { supported, listening, start, stop, cancel };
 }
